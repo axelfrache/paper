@@ -1,0 +1,25 @@
+name: paper
+
+services:
+  backend:
+    build:
+      context: ./backend
+    environment:
+      PORT: "8080"
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
+      AI_PROVIDER: ${AI_PROVIDER:-ai-gateway}
+      AI_BASE_URL: ${AI_BASE_URL:-http://host.docker.internal:8081}
+      AI_API_KEY: ${AI_API_KEY:-${AI_GATEWAY_API_KEY:-}}
+      AI_MODEL: ${AI_MODEL:-ai-gateway:json}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+
+  frontend:
+    build:
+      context: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
