@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlignLeft, ListTodo, MessageCircleQuestion, PanelLeftOpen, PanelRightOpen, Plus, Star } from "lucide-react";
+import { AlignLeft, ListTodo, MessageCircleQuestion, Plus, Star } from "lucide-react";
 import { CommandPalette, type PaletteAction, type PaletteMode } from "../components/CommandPalette";
 import { NotesColumn } from "../components/NotesColumn";
 import { Sidebar, type ViewKey } from "../components/Sidebar";
@@ -25,8 +25,7 @@ export function NotesPage() {
   const [tagDraft, setTagDraft] = useState("");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteMode, setPaletteMode] = useState<PaletteMode>("search");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [notesCollapsed, setNotesCollapsed] = useState(false);
+  const [sidebarHidden, setSidebarHidden] = useState(false);
   const [aiResult, setAIResult] = useState<AIResult | null>(null);
   const [askState, setAskState] = useState<{
     status: "idle" | "loading" | "answered";
@@ -293,52 +292,39 @@ export function NotesPage() {
     onAskPalette: () => openPalette("ask"),
     onCreateNote: () => void handleNew(),
     onToggleFavorite: toggleFavorite,
+    onToggleSidebar: () => setSidebarHidden((hidden) => !hidden),
     onEscape: () => setPaletteOpen(false),
   });
 
   return (
     <div className="app-shell">
-      {sidebarCollapsed ? (
-        <div className="collapsed-rail">
-          <button onClick={() => setSidebarCollapsed(false)} aria-label="Expand navigation">
-            <PanelLeftOpen size={16} strokeWidth={1.9} />
-          </button>
-        </div>
-      ) : (
-        <Sidebar
-          notes={notes}
-          view={view}
-          activeTag={activeTag}
-          onViewChange={(nextView) => {
-            setView(nextView);
-            setActiveTag(null);
-          }}
-          onTagChange={(tag) => {
-            setActiveTag(tag);
-            setView("all");
-          }}
-          onNew={() => void handleNew()}
-          onToggleCollapse={() => setSidebarCollapsed(true)}
-        />
-      )}
+      <Sidebar
+        notes={notes}
+        view={view}
+        activeTag={activeTag}
+        hidden={sidebarHidden}
+        onViewChange={(nextView) => {
+          setView(nextView);
+          setActiveTag(null);
+        }}
+        onTagChange={(tag) => {
+          setActiveTag(tag);
+          setView("all");
+        }}
+        onNew={() => void handleNew()}
+        onToggleCollapse={() => setSidebarHidden((hidden) => !hidden)}
+      />
 
-      {notesCollapsed ? (
-        <div className="collapsed-rail notes-rail">
-          <button onClick={() => setNotesCollapsed(false)} aria-label="Expand note list">
-            <PanelRightOpen size={16} strokeWidth={1.9} />
-          </button>
-        </div>
-      ) : (
-        <NotesColumn
-          title={activeTag ? `#${activeTag}` : titleForView(view)}
-          notes={visibleNotes}
-          activeId={activeId}
-          query={query}
-          onQueryChange={setQuery}
-          onSelect={selectNote}
-          onToggleCollapse={() => setNotesCollapsed(true)}
-        />
-      )}
+      <NotesColumn
+        title={activeTag ? `#${activeTag}` : titleForView(view)}
+        notes={visibleNotes}
+        activeId={activeId}
+        query={query}
+        sidebarHidden={sidebarHidden}
+        onQueryChange={setQuery}
+        onSelect={selectNote}
+        onToggleSidebar={() => setSidebarHidden(false)}
+      />
 
       <NoteEditor
         note={activeNote}

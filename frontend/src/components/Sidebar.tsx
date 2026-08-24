@@ -1,4 +1,4 @@
-import { Clock3, Files, Hash, ListTodo, NotebookPen, PanelLeftClose, Plus, Star } from "lucide-react";
+import { Clock3, Files, Hash, ListTodo, PanelLeftClose, Plus, Star } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { Note } from "../types/note";
 
@@ -8,6 +8,7 @@ type SidebarProps = {
   notes: Note[];
   view: ViewKey;
   activeTag: string | null;
+  hidden: boolean;
   onViewChange: (view: ViewKey) => void;
   onTagChange: (tag: string | null) => void;
   onNew: () => void;
@@ -21,14 +22,14 @@ const viewDefs: Array<{ key: ViewKey; label: string; icon: LucideIcon }> = [
   { key: "tasks", label: "Tasks", icon: ListTodo },
 ];
 
-export function Sidebar({ notes, view, activeTag, onViewChange, onTagChange, onNew, onToggleCollapse }: SidebarProps) {
+export function Sidebar({ notes, view, activeTag, hidden, onViewChange, onTagChange, onNew, onToggleCollapse }: SidebarProps) {
   const tagCounts = tagCountsFor(notes);
 
   return (
-    <aside className="sidebar">
+    <aside className={hidden ? "sidebar is-hidden" : "sidebar"}>
       <div className="brand">
         <span className="brand-mark">
-          <NotebookPen size={15} strokeWidth={2.2} />
+          <img src="/paper.png" alt="" />
         </span>
         <strong>Paper</strong>
         <button className="collapse-button" onClick={onToggleCollapse} aria-label="Collapse navigation">
@@ -89,6 +90,10 @@ export function Sidebar({ notes, view, activeTag, onViewChange, onTagChange, onN
         <div>
           <span>Ask my notes</span>
           <em>⌘⇧K</em>
+        </div>
+        <div>
+          <span>Hide sidebar</span>
+          <em>⌘\</em>
         </div>
       </div>
     </aside>

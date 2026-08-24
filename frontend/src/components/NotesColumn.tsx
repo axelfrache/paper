@@ -1,4 +1,4 @@
-import { PanelLeftClose, Search, Star } from "lucide-react";
+import { PanelLeftOpen, Search, Star } from "lucide-react";
 import type { Note } from "../types/note";
 
 type NotesColumnProps = {
@@ -6,22 +6,34 @@ type NotesColumnProps = {
   notes: Note[];
   activeId: string | null;
   query: string;
+  sidebarHidden: boolean;
   onQueryChange: (query: string) => void;
   onSelect: (note: Note) => void;
-  onToggleCollapse: () => void;
+  onToggleSidebar: () => void;
 };
 
-export function NotesColumn({ title, notes, activeId, query, onQueryChange, onSelect, onToggleCollapse }: NotesColumnProps) {
+export function NotesColumn({
+  title,
+  notes,
+  activeId,
+  query,
+  sidebarHidden,
+  onQueryChange,
+  onSelect,
+  onToggleSidebar,
+}: NotesColumnProps) {
   return (
     <section className="notes-column">
       <div className="notes-filter">
+        {sidebarHidden ? (
+          <button className="sidebar-restore-button" onClick={onToggleSidebar} aria-label="Expand navigation">
+            <PanelLeftOpen size={15} strokeWidth={1.9} />
+          </button>
+        ) : null}
         <div>
           <Search size={13} strokeWidth={2} />
           <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Filter notes" />
         </div>
-        <button className="collapse-button" onClick={onToggleCollapse} aria-label="Collapse note list">
-          <PanelLeftClose size={15} strokeWidth={1.9} />
-        </button>
       </div>
 
       <div className="list-title">
