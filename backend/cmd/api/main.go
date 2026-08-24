@@ -12,7 +12,7 @@ import (
 
 	httpadapter "github.com/axelfrache/paper/backend/internal/adapter/inbound/http"
 	"github.com/axelfrache/paper/backend/internal/adapter/outbound/ai"
-	"github.com/axelfrache/paper/backend/internal/adapter/outbound/memory"
+	"github.com/axelfrache/paper/backend/internal/adapter/outbound/postgres"
 	"github.com/axelfrache/paper/backend/internal/config"
 	"github.com/axelfrache/paper/backend/internal/core/service"
 )
@@ -24,7 +24,15 @@ func main() {
 		log.Println("warning: AI_API_KEY/AI_GATEWAY_API_KEY is not set; ai-gateway actions will fail.")
 	}
 
-	notes := memory.NewNoteRepository()
+	startupCtx, cancelStartup := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancelStartup()
+
+	notes, err := postgres.NewNoteRepository(startupCtx, cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("database connection failed: %v", err)
+	}
+	defer notes.Close()
+
 	assistant := ai.New(ai.Config{
 		Provider: cfg.AIProvider,
 		BaseURL:  cfg.AIBaseURL,

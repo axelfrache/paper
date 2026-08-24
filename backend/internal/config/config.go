@@ -7,6 +7,7 @@ import (
 
 type Config struct {
 	Port           string
+	DatabaseURL    string
 	AIProvider     string
 	AIBaseURL      string
 	AIAPIKey       string
@@ -18,6 +19,7 @@ func Load() Config {
 	provider := getEnv("AI_PROVIDER", "ai-gateway")
 	return Config{
 		Port:           getEnv("PORT", "8080"),
+		DatabaseURL:    getEnv("DATABASE_URL", "postgres://paper:paper@postgres:5432/paper?sslmode=disable"),
 		AIProvider:     provider,
 		AIBaseURL:      defaultBaseURL(provider),
 		AIAPIKey:       getEnv("AI_API_KEY", os.Getenv("AI_GATEWAY_API_KEY")),

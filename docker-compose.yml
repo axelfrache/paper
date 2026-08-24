@@ -1,11 +1,29 @@
 name: paper
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: paper
+      POSTGRES_USER: paper
+      POSTGRES_PASSWORD: paper
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paper -d paper"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
   backend:
     build:
       context: ./backend
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       PORT: "8080"
+      DATABASE_URL: ${DATABASE_URL:-postgres://paper:paper@postgres:5432/paper?sslmode=disable}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
       AI_PROVIDER: ${AI_PROVIDER:-ai-gateway}
       AI_BASE_URL: ${AI_BASE_URL:-http://host.docker.internal:8081}
@@ -23,3 +41,6 @@ services:
       - backend
     ports:
       - "${FRONTEND_PORT:-5173}:80"
+
+volumes:
+  postgres-data:
