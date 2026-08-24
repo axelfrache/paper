@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { FileText, Search, Sparkles } from "lucide-react";
+import { MarkdownView } from "./MarkdownView";
 import type { Note } from "../types/note";
 
 export type PaletteMode = "search" | "ask";
@@ -256,7 +257,7 @@ function AskPanel({
       .filter((note): note is Note => Boolean(note));
     return (
       <div className="ask-answer">
-        <p>{askState.answer}</p>
+        <MarkdownView text={askState.answer} className="ask-markdown" />
         {sources.length > 0 ? <div className="palette-label">Sources</div> : null}
         {sources.map((note) => (
           <button key={note.id} onClick={() => onSelectNote(note)}>

@@ -1,4 +1,6 @@
 import { Search, Star, Trash2 } from "lucide-react";
+import { MarkdownEditor } from "../components/MarkdownEditor";
+import { MarkdownView } from "../components/MarkdownView";
 import type { AIAction, Note } from "../types/note";
 
 export type AIResult = {
@@ -105,10 +107,9 @@ export function NoteEditor({
             />
           </div>
 
-          <textarea
-            className="editor-body"
+          <MarkdownEditor
             value={note.content}
-            onChange={(event) => onContentChange(event.target.value)}
+            onChange={onContentChange}
             placeholder="Start writing..."
           />
 
@@ -156,18 +157,7 @@ function AIResultPanel({
           <p>Thinking...</p>
         ) : (
           <>
-            <div className="ai-lines">
-              {result.text
-                .split(/\n+/)
-                .map((line) => line.trim())
-                .filter(Boolean)
-                .map((line, index) => (
-                  <div key={`${line}-${index}`}>
-                    <span>{bulletForAction(result.action)}</span>
-                    <p>{line.replace(/^[-*•☐]\s*/, "")}</p>
-                  </div>
-                ))}
-            </div>
+            <MarkdownView text={result.text} className="ai-markdown" />
             <div className="ai-result-actions">
               <button onClick={onApply}>{applyLabelForAction(result.action)}</button>
               <button onClick={onDismiss}>Dismiss</button>
@@ -199,10 +189,6 @@ function applyLabelForAction(action: AIAction) {
     clean_up: "Replace text",
     improve_clarity: "Replace text",
   }[action];
-}
-
-function bulletForAction(action: AIAction) {
-  return action === "extract_tasks" ? "☐" : action === "suggest_tags" ? "#" : "—";
 }
 
 function wordCount(content: string) {
