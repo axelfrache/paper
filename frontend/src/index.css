@@ -478,7 +478,7 @@ kbd,
   flex-direction: column;
   gap: 2px;
   overflow-y: auto;
-  padding: 0 8px 12px;
+  padding: 5px 8px 12px;
 }
 
 .note-card {
@@ -771,6 +771,13 @@ kbd,
   font-size: 0.9em;
 }
 
+.markdown-editor-divider-rule {
+  display: block;
+  flex: 1;
+  height: 1px;
+  background: var(--line-control);
+}
+
 .markdown-editor-placeholder {
   position: absolute;
   top: 0;
@@ -882,6 +889,13 @@ kbd,
 
 .markdown-view p {
   margin: 0 0 10px;
+}
+
+.markdown-view hr {
+  height: 1px;
+  border: 0;
+  background: var(--line-control);
+  margin: 14px 0;
 }
 
 .markdown-view h3,

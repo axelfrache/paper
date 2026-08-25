@@ -1,5 +1,8 @@
+import { useEffect, useRef } from "react";
 import { PanelLeftOpen, Search, Star } from "lucide-react";
 import type { Note } from "../types/note";
+
+type NoteDirection = "previous" | "next";
 
 type NotesColumnProps = {
   title: string;
@@ -8,8 +11,12 @@ type NotesColumnProps = {
   selectedIds: string[];
   query: string;
   sidebarHidden: boolean;
+  focusRequest: number;
   onQueryChange: (query: string) => void;
   onSelect: (note: Note, extend: boolean) => void;
+  onNavigate: (direction: NoteDirection, extend: boolean) => void;
+  onFocusTitle: () => void;
+  onFocusContent: () => void;
   onToggleSidebar: () => void;
 };
 
@@ -20,11 +27,34 @@ export function NotesColumn({
   selectedIds,
   query,
   sidebarHidden,
+  focusRequest,
   onQueryChange,
   onSelect,
+  onNavigate,
+  onFocusTitle,
+  onFocusContent,
   onToggleSidebar,
 }: NotesColumnProps) {
   const selected = new Set(selectedIds);
+  const cardRefs = useRef(new Map<string, HTMLButtonElement>());
+  const focusAfterNavigationRef = useRef(false);
+  const handledFocusRequestRef = useRef(0);
+
+  useEffect(() => {
+    const shouldFocusRequest = focusRequest > 0 && handledFocusRequestRef.current !== focusRequest;
+    if ((!focusAfterNavigationRef.current && !shouldFocusRequest) || !activeId) {
+      return;
+    }
+    focusAfterNavigationRef.current = false;
+    if (shouldFocusRequest) {
+      handledFocusRequestRef.current = focusRequest;
+    }
+    window.requestAnimationFrame(() => {
+      const card = cardRefs.current.get(activeId);
+      card?.focus();
+      card?.scrollIntoView({ block: "nearest" });
+    });
+  }, [activeId, focusRequest]);
 
   return (
     <section className="notes-column">
@@ -49,9 +79,34 @@ export function NotesColumn({
         {notes.map((note) => (
           <button
             key={note.id}
+            ref={(element) => {
+              if (element) {
+                cardRefs.current.set(note.id, element);
+              } else {
+                cardRefs.current.delete(note.id);
+              }
+            }}
             className={noteCardClass(note.id, activeId, selected)}
             aria-selected={selected.has(note.id)}
             onClick={(event) => onSelect(note, event.shiftKey)}
+            onKeyDown={(event) => {
+              if ((event.key === "Enter" || event.key === "ArrowRight") && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                event.preventDefault();
+                onFocusContent();
+                return;
+              }
+              if (event.key === "Tab" && !event.shiftKey) {
+                event.preventDefault();
+                onFocusTitle();
+                return;
+              }
+              if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
+                return;
+              }
+              event.preventDefault();
+              focusAfterNavigationRef.current = true;
+              onNavigate(event.key === "ArrowDown" ? "next" : "previous", event.shiftKey);
+            }}
           >
             <div className="note-card-title">
               <strong>{note.title || "Untitled"}</strong>

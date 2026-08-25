@@ -16,6 +16,9 @@ type MarkdownEditorProps = {
   onChange: (value: string) => void;
   onAssist?: (action: AIAction) => void;
   onCaretLineChange?: (line: number) => void;
+  focusRequest?: { key: string; placement: "start" | "end" | "last" } | null;
+  onFocusPrevious?: () => void;
+  onFocusNoteList?: () => void;
   placeholder?: string;
 };
 
@@ -62,6 +65,9 @@ export function MarkdownEditor({
   onChange,
   onAssist,
   onCaretLineChange,
+  focusRequest = null,
+  onFocusPrevious,
+  onFocusNoteList,
   placeholder = "Start writing...",
 }: MarkdownEditorProps) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -70,6 +76,7 @@ export function MarkdownEditor({
   const focusedRef = useRef(false);
   const caretRef = useRef<Caret | null>(null);
   const activeLineRef = useRef(-1);
+  const handledFocusRequestRef = useRef("");
   const [slash, setSlash] = useState<SlashState | null>(null);
 
   useLayoutEffect(() => {
@@ -81,6 +88,31 @@ export function MarkdownEditor({
       onCaretLineChange?.(caretRef.current.line);
     }
   }, [value]);
+
+  useLayoutEffect(() => {
+    if (!focusRequest || handledFocusRequestRef.current === focusRequest.key) {
+      return;
+    }
+
+    handledFocusRequestRef.current = focusRequest.key;
+    const caret = focusCaret(value, caretRef.current, focusRequest.placement);
+    focusedRef.current = true;
+    caretRef.current = caret;
+    activeLineRef.current = caret.line;
+    renderMarkdown(editorRef.current, value, caret.line);
+
+    window.requestAnimationFrame(() => {
+      const editor = editorRef.current;
+      if (!editor) {
+        return;
+      }
+      editor.focus();
+      placeCaret(editor, caret);
+      editor.scrollIntoView({ block: "nearest" });
+      onCaretLineChange?.(caret.line);
+      probeSlash(value, caret);
+    });
+  }, [focusRequest, value]);
 
   useLayoutEffect(() => {
     const body = slashBodyRef.current;
@@ -170,6 +202,35 @@ export function MarkdownEditor({
       }
     }
 
+    if (
+      event.key === "ArrowLeft" &&
+      !meta &&
+      !event.altKey &&
+      !event.shiftKey &&
+      (!selectionRange || isCollapsedRange(selectionRange)) &&
+      caret.line === 0 &&
+      caret.col === 0
+    ) {
+      event.preventDefault();
+      setSlash(null);
+      onFocusNoteList?.();
+      return;
+    }
+
+    if (
+      event.key === "ArrowUp" &&
+      !meta &&
+      !event.altKey &&
+      !event.shiftKey &&
+      (!selectionRange || isCollapsedRange(selectionRange)) &&
+      caret.line === 0
+    ) {
+      event.preventDefault();
+      setSlash(null);
+      onFocusPrevious?.();
+      return;
+    }
+
     if (meta && event.key.toLowerCase() === "a") {
       event.preventDefault();
       const range = fullTextRange(value);
@@ -241,7 +302,10 @@ export function MarkdownEditor({
     activeLineRef.current = -1;
   };
 
-  const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
     const target = event.target instanceof Element ? event.target.closest("[data-check]") : null;
     if (!target) {
       return;
@@ -251,11 +315,15 @@ export function MarkdownEditor({
     if (Number.isNaN(line)) {
       return;
     }
+    toggleTaskLine(line);
+  };
+
+  const toggleTaskLine = (line: number) => {
     const lines = value.split("\n");
     lines[line] = (lines[line] ?? "").replace(/^(-\s\[)([ xX])(\])/, (_, prefix, current, suffix) => {
       return `${prefix}${current.toLowerCase() === "x" ? " " : "x"}${suffix}`;
     });
-    setSource(lines.join("\n"), { line, col: 0 });
+    setSource(lines.join("\n"), focusedRef.current ? caretRef.current : null);
   };
 
   const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
@@ -283,7 +351,7 @@ export function MarkdownEditor({
         onMouseUp={syncActiveLine}
         onFocus={handleFocus}
         onBlur={handleBlur}
-        onClick={handleClick}
+        onPointerDown={handlePointerDown}
         onPaste={handlePaste}
       />
       {!value ? <div className="markdown-editor-placeholder">{placeholder}</div> : null}
@@ -443,10 +511,12 @@ function renderLine(raw: string, active: boolean, index: number) {
   match = /^(-\s\[([ xX])\])(\s+)(.*)$/.exec(raw);
   if (match) {
     const done = match[2].toLowerCase() === "x";
-    const check = active
-      ? syn(match[1] + match[3])
-      : `${deco(`<span data-check="${index}" style="cursor:pointer;font-size:13px;margin-right:8px;color:${done ? "#3f7d58" : "#aeb4ba"};">${done ? "☑" : "☐"}</span>`)}${syn(match[1] + match[3])}`;
+    const check = `${deco(`<span data-check="${index}" style="cursor:pointer;font-size:13px;margin-right:8px;color:${done ? "#3f7d58" : "#aeb4ba"};">${done ? "☑" : "☐"}</span>`)}${syn(match[1] + match[3])}`;
     return `<div data-line="${index}" style="${base}display:flex;align-items:baseline;">${check}<span style="${done ? "color:#a2a8ae;text-decoration:line-through;" : ""}">${inlineMarkdown(match[4], active)}</span></div>`;
+  }
+
+  if (/^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(raw)) {
+    return `<div data-line="${index}" class="markdown-editor-divider" style="${base}display:flex;align-items:center;gap:10px;margin:10px 0;">${syn(raw)}${deco('<span class="markdown-editor-divider-rule"></span>')}</div>`;
   }
 
   match = /^(-|\*)(\s+)(.*)$/.exec(raw);
@@ -672,6 +742,22 @@ function fullTextRange(value: string): TextRange {
     start: { line: 0, col: 0 },
     end: { line: lastLine, col: lines[lastLine]?.length ?? 0 },
   };
+}
+
+function endCaret(value: string): Caret {
+  const lines = value.split("\n");
+  const lastLine = Math.max(0, lines.length - 1);
+  return { line: lastLine, col: lines[lastLine]?.length ?? 0 };
+}
+
+function focusCaret(value: string, current: Caret | null, placement: "start" | "end" | "last"): Caret {
+  if (placement === "start") {
+    return { line: 0, col: 0 };
+  }
+  if (placement === "end") {
+    return endCaret(value);
+  }
+  return current ?? endCaret(value);
 }
 
 function sourceTextLength(node: Node): number {

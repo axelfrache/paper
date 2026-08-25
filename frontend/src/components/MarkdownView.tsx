@@ -12,7 +12,8 @@ type MarkdownBlock =
   | { type: "ul"; items: string[] }
   | { type: "tasks"; items: Array<{ text: string; done: boolean }> }
   | { type: "ol"; items: string[] }
-  | { type: "code"; text: string };
+  | { type: "code"; text: string }
+  | { type: "divider" };
 
 export function MarkdownView({ text, className }: MarkdownViewProps) {
   const blocks = parseBlocks(text);
@@ -62,6 +63,12 @@ function parseBlocks(raw: string): MarkdownBlock[] {
 
     if (!trimmed) {
       flushParagraph();
+      continue;
+    }
+
+    if (/^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)) {
+      flushParagraph();
+      blocks.push({ type: "divider" });
       continue;
     }
 
@@ -160,6 +167,9 @@ function renderBlock(block: MarkdownBlock, index: number) {
         <code>{block.text}</code>
       </pre>
     );
+  }
+  if (block.type === "divider") {
+    return <hr key={index} />;
   }
   if (block.type === "ol") {
     return (

@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { Moon, Search, Star, Sun, Trash2 } from "lucide-react";
 import { MarkdownEditor } from "../components/MarkdownEditor";
 import { MarkdownView } from "../components/MarkdownView";
@@ -13,6 +14,8 @@ type NoteEditorProps = {
   note: Note | null;
   tagDraft: string;
   aiResult: AIResult | null;
+  titleFocusRequest: { noteId: string; token: number } | null;
+  contentFocusRequest: { noteId: string; token: number } | null;
   onTitleChange: (title: string) => void;
   onContentChange: (content: string) => void;
   onTagDraftChange: (tag: string) => void;
@@ -22,6 +25,7 @@ type NoteEditorProps = {
   onDelete: () => void;
   onSearch: () => void;
   onToggleTheme: () => void;
+  onFocusNoteList: () => void;
   onAssist: (action: AIAction) => void;
   onCaretLineChange: (line: number) => void;
   onApplyResult: () => void;
@@ -37,10 +41,17 @@ const aiActions: Array<{ action: AIAction; label: string; hint: string }> = [
   { action: "clean_up", label: "Clean up", hint: "Tidy raw text" },
 ];
 
+type ContentFocusTarget = {
+  key: string;
+  placement: "start" | "end" | "last";
+};
+
 export function NoteEditor({
   note,
   tagDraft,
   aiResult,
+  titleFocusRequest,
+  contentFocusRequest,
   onTitleChange,
   onContentChange,
   onTagDraftChange,
@@ -50,12 +61,73 @@ export function NoteEditor({
   onDelete,
   onSearch,
   onToggleTheme,
+  onFocusNoteList,
   onAssist,
   onCaretLineChange,
   onApplyResult,
   onDismissResult,
   theme,
 }: NoteEditorProps) {
+  const titleRef = useRef<HTMLInputElement | null>(null);
+  const tagInputRef = useRef<HTMLInputElement | null>(null);
+  const handledTitleFocusTokenRef = useRef(0);
+  const handledContentFocusTokenRef = useRef(0);
+  const localContentFocusTokenRef = useRef(0);
+  const [contentFocusTarget, setContentFocusTarget] = useState<ContentFocusTarget | null>(null);
+
+  useEffect(() => {
+    if (
+      !note ||
+      !titleFocusRequest ||
+      titleFocusRequest.noteId !== note.id ||
+      handledTitleFocusTokenRef.current === titleFocusRequest.token
+    ) {
+      return;
+    }
+
+    handledTitleFocusTokenRef.current = titleFocusRequest.token;
+    window.requestAnimationFrame(() => {
+      const title = titleRef.current;
+      if (!title) {
+        return;
+      }
+      title.focus();
+      title.setSelectionRange(title.value.length, title.value.length);
+    });
+  }, [note?.id, titleFocusRequest]);
+
+  useEffect(() => {
+    if (
+      !note ||
+      !contentFocusRequest ||
+      contentFocusRequest.noteId !== note.id ||
+      handledContentFocusTokenRef.current === contentFocusRequest.token
+    ) {
+      return;
+    }
+
+    handledContentFocusTokenRef.current = contentFocusRequest.token;
+    setContentFocusTarget({ key: `external-${contentFocusRequest.token}`, placement: "last" });
+  }, [contentFocusRequest, note?.id]);
+
+  const focusTitleEnd = () => {
+    const title = titleRef.current;
+    if (!title) {
+      return;
+    }
+    title.focus();
+    title.setSelectionRange(title.value.length, title.value.length);
+  };
+
+  const focusTags = () => {
+    tagInputRef.current?.focus();
+  };
+
+  const focusContent = (placement: ContentFocusTarget["placement"]) => {
+    localContentFocusTokenRef.current += 1;
+    setContentFocusTarget({ key: `local-${localContentFocusTokenRef.current}`, placement });
+  };
+
   if (!note) {
     return (
       <main className="editor-shell">
@@ -89,13 +161,43 @@ export function NoteEditor({
       <div className="editor-scroll">
         <div className="editor-document">
           <input
+            ref={titleRef}
             className="editor-title"
             value={note.title}
             onChange={(event) => onTitleChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+                return;
+              }
+              if (event.key === "ArrowLeft" && isInputAtStart(event.currentTarget)) {
+                event.preventDefault();
+                onFocusNoteList();
+              } else if (event.key === "ArrowDown") {
+                event.preventDefault();
+                focusTags();
+              }
+            }}
             placeholder="Untitled"
           />
 
-          <div className="tag-row">
+          <div
+            className="tag-row"
+            onKeyDown={(event) => {
+              if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+                return;
+              }
+              if (event.key === "ArrowUp") {
+                event.preventDefault();
+                focusTitleEnd();
+              } else if (event.key === "ArrowDown") {
+                event.preventDefault();
+                focusContent("start");
+              } else if (event.key === "ArrowLeft" && isTagRowAtStart(event.target)) {
+                event.preventDefault();
+                onFocusNoteList();
+              }
+            }}
+          >
             {note.tags.map((tag) => (
               <button key={tag} className="tag-chip" onClick={() => onRemoveTag(tag)}>
                 <span>#{tag}</span>
@@ -103,6 +205,7 @@ export function NoteEditor({
               </button>
             ))}
             <input
+              ref={tagInputRef}
               value={tagDraft}
               onChange={(event) => onTagDraftChange(event.target.value)}
               onKeyDown={(event) => {
@@ -120,6 +223,9 @@ export function NoteEditor({
             onChange={onContentChange}
             onAssist={onAssist}
             onCaretLineChange={onCaretLineChange}
+            focusRequest={contentFocusTarget}
+            onFocusPrevious={focusTags}
+            onFocusNoteList={onFocusNoteList}
             placeholder="Start writing... press / to insert a block"
           />
 
@@ -256,6 +362,17 @@ function applyLabelForAction(action: AIAction) {
 function wordCount(content: string) {
   const count = content.trim() ? content.trim().split(/\s+/).length : 0;
   return count ? `${count} words` : "";
+}
+
+function isInputAtStart(input: HTMLInputElement) {
+  return input.selectionStart === 0 && input.selectionEnd === 0;
+}
+
+function isTagRowAtStart(target: EventTarget) {
+  if (target instanceof HTMLInputElement) {
+    return isInputAtStart(target);
+  }
+  return target instanceof HTMLElement && Boolean(target.closest(".tag-chip"));
 }
 
 function formatRelative(value: string) {

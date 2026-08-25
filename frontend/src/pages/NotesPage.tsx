@@ -21,6 +21,16 @@ type DeletedNotesAction = {
   index: number;
 };
 
+type TitleFocusRequest = {
+  noteId: string;
+  token: number;
+};
+
+type ContentFocusRequest = {
+  noteId: string;
+  token: number;
+};
+
 const historyLimit = 120;
 
 const emptyDraft: NoteDraft = {
@@ -43,6 +53,9 @@ export function NotesPage() {
   const [theme, setTheme] = useState<Theme>(() => initialTheme());
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const [aiResult, setAIResult] = useState<AIResult | null>(null);
+  const [titleFocusRequest, setTitleFocusRequest] = useState<TitleFocusRequest | null>(null);
+  const [contentFocusRequest, setContentFocusRequest] = useState<ContentFocusRequest | null>(null);
+  const [noteCardFocusRequest, setNoteCardFocusRequest] = useState(0);
   const [askState, setAskState] = useState<{
     status: "idle" | "loading" | "answered";
     answer: string;
@@ -279,6 +292,7 @@ export function NotesPage() {
       setQuery("");
       setTagDraft("");
       setAIResult(null);
+      setNoteCardFocusRequest((request) => request + 1);
       setPaletteOpen(false);
       flash("New note");
     } catch {
@@ -308,6 +322,45 @@ export function NotesPage() {
     },
     [visibleNotes],
   );
+
+  const navigateNote = useCallback(
+    (direction: "previous" | "next", extend = false) => {
+      if (!visibleNotes.length) {
+        return;
+      }
+
+      const activeIndex = activeId ? visibleNotes.findIndex((note) => note.id === activeId) : -1;
+      const fallbackIndex = direction === "next" ? 0 : visibleNotes.length - 1;
+      const nextIndex =
+        activeIndex < 0
+          ? fallbackIndex
+          : Math.max(0, Math.min(visibleNotes.length - 1, activeIndex + (direction === "next" ? 1 : -1)));
+
+      selectNote(visibleNotes[nextIndex], extend);
+    },
+    [activeId, selectNote, visibleNotes],
+  );
+
+  const focusActiveTitle = useCallback(() => {
+    if (!activeId) {
+      return;
+    }
+    setTitleFocusRequest((request) => ({ noteId: activeId, token: (request?.token ?? 0) + 1 }));
+  }, [activeId]);
+
+  const focusActiveContent = useCallback(() => {
+    if (!activeId) {
+      return;
+    }
+    setContentFocusRequest((request) => ({ noteId: activeId, token: (request?.token ?? 0) + 1 }));
+  }, [activeId]);
+
+  const focusActiveNoteCard = useCallback(() => {
+    if (!activeId) {
+      return;
+    }
+    setNoteCardFocusRequest((request) => request + 1);
+  }, [activeId]);
 
   const handleDelete = useCallback(async () => {
     const ids = selectedIds.length ? selectedIds : activeNote ? [activeNote.id] : [];
@@ -491,6 +544,13 @@ export function NotesPage() {
     onToggleTheme: toggleTheme,
     onUndo: undoActive,
     onRedo: redoActive,
+    onNavigateNote: (direction) => {
+      if (!paletteOpen) {
+        navigateNote(direction, false);
+        setNoteCardFocusRequest((request) => request + 1);
+      }
+    },
+    onFocusActiveContent: focusActiveContent,
     onEscape: () => setPaletteOpen(false),
   });
 
@@ -520,8 +580,12 @@ export function NotesPage() {
         selectedIds={selectedIds}
         query={query}
         sidebarHidden={sidebarHidden}
+        focusRequest={noteCardFocusRequest}
         onQueryChange={setQuery}
         onSelect={selectNote}
+        onNavigate={navigateNote}
+        onFocusTitle={focusActiveTitle}
+        onFocusContent={focusActiveContent}
         onToggleSidebar={() => setSidebarHidden(false)}
       />
 
@@ -529,6 +593,8 @@ export function NotesPage() {
         note={activeNote}
         tagDraft={tagDraft}
         aiResult={aiResult}
+        titleFocusRequest={titleFocusRequest}
+        contentFocusRequest={contentFocusRequest}
         onTitleChange={(title) => patchActive({ title })}
         onContentChange={(content) => patchActive({ content })}
         onTagDraftChange={setTagDraft}
@@ -538,6 +604,7 @@ export function NotesPage() {
         onDelete={() => void handleDelete()}
         onSearch={() => openPalette("search")}
         onToggleTheme={toggleTheme}
+        onFocusNoteList={focusActiveNoteCard}
         onAssist={(action) => void runAI(action)}
         onCaretLineChange={(line) => {
           editorLineRef.current = line;

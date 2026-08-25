@@ -10,6 +10,8 @@ type ShortcutHandlers = {
   onToggleTheme: () => void;
   onUndo: () => void;
   onRedo: () => void;
+  onNavigateNote: (direction: "previous" | "next") => void;
+  onFocusActiveContent: () => void;
   onEscape: () => void;
 };
 
@@ -29,6 +31,26 @@ export function useShortcuts(handlers: ShortcutHandlers) {
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
         target instanceof HTMLSelectElement;
+      const contentEditable = target instanceof HTMLElement && Boolean(target.closest("[contenteditable='true']"));
+      const noteCard = target instanceof HTMLElement && Boolean(target.closest(".note-card"));
+      const editorTarget = target instanceof HTMLElement && Boolean(target.closest(".editor-shell"));
+      const editableTarget = textInput || contentEditable;
+      const interactiveTarget =
+        target instanceof HTMLElement &&
+        Boolean(target.closest("button, a, input, textarea, select, [contenteditable='true']"));
+      const idleTarget =
+        target === document.body ||
+        (target instanceof HTMLElement && Boolean(target.closest(".app-shell")) && !interactiveTarget);
+
+      if (!mod && idleTarget && !editableTarget && !noteCard && !editorTarget && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+        event.preventDefault();
+        handlers.onNavigateNote(event.key === "ArrowDown" ? "next" : "previous");
+      }
+
+      if (!mod && idleTarget && !editableTarget && !noteCard && !editorTarget && (event.key === "Enter" || event.key === "ArrowRight")) {
+        event.preventDefault();
+        handlers.onFocusActiveContent();
+      }
 
       if (heldMod && !textInput && event.key.toLowerCase() === "z") {
         event.preventDefault();
