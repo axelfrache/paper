@@ -99,7 +99,7 @@ export function Sidebar({ notes, view, activeTag, hidden, onViewChange, onTagCha
         </div>
         <div>
           <span>Hide sidebar</span>
-          <em>⌘\</em>
+          <em>⌘B</em>
         </div>
       </div>
     </aside>

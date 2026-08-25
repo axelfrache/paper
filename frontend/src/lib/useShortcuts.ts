@@ -97,7 +97,7 @@ export function useShortcuts(handlers: ShortcutHandlers) {
         handlers.onToggleTheme();
       }
 
-      if (mod && event.key === "\\") {
+      if (mod && !event.altKey && !event.shiftKey && !editableTarget && event.key.toLowerCase() === "b") {
         event.preventDefault();
         handlers.onToggleSidebar();
       }
