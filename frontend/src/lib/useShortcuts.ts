@@ -24,6 +24,10 @@ export function useShortcuts(handlers: ShortcutHandlers) {
         modifierHeldRef.current = true;
       }
 
+      if (document.querySelector(".diagram-editor")) {
+        return;
+      }
+
       const mod = event.ctrlKey || event.metaKey;
       const heldMod = mod || modifierHeldRef.current;
       const target = event.target;

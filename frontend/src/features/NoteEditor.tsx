@@ -156,6 +156,14 @@ export function NoteEditor({
     setDiagramEdit({ noteId: note.id, line, diagram });
   };
 
+  const closeDiagram = () => {
+    setDiagramEdit(null);
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active.closest(".markdown-editor")) {
+      active.blur();
+    }
+  };
+
   const changeDiagram = (diagram: Diagram) => {
     if (!diagramEdit) {
       return;
@@ -175,7 +183,7 @@ export function NoteEditor({
     lines.splice(insertAt, 0, "", description, "");
     const nextContent = lines.join("\n");
     latestContentRef.current = nextContent;
-    setDiagramEdit(null);
+    closeDiagram();
     onContentChange(nextContent);
   };
 
@@ -305,7 +313,7 @@ export function NoteEditor({
         <DiagramEditor
           diagram={diagramEdit.diagram}
           onChange={changeDiagram}
-          onClose={() => setDiagramEdit(null)}
+          onClose={closeDiagram}
           onDescribe={describeDiagram}
         />
       ) : null}

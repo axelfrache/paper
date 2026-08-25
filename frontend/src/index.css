@@ -1183,6 +1183,10 @@ kbd,
   cursor: move;
 }
 
+.diagram-edge-hit {
+  cursor: pointer;
+}
+
 .diagram-canvas.is-panning .diagram-node {
   cursor: grab;
 }

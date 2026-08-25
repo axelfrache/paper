@@ -124,6 +124,10 @@ export function createDiagramEdge(from: string, to: string, color: DiagramColor)
   return { id: uniqueId("e"), from, to, color };
 }
 
+export function duplicateDiagramNode(node: DiagramNode, offset = 24): DiagramNode {
+  return { ...node, id: uniqueId("n"), x: node.x + offset, y: node.y + offset };
+}
+
 export function serializeDiagramMarker(diagram: Diagram) {
   return `![diagram:${encodeDiagram(diagram)}]`;
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Box, ChevronDown, Database, Hand, List, Maximize, Minus, MousePointer2, Plus, Server, Square, Trash2, Type, User } from "lucide-react";
+import { ArrowRight, Box, ChevronDown, Copy, Database, Hand, List, Maximize, Minus, MousePointer2, Plus, Server, Square, Trash2, Type, User } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
   createDiagramEdge,
@@ -7,10 +7,11 @@ import {
   describeDiagram,
   diagramKinds,
   diagramPalette,
+  duplicateDiagramNode,
   layoutDiagram,
   screenToDiagramPoint,
 } from "../lib/diagram";
-import type { Diagram, DiagramColor, DiagramKind } from "../lib/diagram";
+import type { Diagram, DiagramColor, DiagramKind, DiagramNode } from "../lib/diagram";
 
 type DiagramTool = "select" | "pan" | "arrow" | DiagramKind;
 
@@ -46,23 +47,27 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
   const svgRef = useRef<SVGSVGElement | null>(null);
   const labelInputRef = useRef<HTMLInputElement | null>(null);
   const diagramRef = useRef(diagram);
+  const clipboardRef = useRef<DiagramNode | null>(null);
   const layoutRef = useRef(layoutDiagram(diagram));
   const fitViewportRef = useRef(defaultViewport);
   const viewportRef = useRef(defaultViewport);
   const [tool, setTool] = useState<DiagramTool>("select");
   const [viewport, setViewportState] = useState(defaultViewport);
+  const [liveDiagram, setLiveDiagram] = useState(diagram);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [elementMenuOpen, setElementMenuOpen] = useState(false);
   const [pendingFromId, setPendingFromId] = useState<string | null>(null);
   const [color, setColor] = useState<DiagramColor>("blue");
-  const layout = layoutDiagram(diagram);
+  const layout = layoutDiagram(liveDiagram);
   layoutRef.current = layout;
-  const selectedNode = diagram.nodes.find((node) => node.id === selectedId) ?? null;
+  const selectedNode = liveDiagram.nodes.find((node) => node.id === selectedId) ?? null;
   const zoom = fitViewportRef.current.width / viewport.width;
 
   useEffect(() => {
     diagramRef.current = diagram;
+    setLiveDiagram(diagram);
   }, [diagram]);
 
   useEffect(() => {
@@ -81,26 +86,43 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
       if (event.key === "Escape") {
         event.preventDefault();
         if (editingId) {
-          setEditingId(null);
+          stopInlineLabelEdit();
           return;
         }
         onClose();
         return;
       }
-      if ((event.key === "Delete" || event.key === "Backspace") && selectedId && !isTypingTarget(event.target)) {
+      if ((event.key === "Delete" || event.key === "Backspace") && (selectedId || selectedEdgeId) && !isTypingTarget(event.target)) {
         event.preventDefault();
         deleteSelected();
+        return;
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c" && selectedId && !isTypingTarget(event.target)) {
+        event.preventDefault();
+        copySelected();
+        return;
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "v" && clipboardRef.current && !isTypingTarget(event.target)) {
+        event.preventDefault();
+        pasteClipboard();
       }
     };
 
     window.addEventListener("keydown", onKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
-  }, [editingId, onClose, selectedId]);
+  }, [editingId, onClose, selectedId, selectedEdgeId]);
 
-  const patchDiagram = (updater: (current: Diagram) => Diagram) => {
+  const patchDiagram =(updater: (current: Diagram) => Diagram, options?: { commit?: boolean }) => {
     const next = updater(diagramRef.current);
     diagramRef.current = next;
-    onChange(next);
+    setLiveDiagram(next);
+    if (options?.commit ?? true) {
+      onChange(next);
+    }
+  };
+
+  const commitDiagram = () => {
+    onChange(diagramRef.current);
   };
 
   const setViewport = (next: EditorViewport) => {
@@ -118,11 +140,12 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
     }
     if (tool === "select" || tool === "arrow") {
       setSelectedId(null);
+      setSelectedEdgeId(null);
       setPendingFromId(null);
       return;
     }
 
-    const point = screenToDiagramPoint(event, event.currentTarget, diagram);
+    const point = screenToDiagramPoint(event, event.currentTarget, diagramRef.current);
     const node = createDiagramNode(tool, point, color);
     patchDiagram((current) => ({ ...current, nodes: [...current.nodes, node] }));
     setSelectedId(node.id);
@@ -158,6 +181,7 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
     }
 
     setSelectedId(nodeId);
+    setSelectedEdgeId(null);
     const svg = svgRef.current;
     const node = diagramRef.current.nodes.find((item) => item.id === nodeId);
     if (!svg || !node) {
@@ -173,17 +197,21 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
         return;
       }
       const point = screenToDiagramPoint(moveEvent, currentSvg, diagramRef.current);
-      patchDiagram((current) => ({
-        ...current,
-        nodes: current.nodes.map((item) =>
-          item.id === nodeId ? { ...item, x: Math.round(point.x + offset.x), y: Math.round(point.y + offset.y) } : item,
-        ),
-      }));
+      patchDiagram(
+        (current) => ({
+          ...current,
+          nodes: current.nodes.map((item) =>
+            item.id === nodeId ? { ...item, x: Math.round(point.x + offset.x), y: Math.round(point.y + offset.y) } : item,
+          ),
+        }),
+        { commit: false },
+      );
     };
 
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      commitDiagram();
     };
 
     window.addEventListener("pointermove", move);
@@ -201,6 +229,7 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
     }
 
     setSelectedId(nodeId);
+    setSelectedEdgeId(null);
     const start = screenToDiagramPoint(event, svg, diagramRef.current);
     const size = sizeForNode(node);
     const base = { w: size.w, h: size.h };
@@ -213,22 +242,46 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
       const point = screenToDiagramPoint(moveEvent, currentSvg, diagramRef.current);
       const width = Math.max(44, Math.round(base.w + point.x - start.x));
       const height = Math.max(28, Math.round(base.h + point.y - start.y));
-      patchDiagram((current) => ({
-        ...current,
-        nodes: current.nodes.map((item) => (item.id === nodeId ? { ...item, w: width, h: height } : item)),
-      }));
+      patchDiagram(
+        (current) => ({
+          ...current,
+          nodes: current.nodes.map((item) => (item.id === nodeId ? { ...item, w: width, h: height } : item)),
+        }),
+        { commit: false },
+      );
     };
 
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      commitDiagram();
     };
 
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
 
+  const handleEdgePointerDown = (event: React.PointerEvent<SVGGElement>, edgeId: string) => {
+    if (tool !== "select") {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    setSelectedEdgeId(edgeId);
+    setSelectedId(null);
+    setPendingFromId(null);
+  };
+
   const deleteSelected = () => {
+    if (selectedEdgeId) {
+      const edgeId = selectedEdgeId;
+      patchDiagram((current) => ({
+        ...current,
+        edges: current.edges.filter((edge) => edge.id !== edgeId),
+      }));
+      setSelectedEdgeId(null);
+      return;
+    }
     const id = selectedId;
     if (!id) {
       return;
@@ -242,19 +295,67 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
     setPendingFromId(null);
   };
 
+  const duplicateSelected = () => {
+    const id = selectedId;
+    if (!id) {
+      return;
+    }
+    const source = diagramRef.current.nodes.find((node) => node.id === id);
+    if (!source) {
+      return;
+    }
+    const clone = duplicateDiagramNode(source);
+    patchDiagram((current) => ({ ...current, nodes: [...current.nodes, clone] }));
+    setSelectedId(clone.id);
+    setSelectedEdgeId(null);
+  };
+
+  const copySelected = () => {
+    const id = selectedId;
+    if (!id) {
+      return;
+    }
+    const source = diagramRef.current.nodes.find((node) => node.id === id);
+    if (!source) {
+      return;
+    }
+    clipboardRef.current = source;
+  };
+
+  const pasteClipboard = () => {
+    const template = clipboardRef.current;
+    if (!template) {
+      return;
+    }
+    const clone = duplicateDiagramNode(template);
+    patchDiagram((current) => ({ ...current, nodes: [...current.nodes, clone] }));
+    clipboardRef.current = clone;
+    setSelectedId(clone.id);
+    setSelectedEdgeId(null);
+  };
+
   const setNodeLabel = (nodeId: string, label: string) => {
-    patchDiagram((current) => ({
-      ...current,
-      nodes: current.nodes.map((node) => (node.id === nodeId ? { ...node, label } : node)),
-    }));
+    patchDiagram(
+      (current) => ({
+        ...current,
+        nodes: current.nodes.map((node) => (node.id === nodeId ? { ...node, label } : node)),
+      }),
+      { commit: false },
+    );
   };
 
   const startInlineLabelEdit = (event: React.MouseEvent<SVGGElement>, nodeId: string) => {
     event.preventDefault();
     event.stopPropagation();
     setSelectedId(nodeId);
+    setSelectedEdgeId(null);
     setEditingId(nodeId);
     setTool("select");
+  };
+
+  const stopInlineLabelEdit = () => {
+    setEditingId(null);
+    commitDiagram();
   };
 
   const applyColor = (nextColor: DiagramColor) => {
@@ -325,11 +426,11 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
       <header className="diagram-editor-topbar">
         <strong>Diagram</strong>
         <button className="diagram-editor-mode" onClick={toggleMode}>
-          {diagram.mode === "iso" ? "Isometric" : "Flat"}
+          {liveDiagram.mode === "iso" ? "Isometric" : "Flat"}
         </button>
         <span>{hintForTool(tool, pendingFromId)}</span>
         <div>
-          <button className="topbar-button" onClick={() => onDescribe(describeDiagram(diagram))}>
+          <button className="topbar-button" onClick={() => onDescribe(describeDiagram(liveDiagram))}>
             Describe in words
           </button>
           <button className="topbar-button strong" onClick={onClose}>
@@ -363,14 +464,20 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
           </defs>
 
           {layout.edges.map((edge) => (
-            <path
+            <g
               key={edge.id}
-              d={edge.d}
-              fill="none"
-              stroke={edge.color}
-              strokeWidth="1.6"
-              markerEnd={edge.marker.replace("#diagram-arrow-", "#diagram-editor-arrow-")}
-            />
+              className={tool === "select" ? "diagram-edge-hit" : undefined}
+              onPointerDown={(event) => handleEdgePointerDown(event, edge.id)}
+            >
+              <path d={edge.d} fill="none" stroke="transparent" strokeWidth="14" />
+              <path
+                d={edge.d}
+                fill="none"
+                stroke={selectedEdgeId === edge.id ? "var(--accent)" : edge.color}
+                strokeWidth={selectedEdgeId === edge.id ? "2.4" : "1.6"}
+                markerEnd={edge.marker.replace("#diagram-arrow-", "#diagram-editor-arrow-")}
+              />
+            </g>
           ))}
 
           {layout.nodes.map((node) => (
@@ -395,18 +502,18 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
                     className="diagram-inline-label-input"
                     value={node.label}
                     onChange={(event) => setNodeLabel(node.id, event.target.value)}
-                    onBlur={() => setEditingId(null)}
+                    onBlur={stopInlineLabelEdit}
                     onPointerDown={(event) => {
                       event.stopPropagation();
                     }}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
                         event.preventDefault();
-                        setEditingId(null);
+                        stopInlineLabelEdit();
                       }
                       if (event.key === "Escape") {
                         event.preventDefault();
-                        setEditingId(null);
+                        stopInlineLabelEdit();
                       }
                     }}
                   />
@@ -527,9 +634,22 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
           <aside className="diagram-inspector">
             <strong>Selected</strong>
             <div className="diagram-inspector-meta">{diagramKinds[selectedNode.kind].cap || "Text"}</div>
+            <button onClick={duplicateSelected}>
+              <Copy size={14} strokeWidth={1.9} />
+              Duplicate
+            </button>
             <button onClick={deleteSelected}>
               <Trash2 size={14} strokeWidth={1.9} />
               Delete node
+            </button>
+          </aside>
+        ) : selectedEdgeId ? (
+          <aside className="diagram-inspector">
+            <strong>Selected</strong>
+            <div className="diagram-inspector-meta">Connection</div>
+            <button onClick={deleteSelected}>
+              <Trash2 size={14} strokeWidth={1.9} />
+              Delete connection
             </button>
           </aside>
         ) : null}

@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -64,7 +66,59 @@ func (s *Note) AssistNote(ctx context.Context, id string, action domain.AIAction
 	if err != nil {
 		return domain.AISuggestion{}, err
 	}
+
+	if action == domain.AIActionCleanUp || action == domain.AIActionImproveClarity {
+		return s.assistPreservingDiagrams(ctx, note, action)
+	}
 	return s.assistant.Assist(ctx, note, action)
+}
+
+func (s *Note) assistPreservingDiagrams(ctx context.Context, note domain.Note, action domain.AIAction) (domain.AISuggestion, error) {
+	masked, diagrams := maskDiagramMarkers(note.Content)
+	if len(diagrams) == 0 {
+		return s.assistant.Assist(ctx, note, action)
+	}
+
+	maskedNote := note
+	maskedNote.Content = masked
+	suggestion, err := s.assistant.Assist(ctx, maskedNote, action)
+	if err != nil {
+		return domain.AISuggestion{}, err
+	}
+
+	suggestion.Text = unmaskDiagramMarkers(suggestion.Text, diagrams)
+	return suggestion, nil
+}
+
+var diagramMarkerPattern = regexp.MustCompile(`^!\[diagram:[A-Za-z0-9_-]+\]$`)
+
+func maskDiagramMarkers(content string) (string, []string) {
+	lines := strings.Split(content, "\n")
+	var diagrams []string
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if diagramMarkerPattern.MatchString(trimmed) {
+			diagrams = append(diagrams, trimmed)
+			lines[i] = diagramPlaceholder(len(diagrams) - 1)
+		}
+	}
+	return strings.Join(lines, "\n"), diagrams
+}
+
+func unmaskDiagramMarkers(text string, diagrams []string) string {
+	for i, marker := range diagrams {
+		placeholder := diagramPlaceholder(i)
+		if strings.Contains(text, placeholder) {
+			text = strings.Replace(text, placeholder, marker, 1)
+			continue
+		}
+		text = strings.TrimRight(text, "\n") + "\n\n" + marker
+	}
+	return text
+}
+
+func diagramPlaceholder(index int) string {
+	return fmt.Sprintf("[DIAGRAM PLACEHOLDER #%d — DO NOT MODIFY, TRANSLATE, OR REMOVE THIS LINE]", index)
 }
 
 func (s *Note) AskNotes(ctx context.Context, req domain.AskRequest) (domain.AskAnswer, error) {
