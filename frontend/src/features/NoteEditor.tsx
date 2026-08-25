@@ -1,4 +1,4 @@
-import { Search, Star, Trash2 } from "lucide-react";
+import { Moon, Search, Star, Sun, Trash2 } from "lucide-react";
 import { MarkdownEditor } from "../components/MarkdownEditor";
 import { MarkdownView } from "../components/MarkdownView";
 import type { AIAction, Note } from "../types/note";
@@ -21,9 +21,11 @@ type NoteEditorProps = {
   onToggleFavorite: () => void;
   onDelete: () => void;
   onSearch: () => void;
+  onToggleTheme: () => void;
   onAssist: (action: AIAction) => void;
   onApplyResult: () => void;
   onDismissResult: () => void;
+  theme: "light" | "dark";
 };
 
 const aiActions: Array<{ action: AIAction; label: string; hint: string }> = [
@@ -46,13 +48,25 @@ export function NoteEditor({
   onToggleFavorite,
   onDelete,
   onSearch,
+  onToggleTheme,
   onAssist,
   onApplyResult,
   onDismissResult,
+  theme,
 }: NoteEditorProps) {
   if (!note) {
     return (
       <main className="editor-shell">
+        <EditorTopbar
+          label="No note selected"
+          favorite={false}
+          disabledNoteActions
+          onToggleFavorite={onToggleFavorite}
+          onToggleTheme={onToggleTheme}
+          onSearch={onSearch}
+          onDelete={onDelete}
+          theme={theme}
+        />
         <div className="empty-editor">Select or create a note.</div>
       </main>
     );
@@ -60,23 +74,15 @@ export function NoteEditor({
 
   return (
     <main className="editor-shell">
-      <header className="editor-topbar">
-        <span>Edited {formatRelative(note.updatedAt)}</span>
-        <div>
-          <button className={note.favorite ? "topbar-button favorite" : "topbar-button"} onClick={onToggleFavorite}>
-            <Star size={14} fill={note.favorite ? "currentColor" : "none"} strokeWidth={1.9} />
-            Favorite
-          </button>
-          <button className="topbar-button" onClick={onSearch}>
-            <Search size={14} strokeWidth={1.9} />
-            Search <kbd>⌘K</kbd>
-          </button>
-          <button className="topbar-button danger" onClick={onDelete}>
-            <Trash2 size={14} strokeWidth={1.9} />
-            Delete
-          </button>
-        </div>
-      </header>
+      <EditorTopbar
+        label={`Edited ${formatRelative(note.updatedAt)}`}
+        favorite={note.favorite}
+        onToggleFavorite={onToggleFavorite}
+        onToggleTheme={onToggleTheme}
+        onSearch={onSearch}
+        onDelete={onDelete}
+        theme={theme}
+      />
 
       <div className="editor-scroll">
         <div className="editor-document">
@@ -133,6 +139,58 @@ export function NoteEditor({
         <span>{wordCount(note.content)}</span>
       </footer>
     </main>
+  );
+}
+
+function EditorTopbar({
+  label,
+  favorite,
+  disabledNoteActions = false,
+  onToggleFavorite,
+  onToggleTheme,
+  onSearch,
+  onDelete,
+  theme,
+}: {
+  label: string;
+  favorite: boolean;
+  disabledNoteActions?: boolean;
+  onToggleFavorite: () => void;
+  onToggleTheme: () => void;
+  onSearch: () => void;
+  onDelete: () => void;
+  theme: "light" | "dark";
+}) {
+  return (
+    <header className="editor-topbar">
+      <span>{label}</span>
+      <div>
+        <button
+          className={favorite ? "topbar-button favorite" : "topbar-button"}
+          onClick={onToggleFavorite}
+          disabled={disabledNoteActions}
+        >
+          <Star size={14} fill={favorite ? "currentColor" : "none"} strokeWidth={1.9} />
+          Favorite
+        </button>
+        <button
+          className="topbar-icon-button"
+          onClick={onToggleTheme}
+          title={`${theme === "dark" ? "Switch to light" : "Switch to dark"}  ⌘⇧L`}
+          aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+        >
+          {theme === "dark" ? <Sun size={14} strokeWidth={1.9} /> : <Moon size={14} strokeWidth={1.9} />}
+        </button>
+        <button className="topbar-button" onClick={onSearch}>
+          <Search size={14} strokeWidth={1.9} />
+          Search <kbd>⌘K</kbd>
+        </button>
+        <button className="topbar-button danger" onClick={onDelete} disabled={disabledNoteActions}>
+          <Trash2 size={14} strokeWidth={1.9} />
+          Delete
+        </button>
+      </div>
+    </header>
   );
 }
 

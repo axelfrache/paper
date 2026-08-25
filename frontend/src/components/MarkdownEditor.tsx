@@ -5,6 +5,11 @@ type Caret = {
   col: number;
 };
 
+type TextRange = {
+  start: Caret;
+  end: Caret;
+};
+
 type MarkdownEditorProps = {
   value: string;
   onChange: (value: string) => void;
@@ -28,7 +33,13 @@ export function MarkdownEditor({ value, onChange, placeholder = "Start writing..
   }, [value]);
 
   const syncActiveLine = () => {
-    const caret = getCaret(editorRef.current);
+    const range = getSelectionRange(editorRef.current);
+    if (range && !isCollapsedRange(range)) {
+      caretRef.current = range.end;
+      return;
+    }
+
+    const caret = range?.end ?? getCaret(editorRef.current);
     if (!caret) {
       return;
     }
@@ -52,43 +63,62 @@ export function MarkdownEditor({ value, onChange, placeholder = "Start writing..
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const meta = event.metaKey || event.ctrlKey;
-    const caret = getCaret(editorRef.current);
+    const selectionRange = getSelectionRange(editorRef.current);
+    const caret = selectionRange?.end ?? getCaret(editorRef.current);
     if (!caret) {
+      return;
+    }
+
+    if (meta && event.key.toLowerCase() === "a") {
+      event.preventDefault();
+      const range = fullTextRange(value);
+      caretRef.current = range.end;
+      placeSelection(editorRef.current, range);
       return;
     }
 
     if (meta && ["b", "i"].includes(event.key.toLowerCase())) {
       event.preventDefault();
       const mark = event.key.toLowerCase() === "b" ? "**" : "*";
-      const next = wrapSelection(value, caret, mark);
+      const next = wrapSelection(value, selectionRange ?? { start: caret, end: caret }, mark);
       setSource(next.value, next.caret);
       return;
     }
 
     if (!meta && !event.altKey && !event.nativeEvent.isComposing && event.key.length === 1) {
       event.preventDefault();
-      const next = insertText(value, caret, event.key);
+      const next = insertText(value, selectionRange ?? { start: caret, end: caret }, event.key);
       setSource(next.value, next.caret);
       return;
     }
 
     if (event.key === "Enter") {
       event.preventDefault();
-      const next = insertLineBreak(value, caret);
+      const next = selectionRange && !isCollapsedRange(selectionRange)
+        ? insertText(value, selectionRange, "\n")
+        : insertLineBreak(value, caret);
       setSource(next.value, next.caret);
       return;
     }
 
     if (event.key === "Backspace") {
       event.preventDefault();
-      const next = deleteBackward(value, caret);
+      const next = selectionRange && !isCollapsedRange(selectionRange)
+        ? deleteRange(value, selectionRange)
+        : event.ctrlKey || event.altKey
+          ? deleteBackwardWord(value, caret)
+          : deleteBackward(value, caret);
       setSource(next.value, next.caret);
       return;
     }
 
     if (event.key === "Delete") {
       event.preventDefault();
-      const next = deleteForward(value, caret);
+      const next = selectionRange && !isCollapsedRange(selectionRange)
+        ? deleteRange(value, selectionRange)
+        : event.ctrlKey || event.altKey
+          ? deleteForwardWord(value, caret)
+          : deleteForward(value, caret);
       setSource(next.value, next.caret);
     }
   };
@@ -129,7 +159,7 @@ export function MarkdownEditor({ value, onChange, placeholder = "Start writing..
     event.preventDefault();
     const text = event.clipboardData.getData("text/plain");
     const caret = getCaret(editorRef.current) ?? { line: 0, col: 0 };
-    const next = insertText(value, caret, text);
+    const next = insertText(value, getSelectionRange(editorRef.current) ?? { start: caret, end: caret }, text);
     setSource(next.value, next.caret);
   };
 
@@ -266,7 +296,38 @@ function getCaret(el: HTMLDivElement | null): Caret | null {
   if (!el || !selection || !selection.rangeCount || !selection.focusNode) {
     return null;
   }
-  const node = selection.focusNode;
+  return pointToCaret(el, selection.focusNode, selection.focusOffset);
+}
+
+function getSelectionRange(el: HTMLDivElement | null): TextRange | null {
+  const selection = window.getSelection();
+  if (!el || !selection || !selection.rangeCount || !selection.anchorNode || !selection.focusNode) {
+    return null;
+  }
+  const anchor = pointToCaret(el, selection.anchorNode, selection.anchorOffset);
+  const focus = pointToCaret(el, selection.focusNode, selection.focusOffset);
+  if (!anchor || !focus) {
+    return null;
+  }
+  return normalizeRange({ start: anchor, end: focus });
+}
+
+function pointToCaret(el: HTMLDivElement, node: Node, offset: number): Caret | null {
+  if (node === el) {
+    const lines = lineElements(el);
+    if (lines.length === 0) {
+      return { line: 0, col: 0 };
+    }
+    if (offset <= 0) {
+      return { line: Number(lines[0].getAttribute("data-line")), col: 0 };
+    }
+    if (offset >= lines.length) {
+      const last = lines[lines.length - 1];
+      return { line: Number(last.getAttribute("data-line")), col: lineLength(last) };
+    }
+    return { line: Number(lines[offset].getAttribute("data-line")), col: 0 };
+  }
+
   const host = node.nodeType === Node.TEXT_NODE ? node.parentElement : node instanceof Element ? node : null;
   if (!host || !el.contains(host)) {
     return null;
@@ -275,16 +336,63 @@ function getCaret(el: HTMLDivElement | null): Caret | null {
   if (!lineEl) {
     return null;
   }
+  const line = Number(lineEl.getAttribute("data-line"));
+
+  if (node.nodeType !== Node.TEXT_NODE) {
+    let col = 0;
+    const children = Array.from(node.childNodes);
+    for (const child of children.slice(0, offset)) {
+      col += sourceTextLength(child);
+    }
+    let current: Node = node;
+    while (current !== lineEl) {
+      let previous = current.previousSibling;
+      while (previous) {
+        col += sourceTextLength(previous);
+        previous = previous.previousSibling;
+      }
+      current = current.parentNode ?? lineEl;
+    }
+    return { line, col };
+  }
+
   let col = 0;
   const nodes = lineNodes(lineEl);
   for (const textNode of nodes) {
     if (textNode === node) {
-      col += caretOffsetInNode(nodes, textNode, selection.focusOffset);
-      return { line: Number(lineEl.getAttribute("data-line")), col };
+      col += caretOffsetInNode(nodes, textNode, offset);
+      return { line, col };
     }
     col += textNode.nodeValue?.length ?? 0;
   }
-  return { line: Number(lineEl.getAttribute("data-line")), col };
+  return { line, col };
+}
+
+function lineElements(el: HTMLDivElement) {
+  return Array.from(el.querySelectorAll("[data-line]"));
+}
+
+function lineLength(lineEl: Element) {
+  return lineNodes(lineEl).reduce((length, node) => length + (node.nodeValue?.length ?? 0), 0);
+}
+
+function fullTextRange(value: string): TextRange {
+  const lines = value.split("\n");
+  const lastLine = Math.max(0, lines.length - 1);
+  return {
+    start: { line: 0, col: 0 },
+    end: { line: lastLine, col: lines[lastLine]?.length ?? 0 },
+  };
+}
+
+function sourceTextLength(node: Node): number {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return node.nodeValue?.length ?? 0;
+  }
+  if (node instanceof HTMLElement && node.dataset.deco) {
+    return 0;
+  }
+  return Array.from(node.childNodes).reduce((length, child) => length + sourceTextLength(child), 0);
 }
 
 function caretOffsetInNode(nodes: Text[], node: Text, offset: number) {
@@ -311,62 +419,131 @@ function placeCaret(el: HTMLDivElement | null, caret: Caret) {
   if (!el) {
     return;
   }
-  const lineEl = el.querySelector(`[data-line="${caret.line}"]`);
-  if (!lineEl) {
+  const point = domPointForCaret(el, caret);
+  if (!point) {
     return;
   }
-  const nodes = lineNodes(lineEl);
   const range = document.createRange();
-  if (nodes.length === 0) {
-    range.setStart(lineEl, 0);
-  } else {
-    let left = caret.col;
-    let target = nodes[nodes.length - 1];
-    let offset = target.nodeValue?.length ?? 0;
-    for (const node of nodes) {
-      const length = node.nodeValue?.length ?? 0;
-      if (left <= length) {
-        target = node;
-        offset = left;
-        break;
-      }
-      left -= length;
-    }
-    range.setStart(target, offset);
-  }
+  range.setStart(point.node, point.offset);
   range.collapse(true);
   const selection = window.getSelection();
   selection?.removeAllRanges();
   selection?.addRange(range);
 }
 
-function wrapSelection(value: string, caret: Caret, mark: string) {
-  const lines = value.split("\n");
-  const line = lines[caret.line] ?? "";
-  const selection = window.getSelection();
-  let start = caret.col;
-  let end = caret.col;
-  if (selection && !selection.isCollapsed && selection.anchorNode) {
-    const host = selection.anchorNode.nodeType === Node.TEXT_NODE ? selection.anchorNode.parentElement : selection.anchorNode instanceof Element ? selection.anchorNode : null;
-    const lineEl = host?.closest("[data-line]");
-    if (lineEl && Number(lineEl.getAttribute("data-line")) === caret.line) {
-      let anchorCol = 0;
-      const nodes = lineNodes(lineEl);
-      for (const node of nodes) {
-        if (node === selection.anchorNode) {
-          anchorCol += caretOffsetInNode(nodes, node, selection.anchorOffset);
-          break;
-        }
-        anchorCol += node.nodeValue?.length ?? 0;
-      }
-      start = Math.min(anchorCol, caret.col);
-      end = Math.max(anchorCol, caret.col);
-    }
+function placeSelection(el: HTMLDivElement | null, range: TextRange) {
+  if (!el) {
+    return;
   }
-  lines[caret.line] = line.slice(0, start) + mark + line.slice(start, end) + mark + line.slice(end);
+  const start = domPointForCaret(el, range.start);
+  const end = domPointForCaret(el, range.end);
+  if (!start || !end) {
+    return;
+  }
+  const domRange = document.createRange();
+  domRange.setStart(start.node, start.offset);
+  domRange.setEnd(end.node, end.offset);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(domRange);
+}
+
+function domPointForCaret(el: HTMLDivElement, caret: Caret) {
+  const lineEl = el.querySelector(`[data-line="${caret.line}"]`);
+  if (!lineEl) {
+    return null;
+  }
+  const nodes = lineNodes(lineEl);
+  if (nodes.length === 0) {
+    return { node: lineEl, offset: 0 };
+  }
+  let left = caret.col;
+  let target = nodes[nodes.length - 1];
+  let offset = target.nodeValue?.length ?? 0;
+  for (const node of nodes) {
+    const length = node.nodeValue?.length ?? 0;
+    if (left <= length) {
+      target = node;
+      offset = left;
+      break;
+    }
+    left -= length;
+  }
+  return { node: target, offset };
+}
+
+function wrapSelection(value: string, range: TextRange, mark: string) {
+  const lines = value.split("\n");
+  range = normalizeRange(range);
+  if (range.start.line !== range.end.line) {
+    const selected = selectedText(value, range);
+    return replaceRange(value, range, mark + selected + mark);
+  }
+  const line = lines[range.start.line] ?? "";
+  lines[range.start.line] = line.slice(0, range.start.col) + mark + line.slice(range.start.col, range.end.col) + mark + line.slice(range.end.col);
   return {
     value: lines.join("\n"),
-    caret: { line: caret.line, col: start === end ? start + mark.length : end + mark.length * 2 },
+    caret: {
+      line: range.start.line,
+      col: isCollapsedRange(range) ? range.start.col + mark.length : range.end.col + mark.length * 2,
+    },
+  };
+}
+
+function normalizeRange(range: TextRange): TextRange {
+  return compareCarets(range.start, range.end) <= 0 ? range : { start: range.end, end: range.start };
+}
+
+function compareCarets(a: Caret, b: Caret) {
+  if (a.line !== b.line) {
+    return a.line - b.line;
+  }
+  return a.col - b.col;
+}
+
+function isCollapsedRange(range: TextRange) {
+  return range.start.line === range.end.line && range.start.col === range.end.col;
+}
+
+function selectedText(value: string, range: TextRange) {
+  range = normalizeRange(range);
+  const lines = value.split("\n");
+  if (range.start.line === range.end.line) {
+    return (lines[range.start.line] ?? "").slice(range.start.col, range.end.col);
+  }
+  return [
+    (lines[range.start.line] ?? "").slice(range.start.col),
+    ...lines.slice(range.start.line + 1, range.end.line),
+    (lines[range.end.line] ?? "").slice(0, range.end.col),
+  ].join("\n");
+}
+
+function replaceRange(value: string, range: TextRange, text: string) {
+  range = normalizeRange(range);
+  const lines = value.split("\n");
+  const startLine = lines[range.start.line] ?? "";
+  const endLine = lines[range.end.line] ?? "";
+  const chunks = text.split("\n");
+  const before = startLine.slice(0, range.start.col);
+  const after = endLine.slice(range.end.col);
+
+  if (chunks.length === 1) {
+    lines.splice(range.start.line, range.end.line - range.start.line + 1, before + chunks[0] + after);
+    return {
+      value: lines.join("\n"),
+      caret: { line: range.start.line, col: before.length + chunks[0].length },
+    };
+  }
+
+  const replacement = [
+    before + chunks[0],
+    ...chunks.slice(1, -1),
+    chunks[chunks.length - 1] + after,
+  ];
+  lines.splice(range.start.line, range.end.line - range.start.line + 1, ...replacement);
+  return {
+    value: lines.join("\n"),
+    caret: { line: range.start.line + chunks.length - 1, col: chunks[chunks.length - 1].length },
   };
 }
 
@@ -424,22 +601,81 @@ function deleteForward(value: string, caret: Caret) {
   return { value: lines.join("\n"), caret };
 }
 
-function insertText(value: string, caret: Caret, text: string) {
+function deleteRange(value: string, range: TextRange) {
+  return replaceRange(value, range, "");
+}
+
+function deleteBackwardWord(value: string, caret: Caret) {
+  const start = previousWordCaret(value, caret);
+  if (compareCarets(start, caret) === 0) {
+    return deleteBackward(value, caret);
+  }
+  return deleteRange(value, { start, end: caret });
+}
+
+function deleteForwardWord(value: string, caret: Caret) {
+  const end = nextWordCaret(value, caret);
+  if (compareCarets(caret, end) === 0) {
+    return deleteForward(value, caret);
+  }
+  return deleteRange(value, { start: caret, end });
+}
+
+function previousWordCaret(value: string, caret: Caret): Caret {
   const lines = value.split("\n");
   const current = lines[caret.line] ?? "";
-  const chunks = normalizeMarkdownText(text).split("\n");
-  const before = current.slice(0, caret.col);
-  const after = current.slice(caret.col);
-  if (chunks.length === 1) {
-    lines[caret.line] = before + chunks[0] + after;
-    return { value: lines.join("\n"), caret: { line: caret.line, col: caret.col + chunks[0].length } };
+  if (caret.col === 0) {
+    if (caret.line === 0) {
+      return caret;
+    }
+    return { line: caret.line - 1, col: lines[caret.line - 1]?.length ?? 0 };
   }
-  const inserted = [before + chunks[0], ...chunks.slice(1, -1), chunks[chunks.length - 1] + after];
-  lines.splice(caret.line, 1, ...inserted);
-  return {
-    value: lines.join("\n"),
-    caret: { line: caret.line + chunks.length - 1, col: chunks[chunks.length - 1].length },
-  };
+
+  let col = caret.col;
+  while (col > 0 && /\s/u.test(current[col - 1])) {
+    col -= 1;
+  }
+  if (col === 0) {
+    return { line: caret.line, col };
+  }
+  const word = isWordChar(current[col - 1]);
+  while (col > 0 && isWordChar(current[col - 1]) === word && !/\s/u.test(current[col - 1])) {
+    col -= 1;
+  }
+  return { line: caret.line, col };
+}
+
+function nextWordCaret(value: string, caret: Caret): Caret {
+  const lines = value.split("\n");
+  const current = lines[caret.line] ?? "";
+  if (caret.col >= current.length) {
+    if (caret.line >= lines.length - 1) {
+      return caret;
+    }
+    return { line: caret.line + 1, col: 0 };
+  }
+
+  let col = caret.col;
+  while (col < current.length && /\s/u.test(current[col])) {
+    col += 1;
+  }
+  if (col >= current.length) {
+    return { line: caret.line, col };
+  }
+  const word = isWordChar(current[col]);
+  while (col < current.length && isWordChar(current[col]) === word && !/\s/u.test(current[col])) {
+    col += 1;
+  }
+  return { line: caret.line, col };
+}
+
+function isWordChar(char: string) {
+  return /[\p{L}\p{N}_]/u.test(char);
+}
+
+function insertText(value: string, range: TextRange, text: string) {
+  const chunks = normalizeMarkdownText(text).split("\n");
+  return replaceRange(value, range, chunks.join("\n"));
 }
 
 function normalizeMarkdownText(text: string) {

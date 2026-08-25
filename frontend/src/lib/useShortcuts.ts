@@ -6,6 +6,7 @@ type ShortcutHandlers = {
   onCreateNote: () => void;
   onToggleFavorite: () => void;
   onToggleSidebar: () => void;
+  onToggleTheme: () => void;
   onEscape: () => void;
 };
 
@@ -31,6 +32,11 @@ export function useShortcuts(handlers: ShortcutHandlers) {
       if (mod && event.key.toLowerCase() === "d") {
         event.preventDefault();
         handlers.onToggleFavorite();
+      }
+
+      if (mod && event.shiftKey && event.key.toLowerCase() === "l") {
+        event.preventDefault();
+        handlers.onToggleTheme();
       }
 
       if (mod && event.key === "\\") {

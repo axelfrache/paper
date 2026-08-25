@@ -28,7 +28,8 @@ export function Sidebar({ notes, view, activeTag, hidden, onViewChange, onTagCha
   return (
     <aside className={hidden ? "sidebar is-hidden" : "sidebar"}>
       <div className="brand">
-        <img className="brand-lockup" src="/paper-lockup.svg" alt="Paper" />
+        <img className="brand-lockup brand-lockup-light" src="/paper-lockup.svg" alt="Paper" />
+        <img className="brand-lockup brand-lockup-dark" src="/paper-lockup-dark.svg" alt="Paper" />
         <button className="collapse-button" onClick={onToggleCollapse} aria-label="Collapse navigation">
           <PanelLeftClose size={15} strokeWidth={1.9} />
         </button>
@@ -87,6 +88,10 @@ export function Sidebar({ notes, view, activeTag, hidden, onViewChange, onTagCha
         <div>
           <span>Ask my notes</span>
           <em>⌘⇧K</em>
+        </div>
+        <div>
+          <span>Light / dark</span>
+          <em>⌘⇧L</em>
         </div>
         <div>
           <span>Hide sidebar</span>

@@ -9,6 +9,8 @@ import { askNotes, assistNote, createNote, deleteNote, listNotes, updateNote } f
 import { useShortcuts } from "../lib/useShortcuts";
 import type { AIAction, AskAnswer, Note, NoteDraft } from "../types/note";
 
+type Theme = "light" | "dark";
+
 const emptyDraft: NoteDraft = {
   title: "",
   content: "",
@@ -25,6 +27,7 @@ export function NotesPage() {
   const [tagDraft, setTagDraft] = useState("");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteMode, setPaletteMode] = useState<PaletteMode>("search");
+  const [theme, setTheme] = useState<Theme>(() => initialTheme());
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const [aiResult, setAIResult] = useState<AIResult | null>(null);
   const [askState, setAskState] = useState<{
@@ -35,6 +38,15 @@ export function NotesPage() {
   const [toast, setToast] = useState("");
   const saveTimers = useRef(new Map<string, number>());
   const toastTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    try {
+      localStorage.setItem("paper.theme", theme);
+    } catch {
+      // Ignore storage failures, the active document theme still updates.
+    }
+  }, [theme]);
 
   useEffect(() => {
     const load = async () => {
@@ -160,6 +172,10 @@ export function NotesPage() {
     patchActive({ favorite: !activeNote.favorite });
     flash(activeNote.favorite ? "Removed from favorites" : "Added to favorites");
   }, [activeNote, patchActive, flash]);
+
+  const toggleTheme = useCallback(() => {
+    setTheme((current) => (current === "dark" ? "light" : "dark"));
+  }, []);
 
   const addTag = useCallback(() => {
     if (!activeNote) {
@@ -293,6 +309,7 @@ export function NotesPage() {
     onCreateNote: () => void handleNew(),
     onToggleFavorite: toggleFavorite,
     onToggleSidebar: () => setSidebarHidden((hidden) => !hidden),
+    onToggleTheme: toggleTheme,
     onEscape: () => setPaletteOpen(false),
   });
 
@@ -338,9 +355,11 @@ export function NotesPage() {
         onToggleFavorite={toggleFavorite}
         onDelete={() => void handleDelete()}
         onSearch={() => openPalette("search")}
+        onToggleTheme={toggleTheme}
         onAssist={(action) => void runAI(action)}
         onApplyResult={applyAIResult}
         onDismissResult={() => setAIResult(null)}
+        theme={theme}
       />
 
       <CommandPalette
@@ -380,6 +399,18 @@ function titleForView(view: ViewKey) {
 
 function hasTask(content: string) {
   return /☐|\b(todo|buy|call|book|fix|send|write|ask|get|need)\b/i.test(content);
+}
+
+function initialTheme(): Theme {
+  try {
+    const saved = localStorage.getItem("paper.theme");
+    if (saved === "light" || saved === "dark") {
+      return saved;
+    }
+  } catch {
+    // Fall back to system preference when storage is unavailable.
+  }
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 function normalizeTag(tag: string) {

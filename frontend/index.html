@@ -6,6 +6,17 @@
     <link rel="icon" type="image/svg+xml" href="/paper-appicon.svg" />
     <link rel="apple-touch-icon" href="/paper-appicon.svg" />
     <title>Paper</title>
+    <script>
+      (() => {
+        try {
+          const saved = localStorage.getItem("paper.theme");
+          const system = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          document.documentElement.dataset.theme = saved === "light" || saved === "dark" ? saved : system;
+        } catch {
+          document.documentElement.dataset.theme = "light";
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
