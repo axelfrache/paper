@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <title>Paper — app icon</title>
+  <rect width="512" height="512" rx="114" fill="#16181B"></rect>
+  <g transform="translate(128 128) scale(2.6667)">
+    <path d="M20 10h38l18 18v58H20z" fill="#FFFFFF"></path>
+    <path d="M58 10l18 18H58z" fill="#2F6FD0"></path>
+    <circle cx="48" cy="52" r="7.5" fill="#16181B"></circle>
+  </g>
+</svg>

@@ -28,10 +28,7 @@ export function Sidebar({ notes, view, activeTag, hidden, onViewChange, onTagCha
   return (
     <aside className={hidden ? "sidebar is-hidden" : "sidebar"}>
       <div className="brand">
-        <span className="brand-mark">
-          <img src="/paper.png" alt="" />
-        </span>
-        <strong>Paper</strong>
+        <img className="brand-lockup" src="/paper-lockup.svg" alt="Paper" />
         <button className="collapse-button" onClick={onToggleCollapse} aria-label="Collapse navigation">
           <PanelLeftClose size={15} strokeWidth={1.9} />
         </button>
