@@ -51,6 +51,13 @@ export function wrapSelection(value: string, range: TextRange, mark: string) {
   };
 }
 
+export function wrapLink(value: string, range: TextRange) {
+  range = normalizeRange(range);
+  const text = selectedText(value, range) || "link";
+  const href = "https://";
+  return replaceRange(value, range, `[${text}](${href})`, text.length + href.length + 3);
+}
+
 export function normalizeRange(range: TextRange): TextRange {
   return compareCarets(range.start, range.end) <= 0 ? range : { start: range.end, end: range.start };
 }
@@ -79,7 +86,7 @@ export function selectedText(value: string, range: TextRange) {
   ].join("\n");
 }
 
-export function replaceRange(value: string, range: TextRange, text: string) {
+export function replaceRange(value: string, range: TextRange, text: string, caretOffset?: number) {
   range = normalizeRange(range);
   const lines = value.split("\n");
   const startLine = lines[range.start.line] ?? "";
@@ -92,7 +99,7 @@ export function replaceRange(value: string, range: TextRange, text: string) {
     lines.splice(range.start.line, range.end.line - range.start.line + 1, before + chunks[0] + after);
     return {
       value: lines.join("\n"),
-      caret: { line: range.start.line, col: before.length + chunks[0].length },
+      caret: { line: range.start.line, col: before.length + (caretOffset ?? chunks[0].length) },
     };
   }
 

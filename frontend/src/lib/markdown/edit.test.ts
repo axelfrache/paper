@@ -14,6 +14,7 @@ import {
   normalizeRange,
   replaceRange,
   selectedText,
+  wrapLink,
   wrapSelection,
 } from "./edit";
 
@@ -51,6 +52,20 @@ describe("markdown editing operations", () => {
     expect(insertText(value, { start: { line: 0, col: value.length }, end: { line: 0, col: value.length } }, " notes")).toEqual({
       value: `${value} notes`,
       caret: { line: 0, col: value.length + 6 },
+    });
+  });
+
+  it("wraps selected text as a markdown link and focuses the href", () => {
+    expect(wrapLink("Visit Paper today", { start: { line: 0, col: 6 }, end: { line: 0, col: 11 } })).toEqual({
+      value: "Visit [Paper](https://) today",
+      caret: { line: 0, col: 22 },
+    });
+  });
+
+  it("inserts a placeholder link at a collapsed caret", () => {
+    expect(wrapLink("Visit ", { start: { line: 0, col: 6 }, end: { line: 0, col: 6 } })).toEqual({
+      value: "Visit [link](https://)",
+      caret: { line: 0, col: 21 },
     });
   });
 

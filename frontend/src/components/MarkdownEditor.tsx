@@ -21,6 +21,7 @@ import {
   insertText,
   isCollapsedRange,
   normalizeRange,
+  wrapLink,
   wrapSelection,
 } from "../lib/markdown/edit";
 import {
@@ -265,6 +266,13 @@ export function MarkdownEditor({
       const range = fullTextRange(value);
       caretRef.current = range.end;
       placeSelection(editorRef.current, range);
+      return;
+    }
+
+    if (meta && !event.shiftKey && event.key.toLowerCase() === "k" && selectionRange && !isCollapsedRange(selectionRange)) {
+      event.preventDefault();
+      const next = wrapLink(value, selectionRange);
+      setSource(next.value, next.caret);
       return;
     }
 
