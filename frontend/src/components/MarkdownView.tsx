@@ -1,22 +1,12 @@
 import type { ReactNode } from "react";
-import { diagramSummary, diagramToSvgMarkup, parseDiagramMarker } from "../lib/diagram";
-import type { Diagram } from "../lib/diagram";
+import { diagramSummary, diagramToSvgMarkup } from "../lib/diagram";
+import { parseBlocks, parseInline } from "../lib/markdown/render";
+import type { MarkdownBlock, MarkdownInline } from "../lib/markdown/render";
 
 type MarkdownViewProps = {
   text: string;
   className?: string;
 };
-
-type MarkdownBlock =
-  | { type: "heading"; level: number; text: string }
-  | { type: "paragraph"; text: string }
-  | { type: "quote"; text: string }
-  | { type: "ul"; items: string[] }
-  | { type: "tasks"; items: Array<{ text: string; done: boolean }> }
-  | { type: "ol"; items: string[] }
-  | { type: "diagram"; diagram: Diagram }
-  | { type: "code"; text: string }
-  | { type: "divider" };
 
 export function MarkdownView({ text, className }: MarkdownViewProps) {
   const blocks = parseBlocks(text);
@@ -29,135 +19,6 @@ export function MarkdownView({ text, className }: MarkdownViewProps) {
       {blocks.map((block, index) => renderBlock(block, index))}
     </div>
   );
-}
-
-function parseBlocks(raw: string): MarkdownBlock[] {
-  const lines = normalizeMarkdown(raw).split("\n");
-  const blocks: MarkdownBlock[] = [];
-  let paragraph: string[] = [];
-  let code: string[] | null = null;
-
-  const flushParagraph = () => {
-    if (paragraph.length > 0) {
-      blocks.push({ type: "paragraph", text: paragraph.join(" ") });
-      paragraph = [];
-    }
-  };
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    const trimmed = line.trim();
-
-    if (trimmed.startsWith("```")) {
-      if (code) {
-        blocks.push({ type: "code", text: code.join("\n") });
-        code = null;
-      } else {
-        flushParagraph();
-        code = [];
-      }
-      continue;
-    }
-
-    if (code) {
-      code.push(line);
-      continue;
-    }
-
-    if (!trimmed) {
-      flushParagraph();
-      continue;
-    }
-
-    const diagram = parseDiagramMarker(trimmed);
-    if (diagram) {
-      flushParagraph();
-      blocks.push({ type: "diagram", diagram });
-      continue;
-    }
-
-    if (/^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)) {
-      flushParagraph();
-      blocks.push({ type: "divider" });
-      continue;
-    }
-
-    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
-    if (heading) {
-      flushParagraph();
-      blocks.push({ type: "heading", level: heading[1].length, text: heading[2] });
-      continue;
-    }
-
-    const task = trimmed.match(/^-\s\[([ xX])\]\s+(.+)$/);
-    if (task) {
-      flushParagraph();
-      const items = [{ done: task[1].toLowerCase() === "x", text: task[2] }];
-      while (index + 1 < lines.length) {
-        const next = lines[index + 1].trim().match(/^-\s\[([ xX])\]\s+(.+)$/);
-        if (!next) {
-          break;
-        }
-        items.push({ done: next[1].toLowerCase() === "x", text: next[2] });
-        index += 1;
-      }
-      blocks.push({ type: "tasks", items });
-      continue;
-    }
-
-    const unordered = trimmed.match(/^[-*•]\s+(.+)$/);
-    if (unordered) {
-      flushParagraph();
-      const items = [unordered[1]];
-      while (index + 1 < lines.length) {
-        const next = lines[index + 1].trim().match(/^[-*•]\s+(.+)$/);
-        if (!next) {
-          break;
-        }
-        items.push(next[1]);
-        index += 1;
-      }
-      blocks.push({ type: "ul", items });
-      continue;
-    }
-
-    const ordered = trimmed.match(/^\d+[.)]\s+(.+)$/);
-    if (ordered) {
-      flushParagraph();
-      const items = [ordered[1]];
-      while (index + 1 < lines.length) {
-        const next = lines[index + 1].trim().match(/^\d+[.)]\s+(.+)$/);
-        if (!next) {
-          break;
-        }
-        items.push(next[1]);
-        index += 1;
-      }
-      blocks.push({ type: "ol", items });
-      continue;
-    }
-
-    const quote = trimmed.match(/^>\s?(.+)$/);
-    if (quote) {
-      flushParagraph();
-      blocks.push({ type: "quote", text: quote[1] });
-      continue;
-    }
-
-    paragraph.push(trimmed);
-  }
-
-  flushParagraph();
-  if (code) {
-    blocks.push({ type: "code", text: code.join("\n") });
-  }
-  return blocks;
-}
-
-function normalizeMarkdown(raw: string) {
-  return raw
-    .replace(/\r\n?/g, "\n")
-    .replace(/([^\n])\s+-\s+(?=(\*\*|[A-Za-zÀ-ÿ]))/g, "$1\n- ");
 }
 
 function renderBlock(block: MarkdownBlock, index: number) {
@@ -219,41 +80,29 @@ function renderBlock(block: MarkdownBlock, index: number) {
   );
 }
 
-function renderInline(text: string) {
-  const chunks = text.split(/(\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g).filter(Boolean);
-  return chunks.map((chunk, index): ReactNode => {
-    const link = chunk.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-    if (link) {
-      const href = safeHref(link[2]);
-      if (!href) {
-        return <span key={index} className="markdown-link-invalid">{renderInline(link[1])}</span>;
-      }
-      return (
-        <a key={index} href={href} target="_blank" rel="noreferrer">
-          {renderInline(link[1])}
-        </a>
-      );
-    }
-    if (chunk.startsWith("`") && chunk.endsWith("`")) {
-      return <code key={index}>{chunk.slice(1, -1)}</code>;
-    }
-    if (chunk.startsWith("**") && chunk.endsWith("**")) {
-      return <strong key={index}>{renderInline(chunk.slice(2, -2))}</strong>;
-    }
-    if (chunk.startsWith("*") && chunk.endsWith("*")) {
-      return <em key={index}>{renderInline(chunk.slice(1, -1))}</em>;
-    }
-    return chunk;
-  });
+function renderInline(text: string): ReactNode[] {
+  return parseInline(text).map(renderInlineNode);
 }
 
-function safeHref(value: string) {
-  const href = value.trim();
-  if (/^(https?:\/\/|mailto:|tel:)/i.test(href)) {
-    return href;
+function renderInlineNode(node: MarkdownInline, index: number): ReactNode {
+  if (node.type === "text") {
+    return node.text;
   }
-  if (href.startsWith("/") && !href.startsWith("//")) {
-    return href;
+  if (node.type === "code") {
+    return <code key={index}>{node.text}</code>;
   }
-  return "";
+  if (node.type === "strong") {
+    return <strong key={index}>{node.children.map(renderInlineNode)}</strong>;
+  }
+  if (node.type === "em") {
+    return <em key={index}>{node.children.map(renderInlineNode)}</em>;
+  }
+  if (!node.safe) {
+    return <span key={index} className="markdown-link-invalid">{node.text.map(renderInlineNode)}</span>;
+  }
+  return (
+    <a key={index} href={node.href} target="_blank" rel="noreferrer">
+      {node.text.map(renderInlineNode)}
+    </a>
+  );
 }
