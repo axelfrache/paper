@@ -220,8 +220,20 @@ function renderBlock(block: MarkdownBlock, index: number) {
 }
 
 function renderInline(text: string) {
-  const chunks = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g).filter(Boolean);
+  const chunks = text.split(/(\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g).filter(Boolean);
   return chunks.map((chunk, index): ReactNode => {
+    const link = chunk.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (link) {
+      const href = safeHref(link[2]);
+      if (!href) {
+        return <span key={index} className="markdown-link-invalid">{renderInline(link[1])}</span>;
+      }
+      return (
+        <a key={index} href={href} target="_blank" rel="noreferrer">
+          {renderInline(link[1])}
+        </a>
+      );
+    }
     if (chunk.startsWith("`") && chunk.endsWith("`")) {
       return <code key={index}>{chunk.slice(1, -1)}</code>;
     }
@@ -233,4 +245,15 @@ function renderInline(text: string) {
     }
     return chunk;
   });
+}
+
+function safeHref(value: string) {
+  const href = value.trim();
+  if (/^(https?:\/\/|mailto:|tel:)/i.test(href)) {
+    return href;
+  }
+  if (href.startsWith("/") && !href.startsWith("//")) {
+    return href;
+  }
+  return "";
 }

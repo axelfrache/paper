@@ -778,6 +778,25 @@ kbd,
   font-size: 0.9em;
 }
 
+.markdown-editor a,
+.markdown-view a {
+  color: var(--accent);
+  text-decoration: none;
+  text-underline-offset: 3px;
+}
+
+.markdown-editor a:hover,
+.markdown-view a:hover {
+  text-decoration: underline;
+}
+
+.markdown-link-invalid {
+  color: var(--muted);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}
+
 .markdown-editor-divider-rule {
   display: block;
   flex: 1;

@@ -43,6 +43,7 @@ type SlashItem = {
   icon: string;
   prefix?: string;
   wrap?: string;
+  link?: boolean;
   block?: string;
   date?: boolean;
   diagram?: boolean;
@@ -66,6 +67,7 @@ const slashItems: SlashItem[] = [
   { id: "quote", label: "Quote", hint: "Indented aside", icon: "❝", prefix: "> " },
   { id: "code", label: "Code", hint: "Inline monospace", icon: "‹›", wrap: "`" },
   { id: "bold", label: "Bold", hint: "Emphasis", icon: "B", wrap: "**" },
+  { id: "link", label: "Link", hint: "Hyperlink", icon: "↗", link: true },
   { id: "diagram", label: "Diagram", hint: "Flat or isometric canvas", icon: "◫", diagram: true },
   { id: "divider", label: "Divider", hint: "Horizontal rule", icon: "—", block: "---" },
   { id: "date", label: "Today's date", hint: "Insert as text", icon: "◷", date: true },
@@ -533,6 +535,14 @@ export function MarkdownEditor({
       return;
     }
 
+    if (item.link) {
+      const text = "link";
+      const href = "https://";
+      lines[caret.line] = stem + `[${text}](${href})` + after;
+      setSource(lines.join("\n"), { line: caret.line, col: stem.length + text.length + href.length + 3 });
+      return;
+    }
+
     if (item.date) {
       const text = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
       lines[caret.line] = stem + text + after;
@@ -751,28 +761,48 @@ function inlineMarkdown(raw: string, active: boolean) {
       break;
     }
     html += escapeHtml(raw.slice(index, token.start));
-    html += inlineToken(token.mark, token.tag, token.text, active);
+    html += token.type === "link" ? linkToken(token.text, token.href, active) : inlineToken(token.mark, token.tag, token.text, active);
     index = token.end;
   }
 
   return html;
 }
 
-function nextInlineToken(raw: string, from: number): { start: number; end: number; mark: string; tag: "code" | "strong" | "em"; text: string } | null {
+type InlineToken =
+  | { start: number; end: number; type: "format"; mark: string; tag: "code" | "strong" | "em"; text: string }
+  | { start: number; end: number; type: "link"; text: string; href: string };
+
+function nextInlineToken(raw: string, from: number): InlineToken | null {
   for (let index = from; index < raw.length; index += 1) {
     const char = raw[index];
+
+    if (char === "[") {
+      const labelEnd = raw.indexOf("]", index + 1);
+      if (labelEnd > index + 1 && raw[labelEnd + 1] === "(") {
+        const hrefEnd = raw.indexOf(")", labelEnd + 2);
+        if (hrefEnd > labelEnd + 2) {
+          return {
+            start: index,
+            end: hrefEnd + 1,
+            type: "link",
+            text: raw.slice(index + 1, labelEnd),
+            href: raw.slice(labelEnd + 2, hrefEnd),
+          };
+        }
+      }
+    }
 
     if (char === "`") {
       const end = raw.indexOf("`", index + 1);
       if (end > index + 1) {
-        return { start: index, end: end + 1, mark: "`", tag: "code", text: raw.slice(index + 1, end) };
+        return { start: index, end: end + 1, type: "format", mark: "`", tag: "code", text: raw.slice(index + 1, end) };
       }
     }
 
     if (raw.startsWith("**", index)) {
       const end = raw.indexOf("**", index + 2);
       if (end > index + 2) {
-        return { start: index, end: end + 2, mark: "**", tag: "strong", text: raw.slice(index + 2, end) };
+        return { start: index, end: end + 2, type: "format", mark: "**", tag: "strong", text: raw.slice(index + 2, end) };
       }
       index += 1;
       continue;
@@ -781,7 +811,7 @@ function nextInlineToken(raw: string, from: number): { start: number; end: numbe
     if (char === "*" && raw[index - 1] !== "*" && raw[index + 1] !== "*") {
       const end = findClosingSingleStar(raw, index + 1);
       if (end > index + 1) {
-        return { start: index, end: end + 1, mark: "*", tag: "em", text: raw.slice(index + 1, end) };
+        return { start: index, end: end + 1, type: "format", mark: "*", tag: "em", text: raw.slice(index + 1, end) };
       }
     }
   }
@@ -804,6 +834,17 @@ function inlineToken(mark: string, tag: "code" | "strong" | "em", text: string, 
     return content;
   }
   return `${syntaxMark(mark)}${content}${syntaxMark(mark)}`;
+}
+
+function linkToken(text: string, href: string, active: boolean) {
+  const safe = safeHref(href);
+  const content = safe
+    ? `<a href="${escapeAttribute(safe)}" target="_blank" rel="noreferrer">${escapeHtml(text)}</a>`
+    : `<span class="markdown-link-invalid">${escapeHtml(text)}</span>`;
+  if (!active) {
+    return content;
+  }
+  return `${syntaxMark("[")}${content}${syntaxMark(`](${href})`)}`;
 }
 
 function syntaxMark(mark: string) {
@@ -977,11 +1018,14 @@ function sourceTextLength(node: Node): number {
 function caretOffsetInNode(nodes: Text[], node: Text, offset: number) {
   const value = node.nodeValue ?? "";
   const parent = node.parentElement;
-  if (!parent || offset !== value.length || !["STRONG", "EM", "CODE"].includes(parent.tagName)) {
+  if (!parent || offset !== value.length || !["STRONG", "EM", "CODE", "A"].includes(parent.tagName)) {
     return offset;
   }
   const next = nodes[nodes.indexOf(node) + 1];
   const mark = next?.nodeValue ?? "";
+  if (parent.tagName === "A" && /^\]\([^)]+\)$/.test(mark)) {
+    return offset + mark.length;
+  }
   if (parent.tagName === "STRONG" && mark === "**") {
     return offset + 2;
   }
@@ -1269,4 +1313,19 @@ function escapeHtml(value: string) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function escapeAttribute(value: string) {
+  return escapeHtml(value).replace(/'/g, "&#39;");
+}
+
+function safeHref(value: string) {
+  const href = value.trim();
+  if (/^(https?:\/\/|mailto:|tel:)/i.test(href)) {
+    return href;
+  }
+  if (href.startsWith("/") && !href.startsWith("//")) {
+    return href;
+  }
+  return "";
 }
