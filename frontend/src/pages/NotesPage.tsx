@@ -38,6 +38,7 @@ export function NotesPage() {
   const [toast, setToast] = useState("");
   const saveTimers = useRef(new Map<string, number>());
   const toastTimer = useRef<number | null>(null);
+  const editorLineRef = useRef<number | null>(null);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -147,6 +148,7 @@ export function NotesPage() {
     setActiveId(note.id);
     setTagDraft("");
     setAIResult(null);
+    editorLineRef.current = null;
   }, []);
 
   const handleDelete = useCallback(async () => {
@@ -241,9 +243,9 @@ export function NotesPage() {
         .filter(Boolean)
         .map((line) => `☐ ${line}`)
         .join("\n");
-      patchActive({ content: `${activeNote.content.trimEnd()}\n\nTasks\n${tasks}`.trim() });
+      patchActive({ content: insertBlockAfterLine(activeNote.content, editorLineRef.current, `Tasks\n${tasks}`) });
     } else if (aiResult.action === "summarize") {
-      patchActive({ content: `Summary\n${text}\n\n${activeNote.content}`.trim() });
+      patchActive({ content: insertBlockAfterLine(activeNote.content, editorLineRef.current, `Summary\n${text}`) });
     } else {
       patchActive({ content: text });
     }
@@ -357,6 +359,9 @@ export function NotesPage() {
         onSearch={() => openPalette("search")}
         onToggleTheme={toggleTheme}
         onAssist={(action) => void runAI(action)}
+        onCaretLineChange={(line) => {
+          editorLineRef.current = line;
+        }}
         onApplyResult={applyAIResult}
         onDismissResult={() => setAIResult(null)}
         theme={theme}
@@ -386,6 +391,25 @@ function toDraft(note: Note): NoteDraft {
     tags: note.tags,
     favorite: note.favorite,
   };
+}
+
+function insertBlockAfterLine(content: string, line: number | null, block: string) {
+  const cleanBlock = block.trim();
+  if (!content.trim()) {
+    return cleanBlock;
+  }
+
+  const lines = content.split("\n");
+  const targetLine = line == null ? lines.length - 1 : Math.max(0, Math.min(line, lines.length - 1));
+  const nextLine = lines[targetLine + 1];
+  const insertLines = [
+    ...(lines[targetLine]?.trim() ? [""] : []),
+    ...cleanBlock.split("\n"),
+    ...(nextLine == null || !nextLine.trim() ? [] : [""]),
+  ];
+
+  lines.splice(targetLine + 1, 0, ...insertLines);
+  return lines.join("\n");
 }
 
 function titleForView(view: ViewKey) {

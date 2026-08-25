@@ -15,6 +15,7 @@ type MarkdownEditorProps = {
   value: string;
   onChange: (value: string) => void;
   onAssist?: (action: AIAction) => void;
+  onCaretLineChange?: (line: number) => void;
   placeholder?: string;
 };
 
@@ -56,7 +57,13 @@ const slashItems: SlashItem[] = [
   { id: "ai-title", label: "Suggest title", hint: "AI", icon: "✎", ai: "suggest_title" },
 ];
 
-export function MarkdownEditor({ value, onChange, onAssist, placeholder = "Start writing..." }: MarkdownEditorProps) {
+export function MarkdownEditor({
+  value,
+  onChange,
+  onAssist,
+  onCaretLineChange,
+  placeholder = "Start writing...",
+}: MarkdownEditorProps) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const slashBodyRef = useRef<HTMLDivElement | null>(null);
@@ -71,6 +78,7 @@ export function MarkdownEditor({ value, onChange, onAssist, placeholder = "Start
     if (focusedRef.current && caretRef.current) {
       placeCaret(editorRef.current, caretRef.current);
       probeSlash(value, caretRef.current);
+      onCaretLineChange?.(caretRef.current.line);
     }
   }, [value]);
 
@@ -97,6 +105,7 @@ export function MarkdownEditor({ value, onChange, onAssist, placeholder = "Start
     const range = getSelectionRange(editorRef.current);
     if (range && !isCollapsedRange(range)) {
       caretRef.current = range.end;
+      onCaretLineChange?.(range.end.line);
       setSlash(null);
       return;
     }
@@ -106,6 +115,7 @@ export function MarkdownEditor({ value, onChange, onAssist, placeholder = "Start
       return;
     }
     caretRef.current = caret;
+    onCaretLineChange?.(caret.line);
     if (caret.line !== activeLineRef.current) {
       renderMarkdown(editorRef.current, value, caret.line);
       activeLineRef.current = caret.line;
@@ -116,6 +126,9 @@ export function MarkdownEditor({ value, onChange, onAssist, placeholder = "Start
 
   const setSource = (nextValue: string, caret: Caret | null) => {
     caretRef.current = caret;
+    if (caret) {
+      onCaretLineChange?.(caret.line);
+    }
     onChange(nextValue);
   };
 
@@ -214,6 +227,7 @@ export function MarkdownEditor({ value, onChange, onAssist, placeholder = "Start
   const handleFocus = () => {
     focusedRef.current = true;
     caretRef.current = getCaret(editorRef.current) ?? { line: 0, col: 0 };
+    onCaretLineChange?.(caretRef.current.line);
     renderMarkdown(editorRef.current, value, caretRef.current.line);
     activeLineRef.current = caretRef.current.line;
     placeCaret(editorRef.current, caretRef.current);
@@ -453,22 +467,61 @@ function renderLine(raw: string, active: boolean, index: number) {
 }
 
 function inlineMarkdown(raw: string, active: boolean) {
-  return raw
-    .split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g)
-    .filter(Boolean)
-    .map((chunk) => {
-      if (chunk.startsWith("`") && chunk.endsWith("`")) {
-        return inlineToken("`", "code", chunk.slice(1, -1), active);
+  let html = "";
+  let index = 0;
+
+  while (index < raw.length) {
+    const token = nextInlineToken(raw, index);
+    if (!token) {
+      html += escapeHtml(raw.slice(index));
+      break;
+    }
+    html += escapeHtml(raw.slice(index, token.start));
+    html += inlineToken(token.mark, token.tag, token.text, active);
+    index = token.end;
+  }
+
+  return html;
+}
+
+function nextInlineToken(raw: string, from: number): { start: number; end: number; mark: string; tag: "code" | "strong" | "em"; text: string } | null {
+  for (let index = from; index < raw.length; index += 1) {
+    const char = raw[index];
+
+    if (char === "`") {
+      const end = raw.indexOf("`", index + 1);
+      if (end > index + 1) {
+        return { start: index, end: end + 1, mark: "`", tag: "code", text: raw.slice(index + 1, end) };
       }
-      if (chunk.startsWith("**") && chunk.endsWith("**")) {
-        return inlineToken("**", "strong", chunk.slice(2, -2), active);
+    }
+
+    if (raw.startsWith("**", index)) {
+      const end = raw.indexOf("**", index + 2);
+      if (end > index + 2) {
+        return { start: index, end: end + 2, mark: "**", tag: "strong", text: raw.slice(index + 2, end) };
       }
-      if (chunk.startsWith("*") && chunk.endsWith("*")) {
-        return inlineToken("*", "em", chunk.slice(1, -1), active);
+      index += 1;
+      continue;
+    }
+
+    if (char === "*" && raw[index - 1] !== "*" && raw[index + 1] !== "*") {
+      const end = findClosingSingleStar(raw, index + 1);
+      if (end > index + 1) {
+        return { start: index, end: end + 1, mark: "*", tag: "em", text: raw.slice(index + 1, end) };
       }
-      return escapeHtml(chunk);
-    })
-    .join("");
+    }
+  }
+
+  return null;
+}
+
+function findClosingSingleStar(raw: string, from: number) {
+  for (let index = from; index < raw.length; index += 1) {
+    if (raw[index] === "*" && raw[index - 1] !== "*" && raw[index + 1] !== "*") {
+      return index;
+    }
+  }
+  return -1;
 }
 
 function inlineToken(mark: string, tag: "code" | "strong" | "em", text: string, active: boolean) {

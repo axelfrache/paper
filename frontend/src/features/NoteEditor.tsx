@@ -23,6 +23,7 @@ type NoteEditorProps = {
   onSearch: () => void;
   onToggleTheme: () => void;
   onAssist: (action: AIAction) => void;
+  onCaretLineChange: (line: number) => void;
   onApplyResult: () => void;
   onDismissResult: () => void;
   theme: "light" | "dark";
@@ -50,6 +51,7 @@ export function NoteEditor({
   onSearch,
   onToggleTheme,
   onAssist,
+  onCaretLineChange,
   onApplyResult,
   onDismissResult,
   theme,
@@ -117,6 +119,7 @@ export function NoteEditor({
             value={note.content}
             onChange={onContentChange}
             onAssist={onAssist}
+            onCaretLineChange={onCaretLineChange}
             placeholder="Start writing... press / to insert a block"
           />
 
