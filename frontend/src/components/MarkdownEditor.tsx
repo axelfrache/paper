@@ -81,8 +81,8 @@ export function MarkdownEditor({ value, onChange, onAssist, placeholder = "Start
       return;
     }
     const pad = 5;
-    const top = active.offsetTop - pad;
-    const bottom = active.offsetTop + active.offsetHeight + pad;
+    const top = active.offsetTop - body.offsetTop - pad;
+    const bottom = active.offsetTop - body.offsetTop + active.offsetHeight + pad;
     const visibleTop = body.scrollTop;
     const visibleBottom = visibleTop + body.clientHeight;
 
