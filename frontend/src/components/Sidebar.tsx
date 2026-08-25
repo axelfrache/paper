@@ -90,6 +90,10 @@ export function Sidebar({ notes, view, activeTag, hidden, onViewChange, onTagCha
           <em>⌘⇧K</em>
         </div>
         <div>
+          <span>Insert block</span>
+          <em>/</em>
+        </div>
+        <div>
           <span>Light / dark</span>
           <em>⌘⇧L</em>
         </div>

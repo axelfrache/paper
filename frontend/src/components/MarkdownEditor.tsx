@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import type { AIAction } from "../types/note";
 
 type Caret = {
   line: number;
@@ -13,29 +14,90 @@ type TextRange = {
 type MarkdownEditorProps = {
   value: string;
   onChange: (value: string) => void;
+  onAssist?: (action: AIAction) => void;
   placeholder?: string;
 };
 
 const syntaxColor = "#a7acb2";
 
-export function MarkdownEditor({ value, onChange, placeholder = "Start writing..." }: MarkdownEditorProps) {
+type SlashItem = {
+  id: string;
+  label: string;
+  hint: string;
+  icon: string;
+  prefix?: string;
+  wrap?: string;
+  block?: string;
+  date?: boolean;
+  ai?: AIAction;
+};
+
+type SlashState = {
+  query: string;
+  index: number;
+  top: number;
+  left: number;
+  maxHeight: number;
+};
+
+const slashItems: SlashItem[] = [
+  { id: "h1", label: "Heading", hint: "Large section title", icon: "H", prefix: "# " },
+  { id: "h2", label: "Subheading", hint: "Medium title", icon: "H", prefix: "## " },
+  { id: "h3", label: "Small heading", hint: "Minor title", icon: "H", prefix: "### " },
+  { id: "task", label: "Task", hint: "Checkbox, feeds the Tasks view", icon: "☐", prefix: "- [ ] " },
+  { id: "bullet", label: "Bullet list", hint: "Plain list item", icon: "•", prefix: "- " },
+  { id: "quote", label: "Quote", hint: "Indented aside", icon: "❝", prefix: "> " },
+  { id: "code", label: "Code", hint: "Inline monospace", icon: "‹›", wrap: "`" },
+  { id: "bold", label: "Bold", hint: "Emphasis", icon: "B", wrap: "**" },
+  { id: "divider", label: "Divider", hint: "Horizontal rule", icon: "—", block: "---" },
+  { id: "date", label: "Today's date", hint: "Insert as text", icon: "◷", date: true },
+  { id: "ai-summary", label: "Summarize note", hint: "AI", icon: "≡", ai: "summarize" },
+  { id: "ai-tasks", label: "Extract tasks", hint: "AI", icon: "☑", ai: "extract_tasks" },
+  { id: "ai-title", label: "Suggest title", hint: "AI", icon: "✎", ai: "suggest_title" },
+];
+
+export function MarkdownEditor({ value, onChange, onAssist, placeholder = "Start writing..." }: MarkdownEditorProps) {
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const slashBodyRef = useRef<HTMLDivElement | null>(null);
   const focusedRef = useRef(false);
   const caretRef = useRef<Caret | null>(null);
   const activeLineRef = useRef(-1);
+  const [slash, setSlash] = useState<SlashState | null>(null);
 
   useLayoutEffect(() => {
     renderMarkdown(editorRef.current, value, focusedRef.current ? caretRef.current?.line ?? -1 : -1);
     activeLineRef.current = focusedRef.current ? caretRef.current?.line ?? -1 : -1;
     if (focusedRef.current && caretRef.current) {
       placeCaret(editorRef.current, caretRef.current);
+      probeSlash(value, caretRef.current);
     }
   }, [value]);
+
+  useLayoutEffect(() => {
+    const body = slashBodyRef.current;
+    const active = body?.querySelector<HTMLElement>(".slash-menu-row.active");
+    if (!body || !active) {
+      return;
+    }
+    const pad = 5;
+    const top = active.offsetTop - pad;
+    const bottom = active.offsetTop + active.offsetHeight + pad;
+    const visibleTop = body.scrollTop;
+    const visibleBottom = visibleTop + body.clientHeight;
+
+    if (top < visibleTop) {
+      body.scrollTop = top;
+    } else if (bottom > visibleBottom) {
+      body.scrollTop = bottom - body.clientHeight;
+    }
+  }, [slash?.index, slash?.query]);
 
   const syncActiveLine = () => {
     const range = getSelectionRange(editorRef.current);
     if (range && !isCollapsedRange(range)) {
       caretRef.current = range.end;
+      setSlash(null);
       return;
     }
 
@@ -49,6 +111,7 @@ export function MarkdownEditor({ value, onChange, placeholder = "Start writing..
       activeLineRef.current = caret.line;
       placeCaret(editorRef.current, caret);
     }
+    probeSlash(value, caret);
   };
 
   const setSource = (nextValue: string, caret: Caret | null) => {
@@ -67,6 +130,31 @@ export function MarkdownEditor({ value, onChange, placeholder = "Start writing..
     const caret = selectionRange?.end ?? getCaret(editorRef.current);
     if (!caret) {
       return;
+    }
+
+    if (slash) {
+      const items = filteredSlashItems(slash.query);
+      const index = Math.min(slash.index, Math.max(0, items.length - 1));
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setSlash(null);
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setSlash({ ...slash, index: Math.min(index + 1, items.length - 1) });
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setSlash({ ...slash, index: Math.max(index - 1, 0) });
+        return;
+      }
+      if ((event.key === "Enter" || event.key === "Tab") && items.length) {
+        event.preventDefault();
+        runSlash(items[index], caret);
+        return;
+      }
     }
 
     if (meta && event.key.toLowerCase() === "a") {
@@ -134,6 +222,7 @@ export function MarkdownEditor({ value, onChange, placeholder = "Start writing..
   const handleBlur = () => {
     focusedRef.current = false;
     caretRef.current = null;
+    setSlash(null);
     renderMarkdown(editorRef.current, value, -1);
     activeLineRef.current = -1;
   };
@@ -157,14 +246,17 @@ export function MarkdownEditor({ value, onChange, placeholder = "Start writing..
 
   const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
     event.preventDefault();
+    setSlash(null);
     const text = event.clipboardData.getData("text/plain");
     const caret = getCaret(editorRef.current) ?? { line: 0, col: 0 };
     const next = insertText(value, getSelectionRange(editorRef.current) ?? { start: caret, end: caret }, text);
     setSource(next.value, next.caret);
   };
 
+  const filteredItems = filteredSlashItems(slash?.query ?? "");
+
   return (
-    <div className="markdown-editor-wrap">
+    <div ref={wrapRef} className="markdown-editor-wrap">
       <div
         ref={editorRef}
         className="markdown-editor"
@@ -181,8 +273,135 @@ export function MarkdownEditor({ value, onChange, placeholder = "Start writing..
         onPaste={handlePaste}
       />
       {!value ? <div className="markdown-editor-placeholder">{placeholder}</div> : null}
+      {slash && filteredItems.length ? (
+        <div className="slash-menu" style={{ top: slash.top, left: slash.left }}>
+          <div className="slash-menu-header">
+            <span>{slash.query ? `/${slash.query}` : "/"}</span>
+            <em>↑↓ ↵</em>
+          </div>
+          <div ref={slashBodyRef} className="slash-menu-body" style={{ maxHeight: slash.maxHeight }}>
+            {filteredItems.map((item, index) => (
+              <button
+                key={item.id}
+                className={index === Math.min(slash.index, filteredItems.length - 1) ? "slash-menu-row active" : "slash-menu-row"}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  runSlash(item, caretRef.current ?? getCaret(editorRef.current) ?? { line: 0, col: 0 });
+                }}
+                onMouseEnter={() => setSlash((current) => current ? { ...current, index } : current)}
+              >
+                <span>{item.icon}</span>
+                <strong>{item.label}</strong>
+                <small>{item.hint}</small>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
+
+  function probeSlash(source: string, caret: Caret) {
+    const line = source.split("\n")[caret.line] ?? "";
+    const match = /(?:^|\s)\/([\w-]*)$/.exec(line.slice(0, caret.col));
+    const selectionRange = getSelectionRange(editorRef.current);
+    if (!match || (selectionRange && !isCollapsedRange(selectionRange))) {
+      setSlash(null);
+      return;
+    }
+    const wrap = wrapRef.current;
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    if (!wrap || !editor || !selection?.rangeCount) {
+      return;
+    }
+
+    const range = selection.getRangeAt(0).cloneRange();
+    range.collapse(true);
+    let rect: DOMRect | null = range.getBoundingClientRect();
+    if (!rect.width && !rect.height) {
+      const lineEl = editor.querySelector(`[data-line="${caret.line}"]`);
+      rect = lineEl?.getBoundingClientRect() ?? null;
+    }
+    if (!rect) {
+      return;
+    }
+
+    const wrapRect = wrap.getBoundingClientRect();
+    const scrollHost = scrollParent(wrap);
+    const scrollRect = scrollHost?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight };
+    const query = match[1].toLowerCase();
+    const count = filteredSlashItems(query).length;
+    const gap = 8;
+    const header = 34;
+    const pad = 10;
+    const row = 33;
+    const desiredHeight = Math.min(header + pad + count * row, header + pad + 264);
+    const roomBelow = scrollRect.bottom - rect.bottom - gap * 2;
+    const roomAbove = rect.top - scrollRect.top - gap * 2;
+    const above = desiredHeight > roomBelow && roomAbove > roomBelow;
+    const available = Math.max(120, above ? roomAbove : roomBelow);
+    const height = Math.min(desiredHeight, available);
+    const minTop = scrollRect.top - wrapRect.top + gap;
+    const maxTop = scrollRect.bottom - wrapRect.top - height - gap;
+    const top = Math.max(minTop, Math.min(above ? rect.top - wrapRect.top - height - gap : rect.bottom - wrapRect.top + gap, maxTop));
+    const left = Math.max(0, Math.min(rect.left - wrapRect.left, wrapRect.width - 268));
+
+    setSlash((current) => ({
+      query,
+      index: current?.query === query ? Math.min(current.index, Math.max(0, count - 1)) : 0,
+      top,
+      left,
+      maxHeight: Math.max(120, height - header - pad),
+    }));
+  }
+
+  function runSlash(item: SlashItem, caret: Caret) {
+    const lines = value.split("\n");
+    const line = lines[caret.line] ?? "";
+    const before = line.slice(0, caret.col);
+    const after = line.slice(caret.col);
+    const match = /\/[\w-]*$/.exec(before);
+    const start = match ? match.index : caret.col;
+    const stem = before.slice(0, start);
+    setSlash(null);
+
+    if (item.ai) {
+      lines[caret.line] = stem + after;
+      setSource(lines.join("\n"), { line: caret.line, col: stem.length });
+      onAssist?.(item.ai);
+      return;
+    }
+
+    if (item.block) {
+      lines.splice(caret.line, 1, stem + after, item.block, "");
+      const keepLine = stem.trim() || after.trim();
+      if (!keepLine) {
+        lines.splice(caret.line, 1);
+      }
+      setSource(lines.join("\n"), { line: keepLine ? caret.line + 2 : caret.line + 1, col: 0 });
+      return;
+    }
+
+    if (item.wrap) {
+      lines[caret.line] = stem + item.wrap + item.wrap + after;
+      setSource(lines.join("\n"), { line: caret.line, col: stem.length + item.wrap.length });
+      return;
+    }
+
+    if (item.date) {
+      const text = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+      lines[caret.line] = stem + text + after;
+      setSource(lines.join("\n"), { line: caret.line, col: stem.length + text.length });
+      return;
+    }
+
+    const existing = /^(#{1,3}\s+|-\s\[[ xX]\]\s+|[-*]\s+|>\s+)/.exec(stem);
+    const body = existing ? stem.slice(existing[0].length) : stem;
+    const prefix = item.prefix ?? "";
+    lines[caret.line] = prefix + body + after;
+    setSource(lines.join("\n"), { line: caret.line, col: prefix.length + body.length });
+  }
 }
 
 function renderMarkdown(el: HTMLDivElement | null, value: string, activeLine: number) {
@@ -262,6 +481,23 @@ function inlineToken(mark: string, tag: "code" | "strong" | "em", text: string, 
 
 function syntaxMark(mark: string) {
   return `<span style="color:${syntaxColor};">${escapeHtml(mark)}</span>`;
+}
+
+function filteredSlashItems(query: string) {
+  const normalized = query.trim().toLowerCase();
+  return slashItems.filter((item) => !normalized || item.label.toLowerCase().includes(normalized) || item.id.includes(normalized));
+}
+
+function scrollParent(el: HTMLElement | null) {
+  let current = el?.parentElement ?? null;
+  while (current && current !== document.body) {
+    const overflow = window.getComputedStyle(current).overflowY;
+    if (overflow === "auto" || overflow === "scroll") {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return null;
 }
 
 function lineNodes(lineEl: Element | null) {

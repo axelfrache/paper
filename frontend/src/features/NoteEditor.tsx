@@ -116,7 +116,8 @@ export function NoteEditor({
           <MarkdownEditor
             value={note.content}
             onChange={onContentChange}
-            placeholder="Start writing..."
+            onAssist={onAssist}
+            placeholder="Start writing... press / to insert a block"
           />
 
           {aiResult ? (

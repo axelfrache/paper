@@ -147,6 +147,17 @@ textarea {
   }
 }
 
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 ::placeholder {
   color: var(--placeholder);
 }
@@ -764,6 +775,91 @@ kbd,
   pointer-events: none;
   font-size: 14.5px;
   line-height: 1.75;
+}
+
+.slash-menu {
+  position: absolute;
+  z-index: 30;
+  width: 268px;
+  overflow: hidden;
+  border: 1px solid var(--line-control);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+  animation: slide-up 0.13s ease both;
+}
+
+.slash-menu-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border-bottom: 1px solid var(--line-soft);
+  padding: 8px 11px;
+}
+
+.slash-menu-header span {
+  color: var(--accent);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
+.slash-menu-header em {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 10.5px;
+  font-style: normal;
+}
+
+.slash-menu-body {
+  overflow-y: auto;
+  padding: 5px;
+}
+
+.slash-menu-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.slash-menu-row.active,
+.slash-menu-row:hover {
+  background: var(--selection);
+}
+
+.slash-menu-row > span {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--line-button);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.slash-menu-row strong {
+  flex: none;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.slash-menu-row small {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--placeholder);
+  font-size: 10.5px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .markdown-view {
