@@ -60,6 +60,7 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
   const [elementMenuOpen, setElementMenuOpen] = useState(false);
   const [pendingFromId, setPendingFromId] = useState<string | null>(null);
   const [color, setColor] = useState<DiagramColor>("blue");
+  const elementMenuRef = useRef<HTMLDivElement | null>(null);
   const layout = layoutDiagram(liveDiagram);
   layoutRef.current = layout;
   const selectedNode = liveDiagram.nodes.find((node) => node.id === selectedId) ?? null;
@@ -69,6 +70,19 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
     diagramRef.current = diagram;
     setLiveDiagram(diagram);
   }, [diagram]);
+
+  useEffect(() => {
+    if (!elementMenuOpen) {
+      return;
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (!elementMenuRef.current?.contains(event.target as Node)) {
+        setElementMenuOpen(false);
+      }
+    };
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => window.removeEventListener("pointerdown", onPointerDown);
+  }, [elementMenuOpen]);
 
   useEffect(() => {
     if (!editingId) {
@@ -584,7 +598,7 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
               </button>
             );
           })}
-          <div className="diagram-element-menu-wrap">
+          <div className="diagram-element-menu-wrap" ref={elementMenuRef}>
             <button
               className={isElementTool(tool) ? "active" : ""}
               title="Elements"
