@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 type ShortcutHandlers = {
   onCommandPalette: () => void;
@@ -7,13 +7,43 @@ type ShortcutHandlers = {
   onToggleFavorite: () => void;
   onToggleSidebar: () => void;
   onToggleTheme: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
   onEscape: () => void;
 };
 
 export function useShortcuts(handlers: ShortcutHandlers) {
+  const modifierHeldRef = useRef(false);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Control" || event.key === "Meta") {
+        modifierHeldRef.current = true;
+      }
+
       const mod = event.ctrlKey || event.metaKey;
+      const heldMod = mod || modifierHeldRef.current;
+      const target = event.target;
+      const textInput =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement;
+
+      if (heldMod && !textInput && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.shiftKey) {
+          handlers.onRedo();
+        } else {
+          handlers.onUndo();
+        }
+      }
+
+      if (heldMod && !textInput && event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        event.stopPropagation();
+        handlers.onRedo();
+      }
 
       if (mod && event.key.toLowerCase() === "k") {
         event.preventDefault();
@@ -49,7 +79,23 @@ export function useShortcuts(handlers: ShortcutHandlers) {
       }
     };
 
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key === "Control" || event.key === "Meta") {
+        modifierHeldRef.current = event.ctrlKey || event.metaKey;
+      }
+    };
+
+    const onBlur = () => {
+      modifierHeldRef.current = false;
+    };
+
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    window.addEventListener("keyup", onKeyUp, { capture: true });
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, { capture: true });
+      window.removeEventListener("keyup", onKeyUp, { capture: true });
+      window.removeEventListener("blur", onBlur);
+    };
   }, [handlers]);
 }

@@ -11,6 +11,13 @@ import type { AIAction, AskAnswer, Note, NoteDraft } from "../types/note";
 
 type Theme = "light" | "dark";
 
+type NoteHistory = {
+  undo: NoteDraft[];
+  redo: NoteDraft[];
+};
+
+const historyLimit = 120;
+
 const emptyDraft: NoteDraft = {
   title: "",
   content: "",
@@ -39,6 +46,7 @@ export function NotesPage() {
   const saveTimers = useRef(new Map<string, number>());
   const toastTimer = useRef<number | null>(null);
   const editorLineRef = useRef<number | null>(null);
+  const historyRef = useRef(new Map<string, NoteHistory>());
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -115,17 +123,81 @@ export function NotesPage() {
     saveTimers.current.set(note.id, timer);
   }, [flash]);
 
+  const pushUndo = useCallback((note: Note) => {
+    const history = historyRef.current.get(note.id) ?? { undo: [], redo: [] };
+    const draft = toDraft(note);
+    if (sameDraft(history.undo[history.undo.length - 1], draft)) {
+      return;
+    }
+    history.undo.push(draft);
+    if (history.undo.length > historyLimit) {
+      history.undo.shift();
+    }
+    history.redo = [];
+    historyRef.current.set(note.id, history);
+  }, []);
+
   const patchActive = useCallback(
     (fields: Partial<Note>) => {
       if (!activeNote) {
         return;
       }
       const nextNote = { ...activeNote, ...fields, updatedAt: new Date().toISOString() };
+      if (sameDraft(toDraft(activeNote), toDraft(nextNote))) {
+        return;
+      }
+      pushUndo(activeNote);
       setNotes((current) => current.map((note) => (note.id === nextNote.id ? nextNote : note)));
       persist(nextNote);
     },
+    [activeNote, persist, pushUndo],
+  );
+
+  const restoreActiveDraft = useCallback(
+    (draft: NoteDraft) => {
+      if (!activeNote) {
+        return;
+      }
+      const nextNote = { ...activeNote, ...draft, updatedAt: new Date().toISOString() };
+      setNotes((current) => current.map((note) => (note.id === nextNote.id ? nextNote : note)));
+      persist(nextNote);
+      setAIResult(null);
+    },
     [activeNote, persist],
   );
+
+  const undoActive = useCallback(() => {
+    if (!activeNote) {
+      return;
+    }
+    const history = historyRef.current.get(activeNote.id);
+    const previous = history?.undo.pop();
+    if (!history || !previous) {
+      flash("Nothing to undo");
+      return;
+    }
+    history.redo.push(toDraft(activeNote));
+    historyRef.current.set(activeNote.id, history);
+    restoreActiveDraft(previous);
+  }, [activeNote, flash, restoreActiveDraft]);
+
+  const redoActive = useCallback(() => {
+    if (!activeNote) {
+      return;
+    }
+    const history = historyRef.current.get(activeNote.id);
+    const next = history?.redo.pop();
+    if (!history || !next) {
+      flash("Nothing to redo");
+      return;
+    }
+    history.undo.push(toDraft(activeNote));
+    if (history.undo.length > historyLimit) {
+      history.undo.shift();
+    }
+    historyRef.current.set(activeNote.id, history);
+    restoreActiveDraft(next);
+  }, [activeNote, flash, restoreActiveDraft]);
 
   const handleNew = useCallback(async () => {
     try {
@@ -158,6 +230,7 @@ export function NotesPage() {
     try {
       await deleteNote(activeNote.id);
       const rest = notes.filter((note) => note.id !== activeNote.id);
+      historyRef.current.delete(activeNote.id);
       setNotes(rest);
       setActiveId(rest[0]?.id ?? null);
       setAIResult(null);
@@ -312,6 +385,8 @@ export function NotesPage() {
     onToggleFavorite: toggleFavorite,
     onToggleSidebar: () => setSidebarHidden((hidden) => !hidden),
     onToggleTheme: toggleTheme,
+    onUndo: undoActive,
+    onRedo: redoActive,
     onEscape: () => setPaletteOpen(false),
   });
 
@@ -391,6 +466,19 @@ function toDraft(note: Note): NoteDraft {
     tags: note.tags,
     favorite: note.favorite,
   };
+}
+
+function sameDraft(a: NoteDraft | undefined, b: NoteDraft | undefined) {
+  if (!a || !b) {
+    return false;
+  }
+  return (
+    a.title === b.title &&
+    a.content === b.content &&
+    a.favorite === b.favorite &&
+    a.tags.length === b.tags.length &&
+    a.tags.every((tag, index) => tag === b.tags[index])
+  );
 }
 
 function insertBlockAfterLine(content: string, line: number | null, block: string) {
