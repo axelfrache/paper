@@ -1,12 +1,7 @@
 import { parseDiagramMarker } from "../diagram";
+export { parseInline, safeHref } from "./inline";
+export type { MarkdownInline } from "./inline";
 import type { Diagram } from "../diagram";
-
-export type MarkdownInline =
-  | { type: "text"; text: string }
-  | { type: "link"; text: MarkdownInline[]; href: string; safe: boolean }
-  | { type: "code"; text: string }
-  | { type: "strong"; children: MarkdownInline[] }
-  | { type: "em"; children: MarkdownInline[] };
 
 export type MarkdownBlock =
   | { type: "heading"; level: number; text: string }
@@ -142,42 +137,10 @@ export function parseBlocks(raw: string): MarkdownBlock[] {
   return blocks;
 }
 
-export function parseInline(text: string): MarkdownInline[] {
-  const chunks = text.split(/(\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g).filter(Boolean);
-  return chunks.map((chunk): MarkdownInline => {
-    const link = chunk.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-    if (link) {
-      const href = safeHref(link[2]);
-      return { type: "link", text: parseInline(link[1]), href: href || link[2].trim(), safe: Boolean(href) };
-    }
-    if (chunk.startsWith("`") && chunk.endsWith("`")) {
-      return { type: "code", text: chunk.slice(1, -1) };
-    }
-    if (chunk.startsWith("**") && chunk.endsWith("**")) {
-      return { type: "strong", children: parseInline(chunk.slice(2, -2)) };
-    }
-    if (chunk.startsWith("*") && chunk.endsWith("*")) {
-      return { type: "em", children: parseInline(chunk.slice(1, -1)) };
-    }
-    return { type: "text", text: chunk };
-  });
-}
-
 export function normalizeMarkdown(raw: string) {
   return raw
     .replace(/\r\n?/g, "\n")
     .replace(/([^\n])\s+-\s+(?=(\*\*|[A-Za-zÀ-ÿ]))/g, "$1\n- ");
-}
-
-export function safeHref(value: string) {
-  const href = value.trim();
-  if (/^(https?:\/\/|mailto:|tel:)/i.test(href)) {
-    return href;
-  }
-  if (href.startsWith("/") && !href.startsWith("//")) {
-    return href;
-  }
-  return "";
 }
 
 export function isDivider(line: string) {

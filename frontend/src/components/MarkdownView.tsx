@@ -101,7 +101,7 @@ function renderInlineNode(node: MarkdownInline, index: number): ReactNode {
     return <span key={index} className="markdown-link-invalid">{node.text.map(renderInlineNode)}</span>;
   }
   return (
-    <a key={index} href={node.href} target="_blank" rel="noreferrer">
+    <a key={index} href={node.href} target="_blank" rel="noreferrer" title={node.title}>
       {node.text.map(renderInlineNode)}
     </a>
   );

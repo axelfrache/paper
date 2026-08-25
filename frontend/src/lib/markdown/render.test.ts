@@ -35,6 +35,7 @@ describe("markdown rendering parser", () => {
       {
         type: "link",
         href: "https://paper.home.axelfrache.com",
+        source: "https://paper.home.axelfrache.com",
         safe: true,
         text: [
           { type: "strong", children: [{ type: "text", text: "Paper" }] },
@@ -48,11 +49,48 @@ describe("markdown rendering parser", () => {
     expect(parseInline("[bad](javascript:alert(1))")).toEqual([
       {
         type: "link",
-        href: "javascript:alert(1",
+        href: "javascript:alert(1)",
+        source: "javascript:alert(1)",
         safe: false,
         text: [{ type: "text", text: "bad" }],
       },
-      { type: "text", text: ")" },
+    ]);
+  });
+
+  it("parses links with parenthesized URLs", () => {
+    expect(parseInline("[wiki](https://example.com/a_(b))")).toEqual([
+      {
+        type: "link",
+        href: "https://example.com/a_(b)",
+        source: "https://example.com/a_(b)",
+        safe: true,
+        text: [{ type: "text", text: "wiki" }],
+      },
+    ]);
+  });
+
+  it("parses links with optional titles", () => {
+    expect(parseInline('[docs](https://example.com/docs "Read docs")')).toEqual([
+      {
+        type: "link",
+        href: "https://example.com/docs",
+        source: 'https://example.com/docs "Read docs"',
+        title: "Read docs",
+        safe: true,
+        text: [{ type: "text", text: "docs" }],
+      },
+    ]);
+  });
+
+  it("keeps empty label links as plain text", () => {
+    expect(parseInline("[](https://example.com)")).toEqual([
+      { type: "text", text: "[](https://example.com)" },
+    ]);
+  });
+
+  it("keeps malformed links as plain text", () => {
+    expect(parseInline("[docs](https://example.com \"title\" trailing)")).toEqual([
+      { type: "text", text: "[docs](https://example.com \"title\" trailing)" },
     ]);
   });
 
@@ -63,6 +101,7 @@ describe("markdown rendering parser", () => {
     expect(safeHref("tel:+33123456789")).toBe("tel:+33123456789");
     expect(safeHref("/notes/123")).toBe("/notes/123");
     expect(safeHref("//example.com")).toBe("");
+    expect(safeHref("https://example.com/bad url")).toBe("");
     expect(safeHref("javascript:alert(1)")).toBe("");
   });
 

@@ -1,11 +1,8 @@
 import { diagramSummary, diagramToSvgMarkup, parseDiagramMarker } from "../diagram";
-import { safeHref } from "./render";
+import { parseInline } from "./inline";
+import type { MarkdownInline } from "./inline";
 
 const syntaxColor = "#a7acb2";
-
-type InlineToken =
-  | { start: number; end: number; type: "format"; mark: string; tag: "code" | "strong" | "em"; text: string }
-  | { start: number; end: number; type: "link"; text: string; href: string };
 
 export function renderEditableMarkdown(value: string, activeLine: number) {
   return value.split("\n").map((line, index) => renderEditableLine(line, index === activeLine, index)).join("");
@@ -65,96 +62,33 @@ export function renderEditableLine(raw: string, active: boolean, index: number) 
 }
 
 function inlineMarkdown(raw: string, active: boolean) {
-  let html = "";
-  let index = 0;
-
-  while (index < raw.length) {
-    const token = nextInlineToken(raw, index);
-    if (!token) {
-      html += escapeHtml(raw.slice(index));
-      break;
-    }
-    html += escapeHtml(raw.slice(index, token.start));
-    html += token.type === "link" ? linkToken(token.text, token.href, active) : inlineToken(token.mark, token.tag, token.text, active);
-    index = token.end;
-  }
-
-  return html;
+  return parseInline(raw).map((node) => inlineNode(node, active)).join("");
 }
 
-function nextInlineToken(raw: string, from: number): InlineToken | null {
-  for (let index = from; index < raw.length; index += 1) {
-    const char = raw[index];
-
-    if (char === "[") {
-      const labelEnd = raw.indexOf("]", index + 1);
-      if (labelEnd > index + 1 && raw[labelEnd + 1] === "(") {
-        const hrefEnd = raw.indexOf(")", labelEnd + 2);
-        if (hrefEnd > labelEnd + 2) {
-          return {
-            start: index,
-            end: hrefEnd + 1,
-            type: "link",
-            text: raw.slice(index + 1, labelEnd),
-            href: raw.slice(labelEnd + 2, hrefEnd),
-          };
-        }
-      }
-    }
-
-    if (char === "`") {
-      const end = raw.indexOf("`", index + 1);
-      if (end > index + 1) {
-        return { start: index, end: end + 1, type: "format", mark: "`", tag: "code", text: raw.slice(index + 1, end) };
-      }
-    }
-
-    if (raw.startsWith("**", index)) {
-      const end = raw.indexOf("**", index + 2);
-      if (end > index + 2) {
-        return { start: index, end: end + 2, type: "format", mark: "**", tag: "strong", text: raw.slice(index + 2, end) };
-      }
-      index += 1;
-      continue;
-    }
-
-    if (char === "*" && raw[index - 1] !== "*" && raw[index + 1] !== "*") {
-      const end = findClosingSingleStar(raw, index + 1);
-      if (end > index + 1) {
-        return { start: index, end: end + 1, type: "format", mark: "*", tag: "em", text: raw.slice(index + 1, end) };
-      }
-    }
+function inlineNode(node: MarkdownInline, active: boolean): string {
+  if (node.type === "text") {
+    return escapeHtml(node.text);
   }
-
-  return null;
-}
-
-function findClosingSingleStar(raw: string, from: number) {
-  for (let index = from; index < raw.length; index += 1) {
-    if (raw[index] === "*" && raw[index - 1] !== "*" && raw[index + 1] !== "*") {
-      return index;
-    }
+  if (node.type === "code") {
+    const content = `<code>${escapeHtml(node.text)}</code>`;
+    return active ? `${syntaxMark("`")}${content}${syntaxMark("`")}` : content;
   }
-  return -1;
-}
-
-function inlineToken(mark: string, tag: "code" | "strong" | "em", text: string, active: boolean) {
-  const content = `<${tag}>${escapeHtml(text)}</${tag}>`;
+  if (node.type === "strong") {
+    const content = `<strong>${node.children.map((child) => inlineNode(child, active)).join("")}</strong>`;
+    return active ? `${syntaxMark("**")}${content}${syntaxMark("**")}` : content;
+  }
+  if (node.type === "em") {
+    const content = `<em>${node.children.map((child) => inlineNode(child, active)).join("")}</em>`;
+    return active ? `${syntaxMark("*")}${content}${syntaxMark("*")}` : content;
+  }
+  const children = node.text.map((child) => inlineNode(child, active)).join("");
+  const content = node.safe
+    ? `<a href="${escapeAttribute(node.href)}" target="_blank" rel="noreferrer"${node.title ? ` title="${escapeAttribute(node.title)}"` : ""}>${children}</a>`
+    : `<span class="markdown-link-invalid">${children}</span>`;
   if (!active) {
     return content;
   }
-  return `${syntaxMark(mark)}${content}${syntaxMark(mark)}`;
-}
-
-function linkToken(text: string, href: string, active: boolean) {
-  const safe = safeHref(href);
-  const content = safe
-    ? `<a href="${escapeAttribute(safe)}" target="_blank" rel="noreferrer">${escapeHtml(text)}</a>`
-    : `<span class="markdown-link-invalid">${escapeHtml(text)}</span>`;
-  if (!active) {
-    return content;
-  }
-  return `${syntaxMark("[")}${content}${syntaxMark(`](${href})`)}`;
+  return `${syntaxMark("[")}${content}${syntaxMark(`](${node.source})`)}`;
 }
 
 function syntaxMark(mark: string) {
