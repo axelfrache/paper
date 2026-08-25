@@ -16,6 +16,11 @@ type NoteHistory = {
   redo: NoteDraft[];
 };
 
+type DeletedNotesAction = {
+  notes: Note[];
+  index: number;
+};
+
 const historyLimit = 120;
 
 const emptyDraft: NoteDraft = {
@@ -28,6 +33,7 @@ const emptyDraft: NoteDraft = {
 export function NotesPage() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [view, setView] = useState<ViewKey>("all");
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -46,7 +52,9 @@ export function NotesPage() {
   const saveTimers = useRef(new Map<string, number>());
   const toastTimer = useRef<number | null>(null);
   const editorLineRef = useRef<number | null>(null);
+  const lastSelectedIdRef = useRef<string | null>(null);
   const historyRef = useRef(new Map<string, NoteHistory>());
+  const deletedHistoryRef = useRef<{ undo: DeletedNotesAction[]; redo: DeletedNotesAction[] }>({ undo: [], redo: [] });
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -62,6 +70,8 @@ export function NotesPage() {
       const nextNotes = await listNotes();
       setNotes(nextNotes);
       setActiveId(nextNotes[0]?.id ?? null);
+      setSelectedIds(nextNotes[0] ? [nextNotes[0].id] : []);
+      lastSelectedIdRef.current = nextNotes[0]?.id ?? null;
     };
     void load().catch(() => flash("Could not load notes"));
   }, []);
@@ -135,6 +145,7 @@ export function NotesPage() {
     }
     history.redo = [];
     historyRef.current.set(note.id, history);
+    deletedHistoryRef.current.redo = [];
   }, []);
 
   const patchActive = useCallback(
@@ -166,7 +177,61 @@ export function NotesPage() {
     [activeNote, persist],
   );
 
-  const undoActive = useCallback(() => {
+  const undoDeletedNotes = useCallback(async () => {
+    const action = deletedHistoryRef.current.undo.pop();
+    if (!action) {
+      return false;
+    }
+    try {
+      const restored = await Promise.all(action.notes.map((note) => createNote(toDraft(note))));
+      setNotes((current) => {
+        const next = [...current];
+        next.splice(Math.min(action.index, next.length), 0, ...restored);
+        return next;
+      });
+      setActiveId(restored[0]?.id ?? null);
+      setSelectedIds(restored.map((note) => note.id));
+      lastSelectedIdRef.current = restored[0]?.id ?? null;
+      deletedHistoryRef.current.redo.push({ notes: restored, index: action.index });
+      flash(restored.length === 1 ? "Note restored" : `${restored.length} notes restored`);
+      return true;
+    } catch {
+      deletedHistoryRef.current.undo.push(action);
+      flash(action.notes.length === 1 ? "Could not restore note" : "Could not restore notes");
+      return true;
+    }
+  }, [flash]);
+
+  const redoDeletedNotes = useCallback(async () => {
+    const action = deletedHistoryRef.current.redo.pop();
+    if (!action) {
+      return false;
+    }
+    try {
+      const ids = action.notes.map((note) => note.id);
+      await Promise.all(ids.map((id) => deleteNote(id)));
+      const deleted = new Set(ids);
+      for (const id of ids) {
+        historyRef.current.delete(id);
+      }
+      setNotes((current) => current.filter((note) => !deleted.has(note.id)));
+      setSelectedIds([]);
+      setActiveId((current) => (current && !deleted.has(current) ? current : null));
+      lastSelectedIdRef.current = null;
+      deletedHistoryRef.current.undo.push(action);
+      flash(ids.length === 1 ? "Note deleted" : `${ids.length} notes deleted`);
+      return true;
+    } catch {
+      deletedHistoryRef.current.redo.push(action);
+      flash(action.notes.length === 1 ? "Could not delete note" : "Could not delete notes");
+      return true;
+    }
+  }, [flash]);
+
+  const undoActive = useCallback(async () => {
+    if (await undoDeletedNotes()) {
+      return;
+    }
     if (!activeNote) {
       return;
     }
@@ -179,9 +244,12 @@ export function NotesPage() {
     history.redo.push(toDraft(activeNote));
     historyRef.current.set(activeNote.id, history);
     restoreActiveDraft(previous);
-  }, [activeNote, flash, restoreActiveDraft]);
+  }, [activeNote, flash, restoreActiveDraft, undoDeletedNotes]);
 
-  const redoActive = useCallback(() => {
+  const redoActive = useCallback(async () => {
+    if (await redoDeletedNotes()) {
+      return;
+    }
     if (!activeNote) {
       return;
     }
@@ -197,13 +265,15 @@ export function NotesPage() {
     }
     historyRef.current.set(activeNote.id, history);
     restoreActiveDraft(next);
-  }, [activeNote, flash, restoreActiveDraft]);
+  }, [activeNote, flash, restoreActiveDraft, redoDeletedNotes]);
 
   const handleNew = useCallback(async () => {
     try {
       const note = await createNote(emptyDraft);
       setNotes((current) => [note, ...current]);
       setActiveId(note.id);
+      setSelectedIds([note.id]);
+      lastSelectedIdRef.current = note.id;
       setView("all");
       setActiveTag(null);
       setQuery("");
@@ -216,29 +286,62 @@ export function NotesPage() {
     }
   }, [flash]);
 
-  const selectNote = useCallback((note: Note) => {
-    setActiveId(note.id);
-    setTagDraft("");
-    setAIResult(null);
-    editorLineRef.current = null;
-  }, []);
+  const selectNote = useCallback(
+    (note: Note, extend = false) => {
+      setActiveId(note.id);
+      setTagDraft("");
+      setAIResult(null);
+      editorLineRef.current = null;
+
+      if (extend && lastSelectedIdRef.current) {
+        const from = visibleNotes.findIndex((item) => item.id === lastSelectedIdRef.current);
+        const to = visibleNotes.findIndex((item) => item.id === note.id);
+        if (from >= 0 && to >= 0) {
+          const [start, end] = from < to ? [from, to] : [to, from];
+          setSelectedIds(visibleNotes.slice(start, end + 1).map((item) => item.id));
+          return;
+        }
+      }
+
+      setSelectedIds([note.id]);
+      lastSelectedIdRef.current = note.id;
+    },
+    [visibleNotes],
+  );
 
   const handleDelete = useCallback(async () => {
-    if (!activeNote) {
+    const ids = selectedIds.length ? selectedIds : activeNote ? [activeNote.id] : [];
+    if (!ids.length) {
       return;
     }
+    const selected = new Set(ids);
+    const deletedNotes = notes.filter((note) => selected.has(note.id));
+    const deleteIndex = Math.max(0, notes.findIndex((note) => selected.has(note.id)));
     try {
-      await deleteNote(activeNote.id);
-      const rest = notes.filter((note) => note.id !== activeNote.id);
-      historyRef.current.delete(activeNote.id);
+      await Promise.all(ids.map((id) => deleteNote(id)));
+      for (const id of ids) {
+        historyRef.current.delete(id);
+        const timer = saveTimers.current.get(id);
+        if (timer) {
+          window.clearTimeout(timer);
+          saveTimers.current.delete(id);
+        }
+      }
+      const deleted = new Set(ids);
+      const rest = notes.filter((note) => !deleted.has(note.id));
+      const nextActive = rest[0] ?? null;
       setNotes(rest);
-      setActiveId(rest[0]?.id ?? null);
+      setActiveId(nextActive?.id ?? null);
+      setSelectedIds(nextActive ? [nextActive.id] : []);
+      lastSelectedIdRef.current = nextActive?.id ?? null;
+      deletedHistoryRef.current.undo.push({ notes: deletedNotes, index: deleteIndex });
+      deletedHistoryRef.current.redo = [];
       setAIResult(null);
-      flash("Note deleted");
+      flash(ids.length === 1 ? "Note deleted" : `${ids.length} notes deleted`);
     } catch {
-      flash("Could not delete note");
+      flash(ids.length === 1 ? "Could not delete note" : "Could not delete notes");
     }
-  }, [activeNote, notes, flash]);
+  }, [activeNote, selectedIds, notes, flash]);
 
   const toggleFavorite = useCallback(() => {
     if (!activeNote) {
@@ -373,7 +476,7 @@ export function NotesPage() {
           void runAI("extract_tasks");
         },
       },
-      { label: "Toggle favorite", meta: "", icon: <Star size={14} strokeWidth={1.9} />, kbd: "⌘D", run: toggleFavorite },
+      { label: "Toggle favorite", meta: "", icon: <Star size={14} strokeWidth={1.9} />, kbd: "⌘F", run: toggleFavorite },
     ],
     [handleNew, openPalette, activeNote, runAI, toggleFavorite],
   );
@@ -382,6 +485,7 @@ export function NotesPage() {
     onCommandPalette: () => openPalette("search"),
     onAskPalette: () => openPalette("ask"),
     onCreateNote: () => void handleNew(),
+    onDelete: () => void handleDelete(),
     onToggleFavorite: toggleFavorite,
     onToggleSidebar: () => setSidebarHidden((hidden) => !hidden),
     onToggleTheme: toggleTheme,
@@ -413,6 +517,7 @@ export function NotesPage() {
         title={activeTag ? `#${activeTag}` : titleForView(view)}
         notes={visibleNotes}
         activeId={activeId}
+        selectedIds={selectedIds}
         query={query}
         sidebarHidden={sidebarHidden}
         onQueryChange={setQuery}

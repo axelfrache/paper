@@ -5,10 +5,11 @@ type NotesColumnProps = {
   title: string;
   notes: Note[];
   activeId: string | null;
+  selectedIds: string[];
   query: string;
   sidebarHidden: boolean;
   onQueryChange: (query: string) => void;
-  onSelect: (note: Note) => void;
+  onSelect: (note: Note, extend: boolean) => void;
   onToggleSidebar: () => void;
 };
 
@@ -16,12 +17,15 @@ export function NotesColumn({
   title,
   notes,
   activeId,
+  selectedIds,
   query,
   sidebarHidden,
   onQueryChange,
   onSelect,
   onToggleSidebar,
 }: NotesColumnProps) {
+  const selected = new Set(selectedIds);
+
   return (
     <section className="notes-column">
       <div className="notes-filter">
@@ -45,8 +49,9 @@ export function NotesColumn({
         {notes.map((note) => (
           <button
             key={note.id}
-            className={note.id === activeId ? "note-card active" : "note-card"}
-            onClick={() => onSelect(note)}
+            className={noteCardClass(note.id, activeId, selected)}
+            aria-selected={selected.has(note.id)}
+            onClick={(event) => onSelect(note, event.shiftKey)}
           >
             <div className="note-card-title">
               <strong>{note.title || "Untitled"}</strong>
@@ -72,6 +77,17 @@ export function NotesColumn({
       </div>
     </section>
   );
+}
+
+function noteCardClass(id: string, activeId: string | null, selected: Set<string>) {
+  const classes = ["note-card"];
+  if (selected.has(id)) {
+    classes.push("selected");
+  }
+  if (id === activeId) {
+    classes.push("active");
+  }
+  return classes.join(" ");
 }
 
 function formatRelative(value: string) {

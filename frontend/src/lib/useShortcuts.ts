@@ -4,6 +4,7 @@ type ShortcutHandlers = {
   onCommandPalette: () => void;
   onAskPalette: () => void;
   onCreateNote: () => void;
+  onDelete: () => void;
   onToggleFavorite: () => void;
   onToggleSidebar: () => void;
   onToggleTheme: () => void;
@@ -60,6 +61,11 @@ export function useShortcuts(handlers: ShortcutHandlers) {
       }
 
       if (mod && event.key.toLowerCase() === "d") {
+        event.preventDefault();
+        handlers.onDelete();
+      }
+
+      if (mod && !textInput && event.key.toLowerCase() === "f") {
         event.preventDefault();
         handlers.onToggleFavorite();
       }

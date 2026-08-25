@@ -500,6 +500,10 @@ kbd,
   box-shadow: var(--shadow-selected);
 }
 
+.note-card.selected:not(.active) {
+  background: var(--selection);
+}
+
 .note-card-title {
   display: flex;
   align-items: center;
