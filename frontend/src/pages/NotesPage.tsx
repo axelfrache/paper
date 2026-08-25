@@ -82,12 +82,28 @@ export function NotesPage() {
     const load = async () => {
       const nextNotes = await listNotes();
       setNotes(nextNotes);
-      setActiveId(nextNotes[0]?.id ?? null);
-      setSelectedIds(nextNotes[0] ? [nextNotes[0].id] : []);
-      lastSelectedIdRef.current = nextNotes[0]?.id ?? null;
+      const savedId = readLastActiveNoteId();
+      const initial = nextNotes.find((note) => note.id === savedId) ?? nextNotes[0] ?? null;
+      setActiveId(initial?.id ?? null);
+      setSelectedIds(initial ? [initial.id] : []);
+      lastSelectedIdRef.current = initial?.id ?? null;
+      if (initial) {
+        setContentFocusRequest({ noteId: initial.id, token: 1 });
+      }
     };
     void load().catch(() => flash("Could not load notes"));
   }, []);
+
+  useEffect(() => {
+    if (!activeId) {
+      return;
+    }
+    try {
+      localStorage.setItem("paper.lastActiveNoteId", activeId);
+    } catch {
+      // Ignore storage failures, the active note still loads for this session.
+    }
+  }, [activeId]);
 
   useEffect(() => {
     return () => {
@@ -683,6 +699,14 @@ function titleForView(view: ViewKey) {
 
 function hasTask(content: string) {
   return /☐|\b(todo|buy|call|book|fix|send|write|ask|get|need)\b/i.test(content);
+}
+
+function readLastActiveNoteId(): string | null {
+  try {
+    return localStorage.getItem("paper.lastActiveNoteId");
+  } catch {
+    return null;
+  }
 }
 
 function initialTheme(): Theme {
