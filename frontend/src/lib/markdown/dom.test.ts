@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   domPointForCaret,
   getSelectionRange,
+  linkElementFromTarget,
   lineLength,
   lineNodes,
   placeCaret,
@@ -53,6 +54,24 @@ describe("markdown DOM mapping", () => {
     const line = editor.querySelector("[data-line]");
 
     expect(line ? sourceTextLength(line) : 0).toBe("beforeafter".length);
+  });
+
+  it("finds a link from a nested event target", () => {
+    const editor = makeEditor(`
+      <div data-line="0"><a href="https://x.test"><span>Paper</span></a></div>
+    `);
+    const target = editor.querySelector("span");
+
+    expect(linkElementFromTarget(target)?.getAttribute("href")).toBe("https://x.test");
+  });
+
+  it("returns null when the event target is not inside a link", () => {
+    const editor = makeEditor(`
+      <div data-line="0"><span>Paper</span></div>
+    `);
+    const target = editor.querySelector("span");
+
+    expect(linkElementFromTarget(target)).toBeNull();
   });
 
   it("maps a caret at the end of bold text after closing markers", () => {

@@ -123,6 +123,10 @@ export function sourceTextLength(node: Node): number {
   return Array.from(node.childNodes).reduce((length, child) => length + sourceTextLength(child), 0);
 }
 
+export function linkElementFromTarget(target: EventTarget | null) {
+  return target instanceof Element ? target.closest<HTMLAnchorElement>("a[href]") : null;
+}
+
 export function caretOffsetInNode(nodes: Text[], node: Text, offset: number) {
   const value = node.nodeValue ?? "";
   const parent = node.parentElement;

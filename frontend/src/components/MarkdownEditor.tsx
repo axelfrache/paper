@@ -27,6 +27,7 @@ import {
 import {
   getCaret,
   getSelectionRange,
+  linkElementFromTarget,
   placeCaret,
   placeSelection,
   readSource,
@@ -375,6 +376,13 @@ export function MarkdownEditor({
       return;
     }
 
+    const linkTarget = linkElementFromTarget(event.target);
+    if (linkTarget && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      window.open(linkTarget.href, "_blank", "noopener,noreferrer");
+      return;
+    }
+
     const checkTarget = target?.closest("[data-check]");
     if (!checkTarget) {
       return;
@@ -386,6 +394,12 @@ export function MarkdownEditor({
       return;
     }
     toggleTaskLine(line);
+  };
+
+  const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (linkElementFromTarget(event.target)) {
+      event.preventDefault();
+    }
   };
 
   const toggleTaskLine = (line: number) => {
@@ -422,6 +436,7 @@ export function MarkdownEditor({
         onFocus={handleFocus}
         onBlur={handleBlur}
         onPointerDown={handlePointerDown}
+        onClick={handleClick}
         onPaste={handlePaste}
       />
       {!value ? <div className="markdown-editor-placeholder">{placeholder}</div> : null}
