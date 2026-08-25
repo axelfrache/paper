@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { PanelLeftOpen, Search, Star } from "lucide-react";
+import { stripDiagramMarkers } from "../lib/diagram";
 import type { Note } from "../types/note";
 
 type NoteDirection = "previous" | "next";
@@ -112,7 +113,7 @@ export function NotesColumn({
               <strong>{note.title || "Untitled"}</strong>
               {note.favorite ? <Star size={12} fill="currentColor" strokeWidth={1.8} /> : null}
             </div>
-            <p>{note.content.replace(/\s+/g, " ").trim() || "No content"}</p>
+            <p>{stripDiagramMarkers(note.content).replace(/\s+/g, " ").trim() || "No content"}</p>
             <div className="note-card-meta">
               <span>{formatRelative(note.updatedAt)}</span>
               <div>

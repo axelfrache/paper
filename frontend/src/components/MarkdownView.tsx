@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { diagramSummary, diagramToSvgMarkup, parseDiagramMarker } from "../lib/diagram";
+import type { Diagram } from "../lib/diagram";
 
 type MarkdownViewProps = {
   text: string;
@@ -12,6 +14,7 @@ type MarkdownBlock =
   | { type: "ul"; items: string[] }
   | { type: "tasks"; items: Array<{ text: string; done: boolean }> }
   | { type: "ol"; items: string[] }
+  | { type: "diagram"; diagram: Diagram }
   | { type: "code"; text: string }
   | { type: "divider" };
 
@@ -63,6 +66,13 @@ function parseBlocks(raw: string): MarkdownBlock[] {
 
     if (!trimmed) {
       flushParagraph();
+      continue;
+    }
+
+    const diagram = parseDiagramMarker(trimmed);
+    if (diagram) {
+      flushParagraph();
+      blocks.push({ type: "diagram", diagram });
       continue;
     }
 
@@ -170,6 +180,14 @@ function renderBlock(block: MarkdownBlock, index: number) {
   }
   if (block.type === "divider") {
     return <hr key={index} />;
+  }
+  if (block.type === "diagram") {
+    return (
+      <figure key={index} className="markdown-diagram-card">
+        <div dangerouslySetInnerHTML={{ __html: diagramToSvgMarkup(block.diagram, 320) }} />
+        <figcaption>{diagramSummary(block.diagram)}</figcaption>
+      </figure>
+    );
   }
   if (block.type === "ol") {
     return (

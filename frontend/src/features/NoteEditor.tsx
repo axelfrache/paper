@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Moon, Search, Star, Sun, Trash2 } from "lucide-react";
+import { DiagramEditor } from "../components/DiagramEditor";
 import { MarkdownEditor } from "../components/MarkdownEditor";
 import { MarkdownView } from "../components/MarkdownView";
+import { replaceDiagramMarkerAtLine, stripDiagramMarkers } from "../lib/diagram";
 import type { AIAction, Note } from "../types/note";
+import type { Diagram } from "../lib/diagram";
 
 export type AIResult = {
   action: AIAction;
@@ -46,6 +49,12 @@ type ContentFocusTarget = {
   placement: "start" | "end" | "last";
 };
 
+type DiagramEditTarget = {
+  noteId: string;
+  line: number;
+  diagram: Diagram;
+};
+
 export function NoteEditor({
   note,
   tagDraft,
@@ -73,7 +82,19 @@ export function NoteEditor({
   const handledTitleFocusTokenRef = useRef(0);
   const handledContentFocusTokenRef = useRef(0);
   const localContentFocusTokenRef = useRef(0);
+  const latestContentRef = useRef(note?.content ?? "");
   const [contentFocusTarget, setContentFocusTarget] = useState<ContentFocusTarget | null>(null);
+  const [diagramEdit, setDiagramEdit] = useState<DiagramEditTarget | null>(null);
+
+  useEffect(() => {
+    latestContentRef.current = note?.content ?? "";
+  }, [note?.content]);
+
+  useEffect(() => {
+    if (diagramEdit && note?.id !== diagramEdit.noteId) {
+      setDiagramEdit(null);
+    }
+  }, [diagramEdit, note?.id]);
 
   useEffect(() => {
     if (
@@ -126,6 +147,36 @@ export function NoteEditor({
   const focusContent = (placement: ContentFocusTarget["placement"]) => {
     localContentFocusTokenRef.current += 1;
     setContentFocusTarget({ key: `local-${localContentFocusTokenRef.current}`, placement });
+  };
+
+  const openDiagram = (line: number, diagram: Diagram) => {
+    if (!note) {
+      return;
+    }
+    setDiagramEdit({ noteId: note.id, line, diagram });
+  };
+
+  const changeDiagram = (diagram: Diagram) => {
+    if (!diagramEdit) {
+      return;
+    }
+    const nextContent = replaceDiagramMarkerAtLine(latestContentRef.current, diagramEdit.line, diagram);
+    latestContentRef.current = nextContent;
+    setDiagramEdit({ ...diagramEdit, diagram });
+    onContentChange(nextContent);
+  };
+
+  const describeDiagram = (description: string) => {
+    if (!diagramEdit) {
+      return;
+    }
+    const lines = latestContentRef.current.split("\n");
+    const insertAt = Math.min(lines.length, diagramEdit.line + 1);
+    lines.splice(insertAt, 0, "", description, "");
+    const nextContent = lines.join("\n");
+    latestContentRef.current = nextContent;
+    setDiagramEdit(null);
+    onContentChange(nextContent);
   };
 
   if (!note) {
@@ -226,6 +277,7 @@ export function NoteEditor({
             focusRequest={contentFocusTarget}
             onFocusPrevious={focusTags}
             onFocusNoteList={onFocusNoteList}
+            onOpenDiagram={openDiagram}
             placeholder="Start writing... press / to insert a block"
           />
 
@@ -248,6 +300,15 @@ export function NoteEditor({
         ))}
         <span>{wordCount(note.content)}</span>
       </footer>
+
+      {diagramEdit && diagramEdit.noteId === note.id ? (
+        <DiagramEditor
+          diagram={diagramEdit.diagram}
+          onChange={changeDiagram}
+          onClose={() => setDiagramEdit(null)}
+          onDescribe={describeDiagram}
+        />
+      ) : null}
     </main>
   );
 }
@@ -360,7 +421,8 @@ function applyLabelForAction(action: AIAction) {
 }
 
 function wordCount(content: string) {
-  const count = content.trim() ? content.trim().split(/\s+/).length : 0;
+  const cleanContent = stripDiagramMarkers(content);
+  const count = cleanContent.trim() ? cleanContent.trim().split(/\s+/).length : 0;
   return count ? `${count} words` : "";
 }
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { FileText, Search, Sparkles } from "lucide-react";
 import { MarkdownView } from "./MarkdownView";
+import { stripDiagramMarkers } from "../lib/diagram";
 import type { Note } from "../types/note";
 
 export type PaletteMode = "search" | "ask";
@@ -285,7 +286,7 @@ function AskPanel({
 }
 
 function snippet(content: string) {
-  return content.replace(/\s+/g, " ").trim().slice(0, 90);
+  return stripDiagramMarkers(content).replace(/\s+/g, " ").trim().slice(0, 90);
 }
 
 function formatRelative(value: string) {

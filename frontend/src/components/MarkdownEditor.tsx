@@ -1,5 +1,16 @@
 import { useLayoutEffect, useRef, useState } from "react";
+import {
+  createDefaultDiagram,
+  diagramSummary,
+  diagramToSvgMarkup,
+  parseDiagramMarker,
+  previewForDiagram,
+  replaceDiagramMarkerAtLine,
+  serializeDiagramMarker,
+  updateDiagramPreview,
+} from "../lib/diagram";
 import type { AIAction } from "../types/note";
+import type { Diagram, DiagramPreview } from "../lib/diagram";
 
 type Caret = {
   line: number;
@@ -19,6 +30,7 @@ type MarkdownEditorProps = {
   focusRequest?: { key: string; placement: "start" | "end" | "last" } | null;
   onFocusPrevious?: () => void;
   onFocusNoteList?: () => void;
+  onOpenDiagram?: (line: number, diagram: Diagram) => void;
   placeholder?: string;
 };
 
@@ -33,6 +45,7 @@ type SlashItem = {
   wrap?: string;
   block?: string;
   date?: boolean;
+  diagram?: boolean;
   ai?: AIAction;
 };
 
@@ -53,6 +66,7 @@ const slashItems: SlashItem[] = [
   { id: "quote", label: "Quote", hint: "Indented aside", icon: "❝", prefix: "> " },
   { id: "code", label: "Code", hint: "Inline monospace", icon: "‹›", wrap: "`" },
   { id: "bold", label: "Bold", hint: "Emphasis", icon: "B", wrap: "**" },
+  { id: "diagram", label: "Diagram", hint: "Flat or isometric canvas", icon: "◫", diagram: true },
   { id: "divider", label: "Divider", hint: "Horizontal rule", icon: "—", block: "---" },
   { id: "date", label: "Today's date", hint: "Insert as text", icon: "◷", date: true },
   { id: "ai-summary", label: "Summarize note", hint: "AI", icon: "≡", ai: "summarize" },
@@ -68,6 +82,7 @@ export function MarkdownEditor({
   focusRequest = null,
   onFocusPrevious,
   onFocusNoteList,
+  onOpenDiagram,
   placeholder = "Start writing...",
 }: MarkdownEditorProps) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -306,12 +321,45 @@ export function MarkdownEditor({
     if (event.button !== 0) {
       return;
     }
-    const target = event.target instanceof Element ? event.target.closest("[data-check]") : null;
-    if (!target) {
+    const target = event.target instanceof Element ? event.target : null;
+    const editTarget = target?.closest("[data-diagram-edit-line]");
+    if (editTarget) {
+      event.preventDefault();
+      const line = Number(editTarget.getAttribute("data-diagram-edit-line"));
+      const diagram = parseDiagramMarker(value.split("\n")[line] ?? "");
+      if (!Number.isNaN(line) && diagram) {
+        onOpenDiagram?.(line, diagram);
+      }
       return;
     }
+
+    const dragTarget = target?.closest("[data-diagram-drag-line]");
+    if (dragTarget) {
+      event.preventDefault();
+      const line = Number(dragTarget.getAttribute("data-diagram-drag-line"));
+      if (!Number.isNaN(line)) {
+        startDiagramBlockDrag(event.nativeEvent, line, dragTarget.closest("[data-diagram-line]"));
+      }
+      return;
+    }
+
+    const resizeTarget = target?.closest("[data-diagram-resize-line]");
+    if (resizeTarget) {
+      event.preventDefault();
+      const line = Number(resizeTarget.getAttribute("data-diagram-resize-line"));
+      if (!Number.isNaN(line)) {
+        startDiagramPreviewResize(event.nativeEvent, line, resizeTarget.closest("[data-diagram-line]"));
+      }
+      return;
+    }
+
+    const checkTarget = target?.closest("[data-check]");
+    if (!checkTarget) {
+      return;
+    }
+
     event.preventDefault();
-    const line = Number(target.getAttribute("data-check"));
+    const line = Number(checkTarget.getAttribute("data-check"));
     if (Number.isNaN(line)) {
       return;
     }
@@ -465,6 +513,20 @@ export function MarkdownEditor({
       return;
     }
 
+    if (item.diagram) {
+      const diagram = createDefaultDiagram();
+      const marker = serializeDiagramMarker(diagram);
+      const keepLine = stem.trim() || after.trim();
+      lines.splice(caret.line, 1, stem + after, marker, "");
+      if (!keepLine) {
+        lines.splice(caret.line, 1);
+      }
+      const markerLine = keepLine ? caret.line + 1 : caret.line;
+      setSource(lines.join("\n"), { line: markerLine, col: 0 });
+      window.requestAnimationFrame(() => onOpenDiagram?.(markerLine, diagram));
+      return;
+    }
+
     if (item.wrap) {
       lines[caret.line] = stem + item.wrap + item.wrap + after;
       setSource(lines.join("\n"), { line: caret.line, col: stem.length + item.wrap.length });
@@ -483,6 +545,80 @@ export function MarkdownEditor({
     const prefix = item.prefix ?? "";
     lines[caret.line] = prefix + body + after;
     setSource(lines.join("\n"), { line: caret.line, col: prefix.length + body.length });
+  }
+
+  function startDiagramBlockDrag(event: PointerEvent, line: number, card: Element | null) {
+    const marker = value.split("\n")[line] ?? "";
+    if (!isDiagramLine(marker)) {
+      return;
+    }
+
+    const start = { x: event.clientX, y: event.clientY };
+    let moved = false;
+
+    const move = (moveEvent: PointerEvent) => {
+      const dx = Math.abs(moveEvent.clientX - start.x);
+      const dy = Math.abs(moveEvent.clientY - start.y);
+      if (dx + dy > 4) {
+        moved = true;
+        card?.classList.add("is-dragging");
+      }
+    };
+
+    const up = (upEvent: PointerEvent) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      card?.classList.remove("is-dragging");
+      if (!moved) {
+        return;
+      }
+
+      const drop = diagramDropLineAt(upEvent.clientX, upEvent.clientY);
+      if (!drop || drop.line === line) {
+        return;
+      }
+
+      const next = moveLine(value, line, drop.line, drop.after);
+      if (next !== value) {
+        setSource(next, null);
+      }
+    };
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  function startDiagramPreviewResize(event: PointerEvent, line: number, card: Element | null) {
+    const diagram = parseDiagramMarker(value.split("\n")[line] ?? "");
+    const svg = card?.querySelector<SVGSVGElement>("svg");
+    if (!diagram || !svg) {
+      return;
+    }
+
+    const rect = svg.getBoundingClientRect();
+    const start = previewForDiagram(diagram);
+    const scale = start.width / Math.max(1, rect.width);
+    let source = value;
+
+    const move = (moveEvent: PointerEvent) => {
+      const nextHeight = Math.max(140, Math.min(640, start.height + moveEvent.clientY - event.clientY));
+      const nextPreview: DiagramPreview = {
+        ...start,
+        height: nextHeight,
+        width: Math.max(160, rect.width * scale),
+      };
+      const nextDiagram = updateDiagramPreview(diagram, nextPreview);
+      source = replaceDiagramMarkerAtLine(source, line, nextDiagram);
+      setSource(source, null);
+    };
+
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
   }
 }
 
@@ -530,10 +666,78 @@ function renderLine(raw: string, active: boolean, index: number) {
     return `<div data-line="${index}" style="${base}border-left:2px solid #dfe2e6;padding-left:12px;color:#6f757c;">${syn(match[1] + match[2])}${inlineMarkdown(match[3], active)}</div>`;
   }
 
+  const diagram = parseDiagramMarker(raw);
+  if (diagram && !active) {
+    const preview = [
+      `<span data-diagram-drag-line="${index}" class="markdown-editor-diagram-drag">${diagramToSvgMarkup(diagram, 320)}</span>`,
+      `<span class="markdown-editor-diagram-meta"><span>${escapeHtml(diagramSummary(diagram))}</span><em data-diagram-edit-line="${index}">Edit diagram</em><small>drag to move</small></span>`,
+      `<span data-diagram-resize-line="${index}" class="markdown-editor-diagram-resize" aria-hidden="true"></span>`,
+    ].join("");
+    return `<div data-line="${index}" style="${base}margin:16px 0;">${syn(raw)}${deco(`<span data-diagram-line="${index}" contenteditable="false" class="markdown-editor-diagram-card">${preview}</span>`)}</div>`;
+  }
+
   if (!raw.length) {
     return `<div data-line="${index}" style="${base}"><br /></div>`;
   }
   return `<div data-line="${index}" style="${base}">${inlineMarkdown(raw, active)}</div>`;
+}
+
+function isDiagramLine(line: string) {
+  return Boolean(parseDiagramMarker(line));
+}
+
+function diagramDropLineAt(clientX: number, clientY: number): { line: number; after: boolean } | null {
+  const element = document.elementFromPoint(clientX, clientY);
+  let lineElement = element?.closest("[data-line]");
+  if (!lineElement) {
+    const editor = element?.closest(".markdown-editor") ?? document.querySelector(".markdown-editor");
+    const lines = Array.from(editor?.querySelectorAll("[data-line]") ?? []);
+    lineElement = nearestLineElement(lines, clientY);
+  }
+  if (!lineElement) {
+    return null;
+  }
+
+  const line = Number(lineElement.getAttribute("data-line"));
+  if (Number.isNaN(line)) {
+    return null;
+  }
+
+  const rect = lineElement.getBoundingClientRect();
+  return { line, after: clientY > rect.top + rect.height / 2 };
+}
+
+function nearestLineElement(lines: Element[], clientY: number) {
+  let nearest: Element | null = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (const line of lines) {
+    const rect = line.getBoundingClientRect();
+    const distance = clientY < rect.top ? rect.top - clientY : clientY > rect.bottom ? clientY - rect.bottom : 0;
+    if (distance < nearestDistance) {
+      nearest = line;
+      nearestDistance = distance;
+    }
+  }
+  return nearest;
+}
+
+function moveLine(value: string, from: number, to: number, after: boolean) {
+  const lines = value.split("\n");
+  if (from < 0 || from >= lines.length || to < 0 || to >= lines.length) {
+    return value;
+  }
+
+  const [line] = lines.splice(from, 1);
+  let insertAt = to + (after ? 1 : 0);
+  if (from < insertAt) {
+    insertAt -= 1;
+  }
+  insertAt = Math.max(0, Math.min(insertAt, lines.length));
+  if (insertAt === from) {
+    return value;
+  }
+  lines.splice(insertAt, 0, line);
+  return lines.join("\n");
 }
 
 function inlineMarkdown(raw: string, active: boolean) {
