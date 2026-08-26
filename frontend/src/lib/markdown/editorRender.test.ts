@@ -10,10 +10,12 @@ function render(html: string) {
 
 describe("editable markdown renderer", () => {
   it("renders formatted inline text", () => {
-    const host = render(renderEditableMarkdown("Use **bold**, *italic* and `code`.", -1));
+    const host = render(renderEditableMarkdown("Use **bold**, *italic*, ~~strike~~, <u>underline</u> and `code`.", -1));
 
     expect(host.querySelector("strong")?.textContent).toBe("bold");
     expect(host.querySelector("em")?.textContent).toBe("italic");
+    expect(host.querySelector("s")?.textContent).toBe("strike");
+    expect(host.querySelector("u")?.textContent).toBe("underline");
     expect(host.querySelector("code")?.textContent).toBe("code");
   });
 

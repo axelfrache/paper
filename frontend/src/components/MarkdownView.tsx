@@ -97,6 +97,12 @@ function renderInlineNode(node: MarkdownInline, index: number): ReactNode {
   if (node.type === "em") {
     return <em key={index}>{node.children.map(renderInlineNode)}</em>;
   }
+  if (node.type === "strike") {
+    return <s key={index}>{node.children.map(renderInlineNode)}</s>;
+  }
+  if (node.type === "underline") {
+    return <u key={index}>{node.children.map(renderInlineNode)}</u>;
+  }
   if (!node.safe) {
     return <span key={index} className="markdown-link-invalid">{node.text.map(renderInlineNode)}</span>;
   }

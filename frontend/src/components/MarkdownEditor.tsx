@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
+import { Bold, Code2, Italic, Link, Strikethrough, Underline } from "lucide-react";
 import {
   createDefaultDiagram,
   parseDiagramMarker,
@@ -54,6 +55,7 @@ type SlashItem = {
   icon: string;
   prefix?: string;
   wrap?: string;
+  closeWrap?: string;
   link?: boolean;
   block?: string;
   date?: boolean;
@@ -69,6 +71,14 @@ type SlashState = {
   maxHeight: number;
 };
 
+type SelectionToolbarState = {
+  range: TextRange;
+  top: number;
+  left: number;
+};
+
+type SelectionToolbarAction = "bold" | "italic" | "code" | "strike" | "underline" | "link";
+
 const slashItems: SlashItem[] = [
   { id: "h1", label: "Heading", hint: "Large section title", icon: "H", prefix: "# " },
   { id: "h2", label: "Subheading", hint: "Medium title", icon: "H", prefix: "## " },
@@ -78,6 +88,9 @@ const slashItems: SlashItem[] = [
   { id: "quote", label: "Quote", hint: "Indented aside", icon: "❝", prefix: "> " },
   { id: "code", label: "Code", hint: "Inline monospace", icon: "‹›", wrap: "`" },
   { id: "bold", label: "Bold", hint: "Emphasis", icon: "B", wrap: "**" },
+  { id: "italic", label: "Italic", hint: "Emphasis", icon: "I", wrap: "*" },
+  { id: "strike", label: "Strikethrough", hint: "Crossed text", icon: "S", wrap: "~~" },
+  { id: "underline", label: "Underline", hint: "Underlined text", icon: "U", wrap: "<u>", closeWrap: "</u>" },
   { id: "link", label: "Link", hint: "Hyperlink", icon: "↗", link: true },
   { id: "diagram", label: "Diagram", hint: "Flat or isometric canvas", icon: "◫", diagram: true },
   { id: "divider", label: "Divider", hint: "Horizontal rule", icon: "—", block: "---" },
@@ -106,6 +119,7 @@ export function MarkdownEditor({
   const activeLineRef = useRef(-1);
   const handledFocusRequestRef = useRef("");
   const [slash, setSlash] = useState<SlashState | null>(null);
+  const [selectionToolbar, setSelectionToolbar] = useState<SelectionToolbarState | null>(null);
 
   useLayoutEffect(() => {
     renderMarkdown(editorRef.current, value, focusedRef.current ? caretRef.current?.line ?? -1 : -1);
@@ -167,9 +181,11 @@ export function MarkdownEditor({
       caretRef.current = range.end;
       onCaretLineChange?.(range.end.line);
       setSlash(null);
+      updateSelectionToolbar(range);
       return;
     }
 
+    setSelectionToolbar(null);
     const caret = range?.end ?? getCaret(editorRef.current);
     if (!caret) {
       return;
@@ -194,6 +210,7 @@ export function MarkdownEditor({
 
   const handleInput = () => {
     const caret = getCaret(editorRef.current);
+    setSelectionToolbar(null);
     setSource(readSource(editorRef.current), caret);
   };
 
@@ -264,12 +281,14 @@ export function MarkdownEditor({
       const range = fullTextRange(value);
       caretRef.current = range.end;
       placeSelection(editorRef.current, range);
+      updateSelectionToolbar(range);
       return;
     }
 
     if (meta && !event.shiftKey && event.key.toLowerCase() === "k" && selectionRange && !isCollapsedRange(selectionRange)) {
       event.preventDefault();
       const next = wrapLink(value, selectionRange);
+      setSelectionToolbar(null);
       setSource(next.value, next.caret);
       return;
     }
@@ -278,6 +297,7 @@ export function MarkdownEditor({
       event.preventDefault();
       const mark = event.key.toLowerCase() === "b" ? "**" : "*";
       const next = wrapSelection(value, selectionRange ?? { start: caret, end: caret }, mark);
+      setSelectionToolbar(null);
       setSource(next.value, next.caret);
       return;
     }
@@ -285,6 +305,7 @@ export function MarkdownEditor({
     if (!meta && !event.altKey && !event.nativeEvent.isComposing && event.key.length === 1) {
       event.preventDefault();
       const next = insertText(value, selectionRange ?? { start: caret, end: caret }, event.key);
+      setSelectionToolbar(null);
       setSource(next.value, next.caret);
       return;
     }
@@ -294,6 +315,7 @@ export function MarkdownEditor({
       const next = selectionRange && !isCollapsedRange(selectionRange)
         ? insertText(value, selectionRange, "\n")
         : insertLineBreak(value, caret);
+      setSelectionToolbar(null);
       setSource(next.value, next.caret);
       return;
     }
@@ -305,6 +327,7 @@ export function MarkdownEditor({
         : event.ctrlKey || event.altKey
           ? deleteBackwardWord(value, caret)
           : deleteBackward(value, caret);
+      setSelectionToolbar(null);
       setSource(next.value, next.caret);
       return;
     }
@@ -316,6 +339,7 @@ export function MarkdownEditor({
         : event.ctrlKey || event.altKey
           ? deleteForwardWord(value, caret)
           : deleteForward(value, caret);
+      setSelectionToolbar(null);
       setSource(next.value, next.caret);
     }
   };
@@ -333,6 +357,7 @@ export function MarkdownEditor({
     focusedRef.current = false;
     caretRef.current = null;
     setSlash(null);
+    setSelectionToolbar(null);
     renderMarkdown(editorRef.current, value, -1);
     activeLineRef.current = -1;
   };
@@ -410,6 +435,7 @@ export function MarkdownEditor({
   const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
     event.preventDefault();
     setSlash(null);
+    setSelectionToolbar(null);
     const text = event.clipboardData.getData("text/plain");
     const caret = getCaret(editorRef.current) ?? { line: 0, col: 0 };
     const next = insertText(value, getSelectionRange(editorRef.current) ?? { start: caret, end: caret }, text);
@@ -462,8 +488,71 @@ export function MarkdownEditor({
           </div>
         </div>
       ) : null}
+      {selectionToolbar ? (
+        <div className="selection-toolbar" style={{ top: selectionToolbar.top, left: selectionToolbar.left }}>
+          <button type="button" aria-label="Bold" title="Bold" onMouseDown={(event) => runSelectionToolbarAction(event, "bold")}>
+            <Bold size={15} strokeWidth={2.1} />
+          </button>
+          <button type="button" aria-label="Italic" title="Italic" onMouseDown={(event) => runSelectionToolbarAction(event, "italic")}>
+            <Italic size={15} strokeWidth={2.1} />
+          </button>
+          <button type="button" aria-label="Code" title="Code" onMouseDown={(event) => runSelectionToolbarAction(event, "code")}>
+            <Code2 size={15} strokeWidth={2.1} />
+          </button>
+          <button type="button" aria-label="Strikethrough" title="Strikethrough" onMouseDown={(event) => runSelectionToolbarAction(event, "strike")}>
+            <Strikethrough size={15} strokeWidth={2.1} />
+          </button>
+          <button type="button" aria-label="Underline" title="Underline" onMouseDown={(event) => runSelectionToolbarAction(event, "underline")}>
+            <Underline size={15} strokeWidth={2.1} />
+          </button>
+          <span />
+          <button type="button" aria-label="Link" title="Link" onMouseDown={(event) => runSelectionToolbarAction(event, "link")}>
+            <Link size={15} strokeWidth={2.1} />
+          </button>
+        </div>
+      ) : null}
     </div>
   );
+
+  function runSelectionToolbarAction(event: React.MouseEvent<HTMLButtonElement>, action: SelectionToolbarAction) {
+    event.preventDefault();
+    const range = selectionToolbar?.range ?? getSelectionRange(editorRef.current);
+    if (!range || isCollapsedRange(range)) {
+      setSelectionToolbar(null);
+      return;
+    }
+
+    const next = action === "link"
+      ? wrapLink(value, range)
+      : action === "underline"
+        ? wrapSelection(value, range, "<u>", "</u>")
+        : wrapSelection(value, range, action === "bold" ? "**" : action === "italic" ? "*" : action === "strike" ? "~~" : "`");
+    focusedRef.current = true;
+    setSlash(null);
+    setSelectionToolbar(null);
+    setSource(next.value, next.caret);
+    window.requestAnimationFrame(() => editorRef.current?.focus());
+  }
+
+  function updateSelectionToolbar(range: TextRange) {
+    const wrap = wrapRef.current;
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    if (!wrap || !editor || !selection?.rangeCount) {
+      setSelectionToolbar(null);
+      return;
+    }
+
+    const domRange = selection.getRangeAt(0);
+    let rect = domRange.getBoundingClientRect();
+    if (!rect.width && !rect.height) {
+      rect = editor.querySelector(`[data-line="${range.end.line}"]`)?.getBoundingClientRect() ?? rect;
+    }
+    const wrapRect = wrap.getBoundingClientRect();
+    const left = Math.max(54, Math.min(rect.left + rect.width / 2 - wrapRect.left, wrapRect.width - 54));
+    const top = Math.max(8, rect.top - wrapRect.top - 8);
+    setSelectionToolbar({ range, top, left });
+  }
 
   function probeSlash(source: string, caret: Caret) {
     const line = source.split("\n")[caret.line] ?? "";
@@ -562,7 +651,8 @@ export function MarkdownEditor({
     }
 
     if (item.wrap) {
-      lines[caret.line] = stem + item.wrap + item.wrap + after;
+      const closeWrap = item.closeWrap ?? item.wrap;
+      lines[caret.line] = stem + item.wrap + closeWrap + after;
       setSource(lines.join("\n"), { line: caret.line, col: stem.length + item.wrap.length });
       return;
     }

@@ -33,6 +33,13 @@ describe("markdown editing operations", () => {
     });
   });
 
+  it("wraps a selected word with different opening and closing marks", () => {
+    expect(wrapSelection("underline this", { start: { line: 0, col: 0 }, end: { line: 0, col: 9 } }, "<u>", "</u>")).toEqual({
+      value: "<u>underline</u> this",
+      caret: { line: 0, col: 16 },
+    });
+  });
+
   it("preserves bold markers when typing after a bold word", () => {
     expect(insertText("**bold**", { start: { line: 0, col: 8 }, end: { line: 0, col: 8 } }, " text")).toEqual({
       value: "**bold** text",

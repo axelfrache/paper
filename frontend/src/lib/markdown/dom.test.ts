@@ -101,6 +101,24 @@ describe("markdown DOM mapping", () => {
     expect(linkText ? pointToCaret(editor, linkText, 5) : null).toEqual({ line: 0, col: "[Paper](https://x.test)".length });
   });
 
+  it("maps a caret at the end of strikethrough text after closing markers", () => {
+    const editor = makeEditor(`
+      <div data-line="0"><span>~~</span><s>strike</s><span>~~</span></div>
+    `);
+    const strikeText = editor.querySelector("s")?.firstChild;
+
+    expect(strikeText ? pointToCaret(editor, strikeText, 6) : null).toEqual({ line: 0, col: 10 });
+  });
+
+  it("maps a caret at the end of underline text after closing markers", () => {
+    const editor = makeEditor(`
+      <div data-line="0"><span>&lt;u&gt;</span><u>line</u><span>&lt;/u&gt;</span></div>
+    `);
+    const underlineText = editor.querySelector("u")?.firstChild;
+
+    expect(underlineText ? pointToCaret(editor, underlineText, 4) : null).toEqual({ line: 0, col: 11 });
+  });
+
   it("maps a caret inside a link label without jumping past href syntax", () => {
     const editor = makeEditor(`
       <div data-line="0"><span>[</span><a href="https://x.test">Paper</a><span>](https://x.test)</span></div>

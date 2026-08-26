@@ -75,6 +75,97 @@ describe("MarkdownEditor integration", () => {
     });
   });
 
+  it("shows a floating toolbar for selected text", () => {
+    const host = mount("Make Paper bold");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeSelection(editor, { start: { line: 0, col: 5 }, end: { line: 0, col: 10 } });
+      editor.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+    });
+
+    expect(host.querySelector(".selection-toolbar button[aria-label='Bold']")).not.toBeNull();
+    expect(host.querySelector(".selection-toolbar button[aria-label='Italic']")).not.toBeNull();
+    expect(host.querySelector(".selection-toolbar button[aria-label='Code']")).not.toBeNull();
+    expect(host.querySelector(".selection-toolbar button[aria-label='Strikethrough']")).not.toBeNull();
+    expect(host.querySelector(".selection-toolbar button[aria-label='Underline']")).not.toBeNull();
+    expect(host.querySelector(".selection-toolbar button[aria-label='Link']")).not.toBeNull();
+  });
+
+  it("applies formatting from the floating toolbar", () => {
+    const host = mount("Make Paper bold");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeSelection(editor, { start: { line: 0, col: 5 }, end: { line: 0, col: 10 } });
+      editor.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+    });
+
+    act(() => {
+      host.querySelector(".selection-toolbar button[aria-label='Bold']")?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe("Make **Paper** bold");
+    expect(host.querySelector(".selection-toolbar")).toBeNull();
+  });
+
+  it("applies strikethrough from the floating toolbar", () => {
+    const host = mount("Strike Paper");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeSelection(editor, { start: { line: 0, col: 7 }, end: { line: 0, col: 12 } });
+      editor.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+    });
+
+    act(() => {
+      host.querySelector(".selection-toolbar button[aria-label='Strikethrough']")?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe("Strike ~~Paper~~");
+  });
+
+  it("applies underline from the floating toolbar", () => {
+    const host = mount("Underline Paper");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeSelection(editor, { start: { line: 0, col: 10 }, end: { line: 0, col: 15 } });
+      editor.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+    });
+
+    act(() => {
+      host.querySelector(".selection-toolbar button[aria-label='Underline']")?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe("Underline <u>Paper</u>");
+  });
+
+  it("applies links from the floating toolbar", () => {
+    const host = mount("Visit Paper");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeSelection(editor, { start: { line: 0, col: 6 }, end: { line: 0, col: 11 } });
+      editor.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+    });
+
+    act(() => {
+      host.querySelector(".selection-toolbar button[aria-label='Link']")?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe("Visit [Paper](https://)");
+    expect(getSelectionRange(editor)).toEqual({
+      start: { line: 0, col: 22 },
+      end: { line: 0, col: 22 },
+    });
+  });
+
   it("opens a rendered link on ctrl click", () => {
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
     const host = mount("[Paper](https://example.com/docs)");

@@ -81,6 +81,14 @@ function inlineNode(node: MarkdownInline, active: boolean): string {
     const content = `<em>${node.children.map((child) => inlineNode(child, active)).join("")}</em>`;
     return active ? `${syntaxMark("*")}${content}${syntaxMark("*")}` : content;
   }
+  if (node.type === "strike") {
+    const content = `<s>${node.children.map((child) => inlineNode(child, active)).join("")}</s>`;
+    return active ? `${syntaxMark("~~")}${content}${syntaxMark("~~")}` : content;
+  }
+  if (node.type === "underline") {
+    const content = `<u>${node.children.map((child) => inlineNode(child, active)).join("")}</u>`;
+    return active ? `${syntaxMark("<u>")}${content}${syntaxMark("</u>")}` : content;
+  }
   const children = node.text.map((child) => inlineNode(child, active)).join("");
   const content = node.safe
     ? `<a href="${escapeAttribute(node.href)}" target="_blank" rel="noreferrer"${node.title ? ` title="${escapeAttribute(node.title)}"` : ""}>${children}</a>`

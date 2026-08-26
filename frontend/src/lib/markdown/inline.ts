@@ -3,7 +3,9 @@ export type MarkdownInline =
   | { type: "link"; text: MarkdownInline[]; href: string; source: string; title?: string; safe: boolean }
   | { type: "code"; text: string }
   | { type: "strong"; children: MarkdownInline[] }
-  | { type: "em"; children: MarkdownInline[] };
+  | { type: "em"; children: MarkdownInline[] }
+  | { type: "strike"; children: MarkdownInline[] }
+  | { type: "underline"; children: MarkdownInline[] };
 
 type ParsedLink = {
   node: MarkdownInline;
@@ -42,6 +44,26 @@ export function parseInline(text: string): MarkdownInline[] {
         pushBuffer();
         nodes.push({ type: "code", text: text.slice(index + 1, end) });
         index = end + 1;
+        continue;
+      }
+    }
+
+    if (text.startsWith("~~", index)) {
+      const end = text.indexOf("~~", index + 2);
+      if (end > index + 2) {
+        pushBuffer();
+        nodes.push({ type: "strike", children: parseInline(text.slice(index + 2, end)) });
+        index = end + 2;
+        continue;
+      }
+    }
+
+    if (text.startsWith("<u>", index)) {
+      const end = text.indexOf("</u>", index + 3);
+      if (end > index + 3) {
+        pushBuffer();
+        nodes.push({ type: "underline", children: parseInline(text.slice(index + 3, end)) });
+        index = end + 4;
         continue;
       }
     }

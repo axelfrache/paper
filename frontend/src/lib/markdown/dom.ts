@@ -130,7 +130,7 @@ export function linkElementFromTarget(target: EventTarget | null) {
 export function caretOffsetInNode(nodes: Text[], node: Text, offset: number) {
   const value = node.nodeValue ?? "";
   const parent = node.parentElement;
-  if (!parent || offset !== value.length || !["STRONG", "EM", "CODE", "A"].includes(parent.tagName)) {
+  if (!parent || offset !== value.length || !["STRONG", "EM", "CODE", "A", "S", "U"].includes(parent.tagName)) {
     return offset;
   }
   const next = nodes[nodes.indexOf(node) + 1];
@@ -146,6 +146,12 @@ export function caretOffsetInNode(nodes: Text[], node: Text, offset: number) {
   }
   if (parent.tagName === "CODE" && mark === "`") {
     return offset + 1;
+  }
+  if (parent.tagName === "S" && mark === "~~") {
+    return offset + 2;
+  }
+  if (parent.tagName === "U" && mark === "</u>") {
+    return offset + 4;
   }
   return offset;
 }

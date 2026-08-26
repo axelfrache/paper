@@ -33,20 +33,20 @@ export function endCaret(value: string): Caret {
   return { line: lastLine, col: lines[lastLine]?.length ?? 0 };
 }
 
-export function wrapSelection(value: string, range: TextRange, mark: string) {
+export function wrapSelection(value: string, range: TextRange, mark: string, closingMark = mark) {
   const lines = value.split("\n");
   range = normalizeRange(range);
   if (range.start.line !== range.end.line) {
     const selected = selectedText(value, range);
-    return replaceRange(value, range, mark + selected + mark);
+    return replaceRange(value, range, mark + selected + closingMark);
   }
   const line = lines[range.start.line] ?? "";
-  lines[range.start.line] = line.slice(0, range.start.col) + mark + line.slice(range.start.col, range.end.col) + mark + line.slice(range.end.col);
+  lines[range.start.line] = line.slice(0, range.start.col) + mark + line.slice(range.start.col, range.end.col) + closingMark + line.slice(range.end.col);
   return {
     value: lines.join("\n"),
     caret: {
       line: range.start.line,
-      col: isCollapsedRange(range) ? range.start.col + mark.length : range.end.col + mark.length * 2,
+      col: isCollapsedRange(range) ? range.start.col + mark.length : range.end.col + mark.length + closingMark.length,
     },
   };
 }

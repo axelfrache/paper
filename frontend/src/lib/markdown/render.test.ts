@@ -19,11 +19,15 @@ describe("markdown rendering parser", () => {
   });
 
   it("parses inline strong, emphasis and code", () => {
-    expect(parseInline("Use **bold**, *italic* and `code`.")).toEqual([
+    expect(parseInline("Use **bold**, *italic*, ~~strike~~, <u>underline</u> and `code`.")).toEqual([
       { type: "text", text: "Use " },
       { type: "strong", children: [{ type: "text", text: "bold" }] },
       { type: "text", text: ", " },
       { type: "em", children: [{ type: "text", text: "italic" }] },
+      { type: "text", text: ", " },
+      { type: "strike", children: [{ type: "text", text: "strike" }] },
+      { type: "text", text: ", " },
+      { type: "underline", children: [{ type: "text", text: "underline" }] },
       { type: "text", text: " and " },
       { type: "code", text: "code" },
       { type: "text", text: "." },

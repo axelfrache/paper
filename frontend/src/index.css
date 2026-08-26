@@ -984,6 +984,46 @@ kbd,
   white-space: nowrap;
 }
 
+.selection-toolbar {
+  position: absolute;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--line-control);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+  padding: 5px;
+  transform: translate(-50%, -100%);
+  animation: slide-up 0.13s ease both;
+}
+
+.selection-toolbar button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 29px;
+  height: 29px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  padding: 0;
+}
+
+.selection-toolbar button:hover {
+  background: var(--surface-sunken);
+  color: var(--text);
+}
+
+.selection-toolbar span {
+  width: 1px;
+  height: 19px;
+  background: var(--line);
+  margin: 0 3px;
+}
+
 .markdown-view {
   color: var(--body);
   font-size: 14px;
