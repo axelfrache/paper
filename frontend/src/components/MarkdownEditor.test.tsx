@@ -2,27 +2,28 @@ import { act, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
+import { createDefaultDiagram, serializeDiagramMarker } from "../lib/diagram";
 import { placeSelection, getSelectionRange } from "../lib/markdown/dom";
 import { MarkdownEditor } from "./MarkdownEditor";
 
 let root: Root | null = null;
 
-function ControlledEditor({ initial }: { initial: string }) {
+function ControlledEditor({ initial, focusRequest = null }: { initial: string; focusRequest?: { key: string; placement: "start" | "end" | "last" } | null }) {
   const [value, setValue] = useState(initial);
   return (
     <>
-      <MarkdownEditor value={value} onChange={setValue} />
+      <MarkdownEditor value={value} onChange={setValue} focusRequest={focusRequest} />
       <output data-value>{value}</output>
     </>
   );
 }
 
-function mount(initial: string) {
+function mount(initial: string, focusRequest: { key: string; placement: "start" | "end" | "last" } | null = null) {
   const host = document.createElement("div");
   document.body.replaceChildren(host);
   root = createRoot(host);
   act(() => {
-    root?.render(<ControlledEditor initial={initial} />);
+    root?.render(<ControlledEditor initial={initial} focusRequest={focusRequest} />);
   });
   return host;
 }
@@ -177,5 +178,16 @@ describe("MarkdownEditor integration", () => {
     });
 
     expect(open).toHaveBeenCalledWith("https://example.com/docs", "_blank", "noopener,noreferrer");
+  });
+
+  it("focuses after a trailing diagram marker", () => {
+    const marker = serializeDiagramMarker(createDefaultDiagram("flat"));
+    const host = mount(marker, { key: "open", placement: "last" });
+
+    expect(valueFrom(host)).toBe(`${marker}\n`);
+    expect(getSelectionRange(editorFrom(host))).toEqual({
+      start: { line: 1, col: 0 },
+      end: { line: 1, col: 0 },
+    });
   });
 });

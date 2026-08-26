@@ -160,6 +160,21 @@ describe("diagram system icons", () => {
     expect(layout.edges[0]?.color).toBe("#8a5cd0");
   });
 
+  it("stops the edge stroke at the arrowhead base", () => {
+    const layout = layoutDiagram({
+      version: 1,
+      mode: "flat",
+      nodes: [
+        { id: "n1", kind: "box", x: 0, y: 0, label: "A", color: "slate" },
+        { id: "n2", kind: "box", x: 200, y: 0, label: "B", color: "blue" },
+      ],
+      edges: [{ id: "e1", from: "n1", to: "n2", color: "slate", route: "straight" }],
+    });
+
+    expect(layout.edges[0]?.d).toBe("M150 33L188.7 33");
+    expect(layout.edges[0]?.markerEnd).toBe("url(#diagram-arrow-slate)");
+  });
+
   it("routes curved edges with a quadratic path", () => {
     const layout = layoutDiagram({
       version: 1,

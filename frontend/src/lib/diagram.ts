@@ -271,12 +271,15 @@ export function layoutDiagram(diagram: Diagram): DiagramLayout {
 
     const color = diagramPalette[edge.color] ?? diagramPalette.slate;
     const route = edge.route ?? (iso ? "straight" : "orthogonal");
+    const strokeWidth = edgeStrokeWidth(edge.width);
+    const trimStart = edge.start === "arrow" ? arrowMarkerLength(strokeWidth) : 0;
+    const trimEnd = edge.end === "none" ? 0 : arrowMarkerLength(strokeWidth);
     const d =
       route === "curved"
-        ? curvedEdgePath(from, to, fromSource, toSource)
+        ? curvedEdgePath(from, to, fromSource, toSource, trimStart, trimEnd)
         : route === "straight"
-        ? straightEdgePath(from, to, fromSource, toSource)
-        : orthogonalEdgePath(from, to, fromSource, toSource, edge.corner ?? "square");
+        ? straightEdgePath(from, to, fromSource, toSource, trimStart, trimEnd)
+        : orthogonalEdgePath(from, to, fromSource, toSource, edge.corner ?? "square", trimStart, trimEnd);
     const marker = `url(#diagram-arrow-${edge.color})`;
     return [
       {
@@ -286,7 +289,7 @@ export function layoutDiagram(diagram: Diagram): DiagramLayout {
         markerStart: edge.start === "arrow" ? marker : "",
         markerEnd: edge.end === "none" ? "" : marker,
         dashed: edge.dashed === true,
-        width: edgeStrokeWidth(edge.width),
+        width: strokeWidth,
       },
     ];
   });
@@ -306,10 +309,10 @@ export function diagramToSvgMarkup(diagram: Diagram, maxHeight = 340) {
   const layout = layoutDiagram(diagram);
   const preview = previewForDiagram(diagram, maxHeight);
   const body = [
-    ...layout.edges.map(
-      (edge) =>
-        `<path d="${edge.d}" fill="none" stroke="${edge.color}" stroke-width="${edge.width}" stroke-linecap="round" stroke-linejoin="round"${edge.markerStart ? ` marker-start="${edge.markerStart}"` : ""}${edge.markerEnd ? ` marker-end="${edge.markerEnd}"` : ""}${edge.dashed ? ' stroke-dasharray="7 6"' : ""}/>`,
-    ),
+    ...layout.edges.map((edge) => {
+      const lineCap = edge.markerStart || edge.markerEnd ? "butt" : "round";
+      return `<path d="${edge.d}" fill="none" stroke="${edge.color}" stroke-width="${edge.width}" stroke-linecap="${lineCap}" stroke-linejoin="round"${edge.markerStart ? ` marker-start="${edge.markerStart}"` : ""}${edge.markerEnd ? ` marker-end="${edge.markerEnd}"` : ""}${edge.dashed ? ' stroke-dasharray="7 6"' : ""}/>`;
+    }),
     ...layout.nodes.map((node) => {
       const faces = node.faces
         .map((face) => `<path d="${face.d}" fill="${face.fill}" stroke="${face.stroke}" stroke-width="1.4"/>`)
@@ -733,7 +736,14 @@ function connectionSize(layout: DiagramLayoutNode, source: DiagramNode) {
   return layout.bare ? { w: layout.iconSize, h: layout.iconSize } : sizeForNode(source);
 }
 
-function straightEdgePath(from: DiagramLayoutNode, to: DiagramLayoutNode, fromSource: DiagramNode, toSource: DiagramNode) {
+function straightEdgePath(
+  from: DiagramLayoutNode,
+  to: DiagramLayoutNode,
+  fromSource: DiagramNode,
+  toSource: DiagramNode,
+  trimStart: number,
+  trimEnd: number,
+) {
   const fromSize = connectionSize(from, fromSource);
   const toSize = connectionSize(to, toSource);
   const dx = to.cx - from.cx;
@@ -741,12 +751,19 @@ function straightEdgePath(from: DiagramLayoutNode, to: DiagramLayoutNode, fromSo
   const len = Math.hypot(dx, dy) || 1;
   const ux = dx / len;
   const uy = dy / len;
-  const start = edgePoint(from.cx, from.cy, fromSize, ux, uy);
-  const end = edgePoint(to.cx, to.cy, toSize, -ux, -uy);
+  const start = offsetPoint(edgePoint(from.cx, from.cy, fromSize, ux, uy), ux, uy, trimStart);
+  const end = offsetPoint(edgePoint(to.cx, to.cy, toSize, -ux, -uy), -ux, -uy, trimEnd);
   return `M${start.x} ${start.y}L${end.x} ${end.y}`;
 }
 
-function curvedEdgePath(from: DiagramLayoutNode, to: DiagramLayoutNode, fromSource: DiagramNode, toSource: DiagramNode) {
+function curvedEdgePath(
+  from: DiagramLayoutNode,
+  to: DiagramLayoutNode,
+  fromSource: DiagramNode,
+  toSource: DiagramNode,
+  trimStart: number,
+  trimEnd: number,
+) {
   const fromSize = connectionSize(from, fromSource);
   const toSize = connectionSize(to, toSource);
   const dx = to.cx - from.cx;
@@ -754,8 +771,8 @@ function curvedEdgePath(from: DiagramLayoutNode, to: DiagramLayoutNode, fromSour
   const len = Math.hypot(dx, dy) || 1;
   const ux = dx / len;
   const uy = dy / len;
-  const start = edgePoint(from.cx, from.cy, fromSize, ux, uy);
-  const end = edgePoint(to.cx, to.cy, toSize, -ux, -uy);
+  const start = offsetPoint(edgePoint(from.cx, from.cy, fromSize, ux, uy), ux, uy, trimStart);
+  const end = offsetPoint(edgePoint(to.cx, to.cy, toSize, -ux, -uy), -ux, -uy, trimEnd);
   const bend = Math.min(72, Math.max(28, len * 0.22));
   const mx = (start.x + end.x) / 2 - uy * bend;
   const my = (start.y + end.y) / 2 + ux * bend;
@@ -768,6 +785,8 @@ function orthogonalEdgePath(
   fromSource: DiagramNode,
   toSource: DiagramNode,
   corner: DiagramEdgeCorner,
+  trimStart: number,
+  trimEnd: number,
 ) {
   const fromSize = connectionSize(from, fromSource);
   const toSize = connectionSize(to, toSource);
@@ -783,7 +802,8 @@ function orthogonalEdgePath(
       { x: mx, y: to.cy },
       { x: tx, y: to.cy },
     ];
-    return corner === "rounded" ? roundedPolylinePath(points, 10) : `M${sx} ${from.cy}H${mx}V${to.cy}H${tx}`;
+    const trimmed = trimPolylineEndpoints(points, trimStart, trimEnd);
+    return corner === "rounded" ? roundedPolylinePath(trimmed, 10) : polylinePath(trimmed);
   }
   const sy = from.cy + (dy > 0 ? fromSize.h / 2 : -fromSize.h / 2);
   const ty = to.cy + (dy > 0 ? -toSize.h / 2 : toSize.h / 2);
@@ -794,7 +814,8 @@ function orthogonalEdgePath(
     { x: to.cx, y: my },
     { x: to.cx, y: ty },
   ];
-  return corner === "rounded" ? roundedPolylinePath(points, 10) : `M${from.cx} ${sy}V${my}H${to.cx}V${ty}`;
+  const trimmed = trimPolylineEndpoints(points, trimStart, trimEnd);
+  return corner === "rounded" ? roundedPolylinePath(trimmed, 10) : polylinePath(trimmed);
 }
 
 function edgePoint(cx: number, cy: number, size: { w: number; h: number }, ux: number, uy: number) {
@@ -805,6 +826,43 @@ function edgePoint(cx: number, cy: number, size: { w: number; h: number }, ux: n
     x: Math.round((cx + ux * t) * 10) / 10,
     y: Math.round((cy + uy * t) * 10) / 10,
   };
+}
+
+function offsetPoint(point: { x: number; y: number }, ux: number, uy: number, distance: number) {
+  return {
+    x: Math.round((point.x + ux * distance) * 10) / 10,
+    y: Math.round((point.y + uy * distance) * 10) / 10,
+  };
+}
+
+function moveToward(from: { x: number; y: number }, to: { x: number; y: number }, distance: number) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy);
+  if (!len) {
+    return from;
+  }
+  const nextDistance = Math.min(distance, Math.max(0, len - 0.1));
+  return offsetPoint(from, dx / len, dy / len, nextDistance);
+}
+
+function trimPolylineEndpoints(points: Array<{ x: number; y: number }>, trimStart: number, trimEnd: number) {
+  const next = points.map((point) => ({ ...point }));
+  if (trimStart && next[1]) {
+    next[0] = moveToward(next[0], next[1], trimStart);
+  }
+  if (trimEnd && next[next.length - 2] && next[next.length - 1]) {
+    next[next.length - 1] = moveToward(next[next.length - 1], next[next.length - 2], trimEnd);
+  }
+  return next;
+}
+
+function polylinePath(points: Array<{ x: number; y: number }>) {
+  const [first, ...rest] = points;
+  if (!first) {
+    return "";
+  }
+  return `M${first.x} ${first.y}${rest.map((point) => `L${point.x} ${point.y}`).join("")}`;
 }
 
 function roundedPolylinePath(points: Array<{ x: number; y: number }>, radius: number) {
@@ -844,6 +902,10 @@ function edgeStrokeWidth(width: DiagramEdgeWidth | undefined) {
     return 2.8;
   }
   return 1.8;
+}
+
+function arrowMarkerLength(width: number) {
+  return Math.round(width * 6.3 * 10) / 10;
 }
 
 export function diagramIconForKind(kind: DiagramKind): DiagramIconKind | null {
@@ -898,7 +960,7 @@ function ellipsePath(x: number, y: number, w: number, h: number) {
 function arrowDefs() {
   return Object.entries(diagramPalette)
     .map(([name, color]) => {
-      return `<marker id="diagram-arrow-${name}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1L9 5L0 9z" fill="${color.stroke}"/></marker>`;
+      return `<marker id="diagram-arrow-${name}" viewBox="0 0 10 10" refX="0" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1L9 5L0 9z" fill="${color.stroke}"/></marker>`;
     })
     .join("");
 }

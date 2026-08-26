@@ -1166,6 +1166,7 @@ kbd,
   flex-direction: column;
   background: var(--bg);
   color: var(--text);
+  overscroll-behavior: none;
   animation: fade-in 0.14s ease both;
 }
 
@@ -1216,6 +1217,7 @@ kbd,
   min-height: 0;
   flex: 1;
   overflow: hidden;
+  overscroll-behavior: none;
 }
 
 .diagram-canvas {
@@ -1226,6 +1228,7 @@ kbd,
   background-image: radial-gradient(var(--line) 1px, transparent 1px);
   background-size: 22px 22px;
   font-family: inherit;
+  overscroll-behavior: none;
   touch-action: none;
 }
 
@@ -1385,19 +1388,6 @@ kbd,
   height: 22px;
   background: var(--line);
   margin: 0 5px;
-}
-
-.diagram-toolbar > button:nth-child(3) {
-  margin-right: 5px;
-}
-
-.diagram-toolbar > button:nth-child(3)::after {
-  position: absolute;
-  width: 1px;
-  height: 22px;
-  margin-left: 39px;
-  background: var(--line);
-  content: "";
 }
 
 .diagram-element-menu-wrap {

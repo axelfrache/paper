@@ -39,6 +39,8 @@ const tools: Array<{ id: DiagramTool; label: string; icon: LucideIcon }> = [
   { id: "select", label: "Select", icon: MousePointer2 },
   { id: "pan", label: "Move canvas", icon: Hand },
   { id: "arrow", label: "Arrow", icon: ArrowRight },
+  { id: "box", label: "Box", icon: Square },
+  { id: "text", label: "Text", icon: Type },
 ];
 
 type ElementCatalogItem = {
@@ -50,8 +52,6 @@ type ElementCatalogItem = {
 };
 
 const elementCatalog: ElementCatalogItem[] = [
-  { id: "box", label: "Box", group: "Basic", icon: Square },
-  { id: "text", label: "Text", group: "Basic", icon: Type },
   { id: "service", label: "Service", group: "Compute", iconKind: "fn" },
   ...diagramIconCatalog.map((icon) => ({ id: icon.id, label: icon.label, group: icon.group, iconKind: icon.id })),
 ];
@@ -534,6 +534,53 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
     setViewport(next);
   };
 
+  const handleCanvasWheel = (event: WheelEvent) => {
+    event.preventDefault();
+    const svg = svgRef.current;
+    if (!svg) {
+      return;
+    }
+    if (event.ctrlKey || event.metaKey) {
+      const currentZoom = fitViewportRef.current.width / viewportRef.current.width;
+      zoomAt(currentZoom * Math.exp(-event.deltaY * 0.002), screenToViewportPoint(event, svg));
+      return;
+    }
+    const rect = svg.getBoundingClientRect();
+    const current = viewportRef.current;
+    const scaleX = current.width / Math.max(1, rect.width);
+    const scaleY = current.height / Math.max(1, rect.height);
+    setViewport({
+      ...current,
+      x: current.x + event.deltaX * scaleX,
+      y: current.y + event.deltaY * scaleY,
+    });
+  };
+
+  const zoomAt = (nextZoom: number, center: { x: number; y: number }) => {
+    const clamped = Math.max(minZoom, Math.min(maxZoom, nextZoom));
+    const fit = fitViewportRef.current;
+    const current = viewportRef.current;
+    const nextWidth = fit.width / clamped;
+    const nextHeight = fit.height / clamped;
+    const ratioX = (center.x - current.x) / current.width;
+    const ratioY = (center.y - current.y) / current.height;
+    setViewport({
+      x: center.x - nextWidth * ratioX,
+      y: center.y - nextHeight * ratioY,
+      width: nextWidth,
+      height: nextHeight,
+    });
+  };
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) {
+      return;
+    }
+    svg.addEventListener("wheel", handleCanvasWheel, { passive: false, capture: true });
+    return () => svg.removeEventListener("wheel", handleCanvasWheel, { capture: true });
+  });
+
   return (
     <div className="diagram-editor" role="dialog" aria-modal="true" aria-label="Diagram editor">
       <header className="diagram-editor-topbar">
@@ -566,7 +613,7 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
                 key={name}
                 id={`diagram-editor-arrow-${name}`}
                 viewBox="0 0 10 10"
-                refX="9"
+                refX="0"
                 refY="5"
                 markerWidth="7"
                 markerHeight="7"
@@ -589,7 +636,7 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
                 fill="none"
                 stroke={selectedEdgeId === edge.id ? "var(--accent)" : edge.color}
                 strokeWidth={selectedEdgeId === edge.id ? edge.width + 0.8 : edge.width}
-                strokeLinecap="round"
+                strokeLinecap={edge.markerStart || edge.markerEnd ? "butt" : "round"}
                 strokeLinejoin="round"
                 strokeDasharray={edge.dashed ? "7 6" : undefined}
                 markerStart={edge.markerStart ? edge.markerStart.replace("#diagram-arrow-", "#diagram-editor-arrow-") : undefined}
@@ -722,6 +769,7 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
               </button>
             );
           })}
+          <span />
           <div className="diagram-element-menu-wrap" ref={elementMenuRef}>
             <button
               className={isElementTool(tool) ? "active" : ""}
@@ -979,6 +1027,15 @@ type EditorViewport = {
 function viewportFromViewBox(viewBox: string): EditorViewport {
   const [x, y, width, height] = viewBox.split(/\s+/).map(Number);
   return { x, y, width, height };
+}
+
+function screenToViewportPoint(event: { clientX: number; clientY: number }, svg: SVGSVGElement) {
+  const rect = svg.getBoundingClientRect();
+  const viewBox = svg.getAttribute("viewBox")?.split(/\s+/).map(Number) ?? [0, 0, rect.width, rect.height];
+  return {
+    x: viewBox[0] + ((event.clientX - rect.left) / Math.max(1, rect.width)) * viewBox[2],
+    y: viewBox[1] + ((event.clientY - rect.top) / Math.max(1, rect.height)) * viewBox[3],
+  };
 }
 
 function inlineLabelWidth(nodeWidth: number) {

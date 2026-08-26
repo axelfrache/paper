@@ -138,11 +138,15 @@ export function MarkdownEditor({
     }
 
     handledFocusRequestRef.current = focusRequest.key;
-    const caret = focusCaret(value, caretRef.current, focusRequest.placement);
+    const target = focusTarget(value, caretRef.current, focusRequest.placement);
+    const { caret } = target;
+    if (target.value !== value) {
+      onChange(target.value);
+    }
     focusedRef.current = true;
     caretRef.current = caret;
     activeLineRef.current = caret.line;
-    renderMarkdown(editorRef.current, value, caret.line);
+    renderMarkdown(editorRef.current, target.value, caret.line);
 
     window.requestAnimationFrame(() => {
       const editor = editorRef.current;
@@ -153,7 +157,7 @@ export function MarkdownEditor({
       placeCaret(editor, caret);
       editor.scrollIntoView({ block: "nearest" });
       onCaretLineChange?.(caret.line);
-      probeSlash(value, caret);
+      probeSlash(target.value, caret);
     });
   }, [focusRequest, value]);
 
@@ -760,6 +764,19 @@ function renderMarkdown(el: HTMLDivElement | null, value: string, activeLine: nu
     return;
   }
   el.innerHTML = renderEditableMarkdown(value, activeLine);
+}
+
+function focusTarget(value: string, current: Caret | null, placement: "start" | "end" | "last") {
+  const caret = focusCaret(value, current, placement);
+  if ((placement !== "end" && placement !== "last") || !isDiagramLine(value.split("\n")[caret.line] ?? "")) {
+    return { value, caret };
+  }
+
+  const lines = value.split("\n");
+  if (lines[caret.line + 1] === undefined) {
+    return { value: `${value}\n`, caret: { line: caret.line + 1, col: 0 } };
+  }
+  return { value, caret: { line: caret.line + 1, col: 0 } };
 }
 
 function isDiagramLine(line: string) {
