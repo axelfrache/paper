@@ -39,6 +39,32 @@ describe("diagram system icons", () => {
     expect(restored?.boxed).toBe(true);
   });
 
+  it("serializes and restores edge style options", () => {
+    const diagram = {
+      version: 1 as const,
+      mode: "flat" as const,
+      nodes: [
+        { id: "n1", kind: "box" as const, x: 0, y: 0, label: "A", color: "slate" as const },
+        { id: "n2", kind: "box" as const, x: 200, y: 0, label: "B", color: "blue" as const },
+      ],
+      edges: [
+        {
+          id: "e1",
+          from: "n1",
+          to: "n2",
+          color: "violet" as const,
+          route: "straight" as const,
+          corner: "rounded" as const,
+          dashed: true,
+        },
+      ],
+    };
+
+    const restored = parseDiagramMarker(serializeDiagramMarker(diagram))?.edges[0];
+
+    expect(restored).toMatchObject({ color: "violet", route: "straight", corner: "rounded", dashed: true });
+  });
+
   it("maps compatible base kinds to system icons", () => {
     expect(diagramIconForKind("client")).toBe("browser");
     expect(diagramIconForKind("user")).toBe("person");
@@ -104,6 +130,38 @@ describe("diagram system icons", () => {
     });
 
     expect(layout.edges[0]?.d.startsWith("M142 63")).toBe(true);
+  });
+
+  it("routes straight edges directly to the target", () => {
+    const layout = layoutDiagram({
+      version: 1,
+      mode: "flat",
+      nodes: [
+        { id: "n1", kind: "box", x: 0, y: 0, label: "A", color: "slate" },
+        { id: "n2", kind: "box", x: 200, y: 120, label: "B", color: "blue" },
+      ],
+      edges: [{ id: "e1", from: "n1", to: "n2", color: "violet", route: "straight" }],
+    });
+
+    expect(layout.edges[0]?.d).toContain("L");
+    expect(layout.edges[0]?.d).not.toContain("H");
+    expect(layout.edges[0]?.d).not.toContain("V");
+    expect(layout.edges[0]?.color).toBe("#8a5cd0");
+  });
+
+  it("routes rounded orthogonal edges with quadratic corners", () => {
+    const layout = layoutDiagram({
+      version: 1,
+      mode: "flat",
+      nodes: [
+        { id: "n1", kind: "box", x: 0, y: 0, label: "A", color: "slate" },
+        { id: "n2", kind: "box", x: 200, y: 120, label: "B", color: "blue" },
+      ],
+      edges: [{ id: "e1", from: "n1", to: "n2", color: "slate", route: "orthogonal", corner: "rounded", dashed: true }],
+    });
+
+    expect(layout.edges[0]?.d).toContain("Q");
+    expect(layout.edges[0]?.dashed).toBe(true);
   });
 
   it("renders system icons in diagram previews", () => {

@@ -13,7 +13,7 @@ import {
   screenToDiagramPoint,
 } from "../lib/diagram";
 import { diagramIconCatalog, diagramIconMarkup } from "../lib/diagramIcons";
-import type { Diagram, DiagramColor, DiagramKind, DiagramNode } from "../lib/diagram";
+import type { Diagram, DiagramColor, DiagramEdge, DiagramEdgeCorner, DiagramEdgeRoute, DiagramKind, DiagramNode } from "../lib/diagram";
 import type { DiagramIconKind } from "../lib/diagramIcons";
 
 type DiagramTool = "select" | "pan" | "arrow" | DiagramKind;
@@ -63,6 +63,14 @@ const iconSizes = [
   { label: "L", value: 60 },
 ];
 const boxedIconSize = { w: 132, h: 86 };
+const edgeRoutes: Array<{ label: string; value: DiagramEdgeRoute }> = [
+  { label: "Elbow", value: "orthogonal" },
+  { label: "Direct", value: "straight" },
+];
+const edgeCorners: Array<{ label: string; value: DiagramEdgeCorner }> = [
+  { label: "Square", value: "square" },
+  { label: "Round", value: "rounded" },
+];
 const minZoom = 0.25;
 const maxZoom = 3;
 const defaultViewport: EditorViewport = { x: -120, y: -120, width: 1040, height: 680 };
@@ -88,6 +96,7 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
   const layout = layoutDiagram(liveDiagram);
   layoutRef.current = layout;
   const selectedNode = liveDiagram.nodes.find((node) => node.id === selectedId) ?? null;
+  const selectedEdge = liveDiagram.edges.find((edge) => edge.id === selectedEdgeId) ?? null;
   const selectedNodeIcon = selectedNode ? diagramIconForKind(selectedNode.kind) : null;
   const zoom = fitViewportRef.current.width / viewport.width;
 
@@ -399,6 +408,13 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
 
   const applyColor = (nextColor: DiagramColor) => {
     setColor(nextColor);
+    if (selectedEdgeId) {
+      patchDiagram((current) => ({
+        ...current,
+        edges: current.edges.map((edge) => (edge.id === selectedEdgeId ? { ...edge, color: nextColor } : edge)),
+      }));
+      return;
+    }
     if (!selectedId) {
       return;
     }
@@ -418,6 +434,16 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
       nodes: current.nodes.map((node) =>
         node.id === selectedId ? withCenteredNodeSize(node, nextSize, { boxed: undefined }) : node,
       ),
+    }));
+  };
+
+  const patchSelectedEdge = (patch: Partial<DiagramEdge>) => {
+    if (!selectedEdgeId) {
+      return;
+    }
+    patchDiagram((current) => ({
+      ...current,
+      edges: current.edges.map((edge) => (edge.id === selectedEdgeId ? { ...edge, ...patch } : edge)),
     }));
   };
 
@@ -537,6 +563,7 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
                 fill="none"
                 stroke={selectedEdgeId === edge.id ? "var(--accent)" : edge.color}
                 strokeWidth={selectedEdgeId === edge.id ? "2.4" : "1.6"}
+                strokeDasharray={edge.dashed ? "7 6" : undefined}
                 markerEnd={edge.marker.replace("#diagram-arrow-", "#diagram-editor-arrow-")}
               />
             </g>
@@ -708,7 +735,7 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
               className={color === name ? "diagram-swatch active" : "diagram-swatch"}
               title={name}
               aria-label={name}
-              style={{ backgroundColor: diagramPalette[name].stroke }}
+              style={{ backgroundColor: diagramPalette[name].stroke, color: diagramPalette[name].stroke }}
               onClick={() => applyColor(name)}
             />
           ))}
@@ -762,10 +789,66 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
               Delete node
             </button>
           </aside>
-        ) : selectedEdgeId ? (
+        ) : selectedEdge ? (
           <aside className="diagram-inspector">
             <strong>Selected</strong>
             <div className="diagram-inspector-meta">Connection</div>
+            <div className="diagram-inspector-style">
+              <span>Color</span>
+              <div className="diagram-inspector-swatches">
+                {colors.map((name) => (
+                  <button
+                    key={name}
+                    className={selectedEdge.color === name ? "diagram-swatch active" : "diagram-swatch"}
+                    title={name}
+                    aria-label={name}
+                    style={{ backgroundColor: diagramPalette[name].stroke, color: diagramPalette[name].stroke }}
+                    onClick={() => applyColor(name)}
+                  />
+                ))}
+              </div>
+            </div>
+            <div className="diagram-inspector-style">
+              <span>Route</span>
+              <div>
+                {edgeRoutes.map((route) => (
+                  <button
+                    key={route.value}
+                    className={(selectedEdge.route ?? (liveDiagram.mode === "iso" ? "straight" : "orthogonal")) === route.value ? "active" : ""}
+                    onClick={() => patchSelectedEdge({ route: route.value })}
+                  >
+                    {route.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {(selectedEdge.route ?? (liveDiagram.mode === "iso" ? "straight" : "orthogonal")) === "orthogonal" ? (
+              <div className="diagram-inspector-style">
+                <span>Corner</span>
+                <div>
+                  {edgeCorners.map((corner) => (
+                    <button
+                      key={corner.value}
+                      className={(selectedEdge.corner ?? "square") === corner.value ? "active" : ""}
+                      onClick={() => patchSelectedEdge({ corner: corner.value })}
+                    >
+                      {corner.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <div className="diagram-inspector-style">
+              <span>Stroke</span>
+              <div>
+                <button className={!selectedEdge.dashed ? "active" : ""} onClick={() => patchSelectedEdge({ dashed: undefined })}>
+                  Solid
+                </button>
+                <button className={selectedEdge.dashed ? "active" : ""} onClick={() => patchSelectedEdge({ dashed: true })}>
+                  Dashed
+                </button>
+              </div>
+            </div>
             <button onClick={deleteSelected}>
               <Trash2 size={14} strokeWidth={1.9} />
               Delete connection

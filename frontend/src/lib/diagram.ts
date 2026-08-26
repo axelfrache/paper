@@ -8,6 +8,8 @@ type BaseDiagramKind = "box" | "server" | "service" | "database" | "user" | "que
 export type DiagramKind = BaseDiagramKind | DiagramIconKind;
 
 export type DiagramColor = "slate" | "blue" | "green" | "amber" | "violet";
+export type DiagramEdgeRoute = "orthogonal" | "straight";
+export type DiagramEdgeCorner = "rounded" | "square";
 
 export type DiagramNode = {
   id: string;
@@ -27,6 +29,9 @@ export type DiagramEdge = {
   from: string;
   to: string;
   color: DiagramColor;
+  route?: DiagramEdgeRoute;
+  corner?: DiagramEdgeCorner;
+  dashed?: boolean;
 };
 
 export type DiagramPreview = {
@@ -71,6 +76,7 @@ export type DiagramLayoutEdge = {
   d: string;
   color: string;
   marker: string;
+  dashed: boolean;
 };
 
 export type DiagramLayout = {
@@ -257,27 +263,12 @@ export function layoutDiagram(diagram: Diagram): DiagramLayout {
     }
 
     const color = diagramPalette[edge.color] ?? diagramPalette.slate;
-    let d = "";
-    if (iso) {
-      d = `M${from.cx} ${from.cy}L${to.cx} ${to.cy}`;
-    } else {
-      const fromSize = connectionSize(from, fromSource);
-      const toSize = connectionSize(to, toSource);
-      const dx = to.cx - from.cx;
-      const dy = to.cy - from.cy;
-      if (Math.abs(dx) >= Math.abs(dy)) {
-        const sx = from.cx + (dx > 0 ? fromSize.w / 2 : -fromSize.w / 2);
-        const tx = to.cx + (dx > 0 ? -toSize.w / 2 : toSize.w / 2);
-        const mx = (sx + tx) / 2;
-        d = `M${sx} ${from.cy}H${mx}V${to.cy}H${tx}`;
-      } else {
-        const sy = from.cy + (dy > 0 ? fromSize.h / 2 : -fromSize.h / 2);
-        const ty = to.cy + (dy > 0 ? -toSize.h / 2 : toSize.h / 2);
-        const my = (sy + ty) / 2;
-        d = `M${from.cx} ${sy}V${my}H${to.cx}V${ty}`;
-      }
-    }
-    return [{ id: edge.id, d, color: color.stroke, marker: `url(#diagram-arrow-${edge.color})` }];
+    const route = edge.route ?? (iso ? "straight" : "orthogonal");
+    const d =
+      route === "straight"
+        ? straightEdgePath(from, to, fromSource, toSource)
+        : orthogonalEdgePath(from, to, fromSource, toSource, edge.corner ?? "square");
+    return [{ id: edge.id, d, color: color.stroke, marker: `url(#diagram-arrow-${edge.color})`, dashed: edge.dashed === true }];
   });
 
   const pad = 44;
@@ -296,7 +287,8 @@ export function diagramToSvgMarkup(diagram: Diagram, maxHeight = 340) {
   const preview = previewForDiagram(diagram, maxHeight);
   const body = [
     ...layout.edges.map(
-      (edge) => `<path d="${edge.d}" fill="none" stroke="${edge.color}" stroke-width="1.6" marker-end="${edge.marker}"/>`,
+      (edge) =>
+        `<path d="${edge.d}" fill="none" stroke="${edge.color}" stroke-width="1.6" marker-end="${edge.marker}"${edge.dashed ? ' stroke-dasharray="7 6"' : ""}/>`,
     ),
     ...layout.nodes.map((node) => {
       const faces = node.faces
@@ -721,6 +713,93 @@ function connectionSize(layout: DiagramLayoutNode, source: DiagramNode) {
   return layout.bare ? { w: layout.iconSize, h: layout.iconSize } : sizeForNode(source);
 }
 
+function straightEdgePath(from: DiagramLayoutNode, to: DiagramLayoutNode, fromSource: DiagramNode, toSource: DiagramNode) {
+  const fromSize = connectionSize(from, fromSource);
+  const toSize = connectionSize(to, toSource);
+  const dx = to.cx - from.cx;
+  const dy = to.cy - from.cy;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const start = edgePoint(from.cx, from.cy, fromSize, ux, uy);
+  const end = edgePoint(to.cx, to.cy, toSize, -ux, -uy);
+  return `M${start.x} ${start.y}L${end.x} ${end.y}`;
+}
+
+function orthogonalEdgePath(
+  from: DiagramLayoutNode,
+  to: DiagramLayoutNode,
+  fromSource: DiagramNode,
+  toSource: DiagramNode,
+  corner: DiagramEdgeCorner,
+) {
+  const fromSize = connectionSize(from, fromSource);
+  const toSize = connectionSize(to, toSource);
+  const dx = to.cx - from.cx;
+  const dy = to.cy - from.cy;
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    const sx = from.cx + (dx > 0 ? fromSize.w / 2 : -fromSize.w / 2);
+    const tx = to.cx + (dx > 0 ? -toSize.w / 2 : toSize.w / 2);
+    const mx = (sx + tx) / 2;
+    const points = [
+      { x: sx, y: from.cy },
+      { x: mx, y: from.cy },
+      { x: mx, y: to.cy },
+      { x: tx, y: to.cy },
+    ];
+    return corner === "rounded" ? roundedPolylinePath(points, 10) : `M${sx} ${from.cy}H${mx}V${to.cy}H${tx}`;
+  }
+  const sy = from.cy + (dy > 0 ? fromSize.h / 2 : -fromSize.h / 2);
+  const ty = to.cy + (dy > 0 ? -toSize.h / 2 : toSize.h / 2);
+  const my = (sy + ty) / 2;
+  const points = [
+    { x: from.cx, y: sy },
+    { x: from.cx, y: my },
+    { x: to.cx, y: my },
+    { x: to.cx, y: ty },
+  ];
+  return corner === "rounded" ? roundedPolylinePath(points, 10) : `M${from.cx} ${sy}V${my}H${to.cx}V${ty}`;
+}
+
+function edgePoint(cx: number, cy: number, size: { w: number; h: number }, ux: number, uy: number) {
+  const tx = Math.abs(ux) > 0.0001 ? size.w / 2 / Math.abs(ux) : Number.POSITIVE_INFINITY;
+  const ty = Math.abs(uy) > 0.0001 ? size.h / 2 / Math.abs(uy) : Number.POSITIVE_INFINITY;
+  const t = Math.min(tx, ty);
+  return {
+    x: Math.round((cx + ux * t) * 10) / 10,
+    y: Math.round((cy + uy * t) * 10) / 10,
+  };
+}
+
+function roundedPolylinePath(points: Array<{ x: number; y: number }>, radius: number) {
+  const [first, ...rest] = points;
+  if (!first || rest.length === 0) {
+    return "";
+  }
+  let d = `M${first.x} ${first.y}`;
+  for (let i = 1; i < points.length - 1; i += 1) {
+    const prev = points[i - 1];
+    const point = points[i];
+    const next = points[i + 1];
+    const inLen = Math.hypot(point.x - prev.x, point.y - prev.y);
+    const outLen = Math.hypot(next.x - point.x, next.y - point.y);
+    const r = Math.min(radius, inLen / 2, outLen / 2);
+    if (r <= 0) {
+      d += `L${point.x} ${point.y}`;
+      continue;
+    }
+    const inX = (point.x - prev.x) / inLen;
+    const inY = (point.y - prev.y) / inLen;
+    const outX = (next.x - point.x) / outLen;
+    const outY = (next.y - point.y) / outLen;
+    const before = { x: Math.round((point.x - inX * r) * 10) / 10, y: Math.round((point.y - inY * r) * 10) / 10 };
+    const after = { x: Math.round((point.x + outX * r) * 10) / 10, y: Math.round((point.y + outY * r) * 10) / 10 };
+    d += `L${before.x} ${before.y}Q${point.x} ${point.y} ${after.x} ${after.y}`;
+  }
+  const last = points[points.length - 1];
+  return `${d}L${last.x} ${last.y}`;
+}
+
 export function diagramIconForKind(kind: DiagramKind): DiagramIconKind | null {
   if (isDiagramIconKind(kind)) {
     return kind;
@@ -838,6 +917,9 @@ function normalizeEdge(value: unknown): DiagramEdge {
     from: typeof edge.from === "string" ? edge.from : "",
     to: typeof edge.to === "string" ? edge.to : "",
     color: isDiagramColor(edge.color) ? edge.color : "slate",
+    route: isDiagramEdgeRoute(edge.route) ? edge.route : undefined,
+    corner: isDiagramEdgeCorner(edge.corner) ? edge.corner : undefined,
+    dashed: edge.dashed === true ? true : undefined,
   };
 }
 
@@ -868,6 +950,14 @@ function isDiagramKind(value: unknown): value is DiagramKind {
 
 function isDiagramColor(value: unknown): value is DiagramColor {
   return typeof value === "string" && value in diagramPalette;
+}
+
+function isDiagramEdgeRoute(value: unknown): value is DiagramEdgeRoute {
+  return value === "orthogonal" || value === "straight";
+}
+
+function isDiagramEdgeCorner(value: unknown): value is DiagramEdgeCorner {
+  return value === "rounded" || value === "square";
 }
 
 function uniqueId(prefix: string) {

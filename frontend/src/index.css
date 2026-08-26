@@ -1544,6 +1544,10 @@ kbd,
   grid-template-columns: repeat(3, 1fr);
 }
 
+.diagram-inspector-style > div.diagram-inspector-swatches {
+  grid-template-columns: repeat(5, 1fr);
+}
+
 .diagram-inspector button {
   display: flex;
   align-items: center;
@@ -1565,6 +1569,21 @@ kbd,
 .diagram-inspector-style button,
 .diagram-inspector-size button {
   padding: 5px 0;
+}
+
+.diagram-inspector .diagram-swatch {
+  width: 18px;
+  height: 18px;
+  justify-self: center;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+}
+
+.diagram-inspector .diagram-swatch.active {
+  box-shadow:
+    0 0 0 2px var(--surface-raised),
+    0 0 0 3.5px currentColor;
 }
 
 .diagram-inspector-style button.active,
