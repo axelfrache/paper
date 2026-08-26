@@ -13,7 +13,17 @@ import {
   screenToDiagramPoint,
 } from "../lib/diagram";
 import { diagramIconCatalog, diagramIconMarkup } from "../lib/diagramIcons";
-import type { Diagram, DiagramColor, DiagramEdge, DiagramEdgeCorner, DiagramEdgeRoute, DiagramKind, DiagramNode } from "../lib/diagram";
+import type {
+  Diagram,
+  DiagramColor,
+  DiagramEdge,
+  DiagramEdgeCorner,
+  DiagramEdgeEnd,
+  DiagramEdgeRoute,
+  DiagramEdgeWidth,
+  DiagramKind,
+  DiagramNode,
+} from "../lib/diagram";
 import type { DiagramIconKind } from "../lib/diagramIcons";
 
 type DiagramTool = "select" | "pan" | "arrow" | DiagramKind;
@@ -64,12 +74,24 @@ const iconSizes = [
 ];
 const boxedIconSize = { w: 132, h: 86 };
 const edgeRoutes: Array<{ label: string; value: DiagramEdgeRoute }> = [
-  { label: "Elbow", value: "orthogonal" },
   { label: "Direct", value: "straight" },
+  { label: "Curve", value: "curved" },
+  { label: "Elbow", value: "orthogonal" },
 ];
 const edgeCorners: Array<{ label: string; value: DiagramEdgeCorner }> = [
   { label: "Square", value: "square" },
   { label: "Round", value: "rounded" },
+];
+const edgeWidths: Array<{ label: string; value: DiagramEdgeWidth }> = [
+  { label: "Thin", value: "thin" },
+  { label: "Medium", value: "medium" },
+  { label: "Thick", value: "thick" },
+];
+const edgeEnds: Array<{ label: string; start?: DiagramEdgeEnd; end?: DiagramEdgeEnd }> = [
+  { label: "None", end: "none" },
+  { label: "End", end: "arrow" },
+  { label: "Start", start: "arrow", end: "none" },
+  { label: "Both", start: "arrow", end: "arrow" },
 ];
 const minZoom = 0.25;
 const maxZoom = 3;
@@ -424,6 +446,10 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
     }));
   };
 
+  const setDefaultColor = (nextColor: DiagramColor) => {
+    setColor(nextColor);
+  };
+
   const setSelectedIconSize = (size: number) => {
     if (!selectedId) {
       return;
@@ -562,9 +588,12 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
                 d={edge.d}
                 fill="none"
                 stroke={selectedEdgeId === edge.id ? "var(--accent)" : edge.color}
-                strokeWidth={selectedEdgeId === edge.id ? "2.4" : "1.6"}
+                strokeWidth={selectedEdgeId === edge.id ? edge.width + 0.8 : edge.width}
+                strokeLinecap="round"
+                strokeLinejoin="round"
                 strokeDasharray={edge.dashed ? "7 6" : undefined}
-                markerEnd={edge.marker.replace("#diagram-arrow-", "#diagram-editor-arrow-")}
+                markerStart={edge.markerStart ? edge.markerStart.replace("#diagram-arrow-", "#diagram-editor-arrow-") : undefined}
+                markerEnd={edge.markerEnd ? edge.markerEnd.replace("#diagram-arrow-", "#diagram-editor-arrow-") : undefined}
               />
             </g>
           ))}
@@ -736,7 +765,7 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
               title={name}
               aria-label={name}
               style={{ backgroundColor: diagramPalette[name].stroke, color: diagramPalette[name].stroke }}
-              onClick={() => applyColor(name)}
+              onClick={() => setDefaultColor(name)}
             />
           ))}
         </div>
@@ -751,6 +780,21 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
               onChange={(event) => setNodeLabel(selectedNode.id, event.target.value)}
               onBlur={commitDiagram}
             />
+            <div className="diagram-inspector-style">
+              <span>Color</span>
+              <div className="diagram-inspector-swatches">
+                {colors.map((name) => (
+                  <button
+                    key={name}
+                    className={selectedNode.color === name ? "diagram-swatch active" : "diagram-swatch"}
+                    title={name}
+                    aria-label={name}
+                    style={{ backgroundColor: diagramPalette[name].stroke, color: diagramPalette[name].stroke }}
+                    onClick={() => applyColor(name)}
+                  />
+                ))}
+              </div>
+            </div>
             {selectedNodeIcon ? (
               <div className="diagram-inspector-style">
                 <span>Style</span>
@@ -809,8 +853,22 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
               </div>
             </div>
             <div className="diagram-inspector-style">
+              <span>Width</span>
+              <div className="diagram-inspector-three">
+                {edgeWidths.map((width) => (
+                  <button
+                    key={width.value}
+                    className={(selectedEdge.width ?? "medium") === width.value ? "active" : ""}
+                    onClick={() => patchSelectedEdge({ width: width.value })}
+                  >
+                    {width.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="diagram-inspector-style">
               <span>Route</span>
-              <div>
+              <div className="diagram-inspector-three">
                 {edgeRoutes.map((route) => (
                   <button
                     key={route.value}
@@ -838,6 +896,20 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
                 </div>
               </div>
             ) : null}
+            <div className="diagram-inspector-style">
+              <span>Ends</span>
+              <div className="diagram-inspector-four">
+                {edgeEnds.map((ends) => (
+                  <button
+                    key={ends.label}
+                    className={edgeEndsMatch(selectedEdge, ends) ? "active" : ""}
+                    onClick={() => patchSelectedEdge({ start: ends.start, end: ends.end })}
+                  >
+                    {ends.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="diagram-inspector-style">
               <span>Stroke</span>
               <div>
@@ -916,6 +988,10 @@ function inlineLabelWidth(nodeWidth: number) {
 function currentIconSize(node: DiagramNode) {
   const size = sizeForNode(node);
   return Math.max(20, Math.min(112, Math.min(size.w, size.h - 25)));
+}
+
+function edgeEndsMatch(edge: DiagramEdge, ends: { start?: DiagramEdgeEnd; end?: DiagramEdgeEnd }) {
+  return (edge.start ?? "none") === (ends.start ?? "none") && (edge.end ?? "arrow") === (ends.end ?? "arrow");
 }
 
 function withCenteredNodeSize(node: DiagramNode, nextSize: { w: number; h: number }, patch: Partial<DiagramNode>) {

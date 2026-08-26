@@ -8,8 +8,10 @@ type BaseDiagramKind = "box" | "server" | "service" | "database" | "user" | "que
 export type DiagramKind = BaseDiagramKind | DiagramIconKind;
 
 export type DiagramColor = "slate" | "blue" | "green" | "amber" | "violet";
-export type DiagramEdgeRoute = "orthogonal" | "straight";
+export type DiagramEdgeRoute = "orthogonal" | "straight" | "curved";
 export type DiagramEdgeCorner = "rounded" | "square";
+export type DiagramEdgeEnd = "none" | "arrow";
+export type DiagramEdgeWidth = "thin" | "medium" | "thick";
 
 export type DiagramNode = {
   id: string;
@@ -32,6 +34,9 @@ export type DiagramEdge = {
   route?: DiagramEdgeRoute;
   corner?: DiagramEdgeCorner;
   dashed?: boolean;
+  start?: DiagramEdgeEnd;
+  end?: DiagramEdgeEnd;
+  width?: DiagramEdgeWidth;
 };
 
 export type DiagramPreview = {
@@ -75,8 +80,10 @@ export type DiagramLayoutEdge = {
   id: string;
   d: string;
   color: string;
-  marker: string;
+  markerStart: string;
+  markerEnd: string;
   dashed: boolean;
+  width: number;
 };
 
 export type DiagramLayout = {
@@ -265,10 +272,23 @@ export function layoutDiagram(diagram: Diagram): DiagramLayout {
     const color = diagramPalette[edge.color] ?? diagramPalette.slate;
     const route = edge.route ?? (iso ? "straight" : "orthogonal");
     const d =
-      route === "straight"
+      route === "curved"
+        ? curvedEdgePath(from, to, fromSource, toSource)
+        : route === "straight"
         ? straightEdgePath(from, to, fromSource, toSource)
         : orthogonalEdgePath(from, to, fromSource, toSource, edge.corner ?? "square");
-    return [{ id: edge.id, d, color: color.stroke, marker: `url(#diagram-arrow-${edge.color})`, dashed: edge.dashed === true }];
+    const marker = `url(#diagram-arrow-${edge.color})`;
+    return [
+      {
+        id: edge.id,
+        d,
+        color: color.stroke,
+        markerStart: edge.start === "arrow" ? marker : "",
+        markerEnd: edge.end === "none" ? "" : marker,
+        dashed: edge.dashed === true,
+        width: edgeStrokeWidth(edge.width),
+      },
+    ];
   });
 
   const pad = 44;
@@ -288,7 +308,7 @@ export function diagramToSvgMarkup(diagram: Diagram, maxHeight = 340) {
   const body = [
     ...layout.edges.map(
       (edge) =>
-        `<path d="${edge.d}" fill="none" stroke="${edge.color}" stroke-width="1.6" marker-end="${edge.marker}"${edge.dashed ? ' stroke-dasharray="7 6"' : ""}/>`,
+        `<path d="${edge.d}" fill="none" stroke="${edge.color}" stroke-width="${edge.width}" stroke-linecap="round" stroke-linejoin="round"${edge.markerStart ? ` marker-start="${edge.markerStart}"` : ""}${edge.markerEnd ? ` marker-end="${edge.markerEnd}"` : ""}${edge.dashed ? ' stroke-dasharray="7 6"' : ""}/>`,
     ),
     ...layout.nodes.map((node) => {
       const faces = node.faces
@@ -726,6 +746,22 @@ function straightEdgePath(from: DiagramLayoutNode, to: DiagramLayoutNode, fromSo
   return `M${start.x} ${start.y}L${end.x} ${end.y}`;
 }
 
+function curvedEdgePath(from: DiagramLayoutNode, to: DiagramLayoutNode, fromSource: DiagramNode, toSource: DiagramNode) {
+  const fromSize = connectionSize(from, fromSource);
+  const toSize = connectionSize(to, toSource);
+  const dx = to.cx - from.cx;
+  const dy = to.cy - from.cy;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const start = edgePoint(from.cx, from.cy, fromSize, ux, uy);
+  const end = edgePoint(to.cx, to.cy, toSize, -ux, -uy);
+  const bend = Math.min(72, Math.max(28, len * 0.22));
+  const mx = (start.x + end.x) / 2 - uy * bend;
+  const my = (start.y + end.y) / 2 + ux * bend;
+  return `M${start.x} ${start.y}Q${Math.round(mx * 10) / 10} ${Math.round(my * 10) / 10} ${end.x} ${end.y}`;
+}
+
 function orthogonalEdgePath(
   from: DiagramLayoutNode,
   to: DiagramLayoutNode,
@@ -798,6 +834,16 @@ function roundedPolylinePath(points: Array<{ x: number; y: number }>, radius: nu
   }
   const last = points[points.length - 1];
   return `${d}L${last.x} ${last.y}`;
+}
+
+function edgeStrokeWidth(width: DiagramEdgeWidth | undefined) {
+  if (width === "thin") {
+    return 1.2;
+  }
+  if (width === "thick") {
+    return 2.8;
+  }
+  return 1.8;
 }
 
 export function diagramIconForKind(kind: DiagramKind): DiagramIconKind | null {
@@ -920,6 +966,9 @@ function normalizeEdge(value: unknown): DiagramEdge {
     route: isDiagramEdgeRoute(edge.route) ? edge.route : undefined,
     corner: isDiagramEdgeCorner(edge.corner) ? edge.corner : undefined,
     dashed: edge.dashed === true ? true : undefined,
+    start: isDiagramEdgeEnd(edge.start) ? edge.start : undefined,
+    end: isDiagramEdgeEnd(edge.end) ? edge.end : undefined,
+    width: isDiagramEdgeWidth(edge.width) ? edge.width : undefined,
   };
 }
 
@@ -958,6 +1007,14 @@ function isDiagramEdgeRoute(value: unknown): value is DiagramEdgeRoute {
 
 function isDiagramEdgeCorner(value: unknown): value is DiagramEdgeCorner {
   return value === "rounded" || value === "square";
+}
+
+function isDiagramEdgeEnd(value: unknown): value is DiagramEdgeEnd {
+  return value === "none" || value === "arrow";
+}
+
+function isDiagramEdgeWidth(value: unknown): value is DiagramEdgeWidth {
+  return value === "thin" || value === "medium" || value === "thick";
 }
 
 function uniqueId(prefix: string) {

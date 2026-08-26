@@ -1548,6 +1548,14 @@ kbd,
   grid-template-columns: repeat(5, 1fr);
 }
 
+.diagram-inspector-style > div.diagram-inspector-three {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.diagram-inspector-style > div.diagram-inspector-four {
+  grid-template-columns: repeat(4, 1fr);
+}
+
 .diagram-inspector button {
   display: flex;
   align-items: center;

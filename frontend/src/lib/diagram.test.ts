@@ -56,13 +56,24 @@ describe("diagram system icons", () => {
           route: "straight" as const,
           corner: "rounded" as const,
           dashed: true,
+          start: "arrow" as const,
+          end: "none" as const,
+          width: "thick" as const,
         },
       ],
     };
 
     const restored = parseDiagramMarker(serializeDiagramMarker(diagram))?.edges[0];
 
-    expect(restored).toMatchObject({ color: "violet", route: "straight", corner: "rounded", dashed: true });
+    expect(restored).toMatchObject({
+      color: "violet",
+      route: "straight",
+      corner: "rounded",
+      dashed: true,
+      start: "arrow",
+      end: "none",
+      width: "thick",
+    });
   });
 
   it("maps compatible base kinds to system icons", () => {
@@ -149,6 +160,23 @@ describe("diagram system icons", () => {
     expect(layout.edges[0]?.color).toBe("#8a5cd0");
   });
 
+  it("routes curved edges with a quadratic path", () => {
+    const layout = layoutDiagram({
+      version: 1,
+      mode: "flat",
+      nodes: [
+        { id: "n1", kind: "box", x: 0, y: 0, label: "A", color: "slate" },
+        { id: "n2", kind: "box", x: 200, y: 120, label: "B", color: "blue" },
+      ],
+      edges: [{ id: "e1", from: "n1", to: "n2", color: "blue", route: "curved", start: "arrow", end: "arrow", width: "thin" }],
+    });
+
+    expect(layout.edges[0]?.d).toContain("Q");
+    expect(layout.edges[0]?.markerStart).toBe("url(#diagram-arrow-blue)");
+    expect(layout.edges[0]?.markerEnd).toBe("url(#diagram-arrow-blue)");
+    expect(layout.edges[0]?.width).toBe(1.2);
+  });
+
   it("routes rounded orthogonal edges with quadratic corners", () => {
     const layout = layoutDiagram({
       version: 1,
@@ -162,6 +190,23 @@ describe("diagram system icons", () => {
 
     expect(layout.edges[0]?.d).toContain("Q");
     expect(layout.edges[0]?.dashed).toBe(true);
+  });
+
+  it("renders edge endings and width in diagram previews", () => {
+    const html = diagramToSvgMarkup({
+      version: 1,
+      mode: "flat",
+      nodes: [
+        { id: "n1", kind: "box", x: 0, y: 0, label: "A", color: "slate" },
+        { id: "n2", kind: "box", x: 200, y: 0, label: "B", color: "blue" },
+      ],
+      edges: [{ id: "e1", from: "n1", to: "n2", color: "green", end: "none", start: "arrow", width: "thick", dashed: true }],
+    });
+
+    expect(html).toContain('stroke-width="2.8"');
+    expect(html).toContain('marker-start="url(#diagram-arrow-green)"');
+    expect(html).not.toContain('marker-end="url(#diagram-arrow-green)"');
+    expect(html).toContain('stroke-dasharray="7 6"');
   });
 
   it("renders system icons in diagram previews", () => {
