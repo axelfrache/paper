@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Box, ChevronDown, Copy, Database, Hand, List, Maximize, Minus, MousePointer2, Plus, Server, Square, Trash2, Type, User } from "lucide-react";
+import { ArrowRight, Box, ChevronDown, Copy, Hand, Maximize, Minus, MousePointer2, Plus, Square, Trash2, Type } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
   createDiagramEdge,
   createDiagramNode,
   describeDiagram,
+  diagramIconForKind,
   diagramKinds,
   diagramPalette,
   duplicateDiagramNode,
   layoutDiagram,
   screenToDiagramPoint,
 } from "../lib/diagram";
+import { diagramIconCatalog, diagramIconMarkup } from "../lib/diagramIcons";
 import type { Diagram, DiagramColor, DiagramKind, DiagramNode } from "../lib/diagram";
+import type { DiagramIconKind } from "../lib/diagramIcons";
 
 type DiagramTool = "select" | "pan" | "arrow" | DiagramKind;
 
@@ -28,17 +31,38 @@ const tools: Array<{ id: DiagramTool; label: string; icon: LucideIcon }> = [
   { id: "arrow", label: "Arrow", icon: ArrowRight },
 ];
 
-const elementCatalog: Array<{ id: DiagramKind; label: string; icon: LucideIcon }> = [
-  { id: "box", label: "Box", icon: Square },
-  { id: "server", label: "Server", icon: Server },
-  { id: "database", label: "Database", icon: Database },
-  { id: "queue", label: "Queue", icon: List },
-  { id: "client", label: "Client", icon: Box },
-  { id: "user", label: "User", icon: User },
-  { id: "text", label: "Text", icon: Type },
+type ElementCatalogItem = {
+  id: DiagramKind;
+  label: string;
+  group: string;
+  icon?: LucideIcon;
+  iconKind?: DiagramIconKind;
+};
+
+const elementCatalog: ElementCatalogItem[] = [
+  { id: "box", label: "Box", group: "Basic", icon: Square },
+  { id: "text", label: "Text", group: "Basic", icon: Type },
+  { id: "service", label: "Service", group: "Compute", iconKind: "fn" },
+  ...diagramIconCatalog.map((icon) => ({ id: icon.id, label: icon.label, group: icon.group, iconKind: icon.id })),
 ];
 
+const groupedElementCatalog = elementCatalog.reduce<Array<{ group: string; items: ElementCatalogItem[] }>>((groups, item) => {
+  const group = groups.find((entry) => entry.group === item.group);
+  if (group) {
+    group.items.push(item);
+  } else {
+    groups.push({ group: item.group, items: [item] });
+  }
+  return groups;
+}, []);
+
 const colors = Object.keys(diagramPalette) as DiagramColor[];
+const iconSizes = [
+  { label: "S", value: 32 },
+  { label: "M", value: 44 },
+  { label: "L", value: 60 },
+];
+const boxedIconSize = { w: 132, h: 86 };
 const minZoom = 0.25;
 const maxZoom = 3;
 const defaultViewport: EditorViewport = { x: -120, y: -120, width: 1040, height: 680 };
@@ -64,6 +88,7 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
   const layout = layoutDiagram(liveDiagram);
   layoutRef.current = layout;
   const selectedNode = liveDiagram.nodes.find((node) => node.id === selectedId) ?? null;
+  const selectedNodeIcon = selectedNode ? diagramIconForKind(selectedNode.kind) : null;
   const zoom = fitViewportRef.current.width / viewport.width;
 
   useEffect(() => {
@@ -383,8 +408,30 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
     }));
   };
 
-  const toggleMode = () => {
-    patchDiagram((current) => ({ ...current, mode: current.mode === "iso" ? "flat" : "iso" }));
+  const setSelectedIconSize = (size: number) => {
+    if (!selectedId) {
+      return;
+    }
+    const nextSize = { w: size, h: size + 25 };
+    patchDiagram((current) => ({
+      ...current,
+      nodes: current.nodes.map((node) =>
+        node.id === selectedId ? withCenteredNodeSize(node, nextSize, { boxed: undefined }) : node,
+      ),
+    }));
+  };
+
+  const setSelectedIconBoxed = (boxed: boolean) => {
+    if (!selectedId) {
+      return;
+    }
+    const nextSize = boxed ? boxedIconSize : { w: 44, h: 69 };
+    patchDiagram((current) => ({
+      ...current,
+      nodes: current.nodes.map((node) =>
+        node.id === selectedId ? withCenteredNodeSize(node, nextSize, { boxed: boxed ? true : undefined }) : node,
+      ),
+    }));
   };
 
   const startCanvasPan = (event: PointerEvent) => {
@@ -439,9 +486,10 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
     <div className="diagram-editor" role="dialog" aria-modal="true" aria-label="Diagram editor">
       <header className="diagram-editor-topbar">
         <strong>Diagram</strong>
-        <button className="diagram-editor-mode" onClick={toggleMode}>
-          {liveDiagram.mode === "iso" ? "Isometric" : "Flat"}
-        </button>
+        <span className="diagram-editor-mode">
+          <span>{liveDiagram.mode === "iso" ? "◨" : "◫"}</span>
+          <span>{liveDiagram.mode === "iso" ? "Isometric" : "Flat"}</span>
+        </span>
         <span>{hintForTool(tool, pendingFromId)}</span>
         <div>
           <button className="topbar-button" onClick={() => onDescribe(describeDiagram(liveDiagram))}>
@@ -509,6 +557,19 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
                   {node.cap}
                 </text>
               ) : null}
+              {node.icon ? (
+                <g
+                  className="diagram-node-icon"
+                  transform={`translate(${node.iconX} ${node.iconY}) scale(${node.iconSize / 24})`}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ color: node.color }}
+                  dangerouslySetInnerHTML={{ __html: diagramIconMarkup(node.icon) }}
+                />
+              ) : null}
               {editingId === node.id ? (
                 <foreignObject x={node.cx - inlineLabelWidth(node.hw) / 2} y={node.labelY - 16} width={inlineLabelWidth(node.hw)} height="26">
                   <input
@@ -533,7 +594,14 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
                   />
                 </foreignObject>
               ) : (
-                <text x={node.cx} y={node.labelY} textAnchor="middle" fontSize="13" fontWeight="530" fill="var(--text)">
+                <text
+                  x={node.cx}
+                  y={node.labelY}
+                  textAnchor="middle"
+                  fontSize={node.bare ? "11.5" : "13"}
+                  fontWeight={node.bare ? "500" : "530"}
+                  fill={node.bare ? "var(--muted-strong)" : "var(--text)"}
+                >
                   {node.label}
                 </text>
               )}
@@ -611,23 +679,25 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
             </button>
             {elementMenuOpen ? (
               <div className="diagram-element-menu">
-                {elementCatalog.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <button
-                      key={item.id}
-                      className={tool === item.id ? "active" : ""}
-                      onClick={() => {
-                        setTool(item.id);
-                        setPendingFromId(null);
-                        setElementMenuOpen(false);
-                      }}
-                    >
-                      <Icon size={14} strokeWidth={1.9} />
-                      <span>{item.label}</span>
-                    </button>
-                  );
-                })}
+                {groupedElementCatalog.map((group) => (
+                  <div key={group.group} className="diagram-element-menu-group">
+                    <strong>{group.group}</strong>
+                    {group.items.map((item) => (
+                      <button
+                        key={item.id}
+                        className={tool === item.id ? "active" : ""}
+                        onClick={() => {
+                          setTool(item.id);
+                          setPendingFromId(null);
+                          setElementMenuOpen(false);
+                        }}
+                      >
+                        <ElementIcon item={item} />
+                        <span>{item.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
               </div>
             ) : null}
           </div>
@@ -647,7 +717,42 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
         {selectedNode ? (
           <aside className="diagram-inspector">
             <strong>Selected</strong>
-            <div className="diagram-inspector-meta">{diagramKinds[selectedNode.kind].cap || "Text"}</div>
+            <div className="diagram-inspector-meta">{diagramKinds[selectedNode.kind].label}</div>
+            <input
+              value={selectedNode.label}
+              aria-label="Node label"
+              onChange={(event) => setNodeLabel(selectedNode.id, event.target.value)}
+              onBlur={commitDiagram}
+            />
+            {selectedNodeIcon ? (
+              <div className="diagram-inspector-style">
+                <span>Style</span>
+                <div>
+                  <button className={!selectedNode.boxed ? "active" : ""} onClick={() => setSelectedIconBoxed(false)}>
+                    Icon
+                  </button>
+                  <button className={selectedNode.boxed ? "active" : ""} onClick={() => setSelectedIconBoxed(true)}>
+                    Box
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            {selectedNodeIcon && !selectedNode.boxed ? (
+              <div className="diagram-inspector-size">
+                <span>Size</span>
+                <div>
+                  {iconSizes.map((size) => (
+                    <button
+                      key={size.label}
+                      className={currentIconSize(selectedNode) === size.value ? "active" : ""}
+                      onClick={() => setSelectedIconSize(size.value)}
+                    >
+                      {size.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <button onClick={duplicateSelected}>
               <Copy size={14} strokeWidth={1.9} />
               Duplicate
@@ -670,6 +775,26 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
       </div>
     </div>
   );
+}
+
+function ElementIcon({ item }: { item: ElementCatalogItem }) {
+  if (item.iconKind) {
+    return (
+      <svg
+        className="diagram-system-icon"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+        dangerouslySetInnerHTML={{ __html: diagramIconMarkup(item.iconKind) }}
+      />
+    );
+  }
+  const Icon = item.icon ?? Box;
+  return <Icon size={14} strokeWidth={1.9} />;
 }
 
 function hintForTool(tool: DiagramTool, pendingFromId: string | null) {
@@ -703,6 +828,23 @@ function viewportFromViewBox(viewBox: string): EditorViewport {
 
 function inlineLabelWidth(nodeWidth: number) {
   return Math.max(56, Math.min(140, nodeWidth - 28));
+}
+
+function currentIconSize(node: DiagramNode) {
+  const size = sizeForNode(node);
+  return Math.max(20, Math.min(112, Math.min(size.w, size.h - 25)));
+}
+
+function withCenteredNodeSize(node: DiagramNode, nextSize: { w: number; h: number }, patch: Partial<DiagramNode>) {
+  const currentSize = sizeForNode(node);
+  return {
+    ...node,
+    ...patch,
+    x: Math.round(node.x + (currentSize.w - nextSize.w) / 2),
+    y: Math.round(node.y + (currentSize.h - nextSize.h) / 2),
+    w: nextSize.w,
+    h: nextSize.h,
+  };
 }
 
 function sizeForNode(node: { kind: DiagramKind; w?: number; h?: number }) {

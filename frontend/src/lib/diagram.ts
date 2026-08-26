@@ -1,6 +1,11 @@
+import { diagramIconCatalog, diagramIconMarkup, isDiagramIconKind } from "./diagramIcons";
+import type { DiagramIconKind } from "./diagramIcons";
+
 export type DiagramMode = "flat" | "iso";
 
-export type DiagramKind = "box" | "server" | "service" | "database" | "user" | "queue" | "client" | "text";
+type BaseDiagramKind = "box" | "server" | "service" | "database" | "user" | "queue" | "client" | "text";
+
+export type DiagramKind = BaseDiagramKind | DiagramIconKind;
 
 export type DiagramColor = "slate" | "blue" | "green" | "amber" | "violet";
 
@@ -14,6 +19,7 @@ export type DiagramNode = {
   w?: number;
   h?: number;
   shape?: "rect" | "ellipse";
+  boxed?: boolean;
 };
 
 export type DiagramEdge = {
@@ -42,6 +48,11 @@ export type DiagramLayoutNode = {
   id: string;
   source: DiagramNode;
   faces: Array<{ d: string; fill: string; stroke: string }>;
+  bare: boolean;
+  icon: DiagramIconKind | null;
+  iconX: number;
+  iconY: number;
+  iconSize: number;
   cap: string;
   label: string;
   color: string;
@@ -76,7 +87,22 @@ export const diagramPalette: Record<DiagramColor, { fill: string; stroke: string
   violet: { fill: "rgba(138,92,208,.16)", stroke: "#8a5cd0" },
 };
 
-export const diagramKinds: Record<DiagramKind, { cap: string; w: number; h: number; color: DiagramColor; label: string }> = {
+type DiagramKindDefinition = { cap: string; w: number; h: number; color: DiagramColor; label: string };
+
+const systemDiagramKinds = Object.fromEntries(
+  diagramIconCatalog.map((icon) => [
+    icon.id,
+    {
+      cap: "",
+      w: 44,
+      h: 69,
+      color: colorForIconGroup(icon.group),
+      label: icon.label,
+    },
+  ]),
+) as Record<DiagramIconKind, DiagramKindDefinition>;
+
+const baseDiagramKinds: Record<BaseDiagramKind, DiagramKindDefinition> = {
   box: { cap: "", w: 150, h: 66, color: "slate", label: "Box" },
   server: { cap: "SERVER", w: 158, h: 72, color: "blue", label: "Server" },
   service: { cap: "SERVICE", w: 158, h: 70, color: "blue", label: "Service" },
@@ -87,12 +113,29 @@ export const diagramKinds: Record<DiagramKind, { cap: string; w: number; h: numb
   text: { cap: "", w: 130, h: 30, color: "slate", label: "Label" },
 };
 
+export const diagramKinds = { ...systemDiagramKinds, ...baseDiagramKinds } as Record<DiagramKind, DiagramKindDefinition>;
+
 const isoCos = 0.866;
 const isoSin = 0.5;
 const isoDepth = 16;
 const diagramMarkerPattern = /^!\[diagram:([A-Za-z0-9_-]+)\]$/;
 
-export function createDefaultDiagram(): Diagram {
+export function createDefaultDiagram(mode: DiagramMode = "flat"): Diagram {
+  if (mode === "iso") {
+    return {
+      version: 1,
+      mode: "iso",
+      nodes: [
+        { id: "n1", kind: "client", x: 0, y: 0, label: "Client", color: "slate" },
+        { id: "n2", kind: "server", x: 200, y: 0, label: "API", color: "blue" },
+        { id: "n3", kind: "database", x: 200, y: 170, label: "Store", color: "green" },
+      ],
+      edges: [
+        { id: "e1", from: "n1", to: "n2", color: "slate" },
+        { id: "e2", from: "n2", to: "n3", color: "slate" },
+      ],
+    };
+  }
   return {
     version: 1,
     mode: "flat",
@@ -218,8 +261,8 @@ export function layoutDiagram(diagram: Diagram): DiagramLayout {
     if (iso) {
       d = `M${from.cx} ${from.cy}L${to.cx} ${to.cy}`;
     } else {
-      const fromSize = sizeForNode(fromSource);
-      const toSize = sizeForNode(toSource);
+      const fromSize = connectionSize(from, fromSource);
+      const toSize = connectionSize(to, toSource);
       const dx = to.cx - from.cx;
       const dy = to.cy - from.cy;
       if (Math.abs(dx) >= Math.abs(dy)) {
@@ -262,7 +305,11 @@ export function diagramToSvgMarkup(diagram: Diagram, maxHeight = 340) {
       const cap = node.cap
         ? `<text x="${node.cx}" y="${node.capY}" text-anchor="middle" font-size="8.5" letter-spacing="1" font-weight="700" fill="${node.color}">${escapeHtml(node.cap)}</text>`
         : "";
-      return `${faces}${cap}<text x="${node.cx}" y="${node.labelY}" text-anchor="middle" font-size="13" font-weight="530" fill="var(--text)">${escapeHtml(node.label)}</text>`;
+      const icon = nodeIconSvg(node);
+      const labelSize = node.bare ? "11.5" : "13";
+      const labelWeight = node.bare ? "500" : "530";
+      const labelFill = node.bare ? "var(--muted-strong)" : "var(--text)";
+      return `${faces}${cap}${icon}<text x="${node.cx}" y="${node.labelY}" text-anchor="middle" font-size="${labelSize}" font-weight="${labelWeight}" fill="${labelFill}">${escapeHtml(node.label)}</text>`;
     }),
   ].join("");
 
@@ -288,6 +335,13 @@ function contentBounds(layout: DiagramLayout) {
   };
 }
 
+function nodeIconSvg(node: DiagramLayoutNode) {
+  if (!node.icon) {
+    return "";
+  }
+  return `<g class="diagram-node-icon" transform="translate(${node.iconX} ${node.iconY}) scale(${node.iconSize / 24})" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:${node.color};">${diagramIconMarkup(node.icon)}</g>`;
+}
+
 export function screenToDiagramPoint(
   event: { clientX: number; clientY: number },
   svg: SVGSVGElement,
@@ -308,6 +362,15 @@ function layoutNode(node: DiagramNode, iso: boolean): DiagramLayoutNode {
   const def = diagramKinds[node.kind] ?? diagramKinds.box;
   const color = diagramPalette[node.color] ?? diagramPalette.slate;
   const { w, h } = sizeForNode(node);
+  const icon = diagramIconForKind(node.kind);
+
+  if (icon && !node.boxed) {
+    return layoutIconNode(node, icon, color.stroke, w, h, iso);
+  }
+
+  if (icon) {
+    return layoutFramedIconNode(node, def, icon, color, w, h, iso);
+  }
 
   if (!iso) {
     const faces =
@@ -318,6 +381,11 @@ function layoutNode(node: DiagramNode, iso: boolean): DiagramLayoutNode {
       id: node.id,
       source: node,
       faces,
+      bare: false,
+      icon: null,
+      iconX: node.x,
+      iconY: node.y,
+      iconSize: 0,
       cap: def.cap,
       label: node.label,
       color: color.stroke,
@@ -362,6 +430,11 @@ function layoutNode(node: DiagramNode, iso: boolean): DiagramLayoutNode {
     id: node.id,
     source: node,
     faces,
+    bare: false,
+    icon: null,
+    iconX: cx,
+    iconY: cy,
+    iconSize: 0,
     cap: def.cap,
     label: node.label,
     color: color.stroke,
@@ -421,6 +494,11 @@ function layoutIsoServerNode(
       { d: led2, fill: color.stroke, stroke: color.stroke },
       { d: led3, fill: color.stroke, stroke: color.stroke },
     ],
+    bare: false,
+    icon: null,
+    iconX: cx,
+    iconY: cy,
+    iconSize: 0,
     cap: def.cap,
     label: node.label,
     color: color.stroke,
@@ -467,6 +545,11 @@ function layoutIsoDatabaseNode(
       { d: mid, fill: "none", stroke: color.stroke },
       { d: low, fill: "none", stroke: color.stroke },
     ],
+    bare: false,
+    icon: null,
+    iconX: cx,
+    iconY: cy,
+    iconSize: 0,
     cap: def.cap,
     label: node.label,
     color: color.stroke,
@@ -481,9 +564,190 @@ function layoutIsoDatabaseNode(
   };
 }
 
+function layoutIconNode(
+  node: DiagramNode,
+  icon: DiagramIconKind,
+  color: string,
+  w: number,
+  h: number,
+  iso: boolean,
+): DiagramLayoutNode {
+  const iconSize = iconSizeForNode(w, h);
+  const boundsWidth = Math.max(iconSize, iconLabelWidth(node.label));
+  if (!iso) {
+    const cx = node.x + w / 2;
+    const iconX = cx - iconSize / 2;
+    const iconY = node.y;
+    return {
+      id: node.id,
+      source: node,
+      faces: [],
+      bare: true,
+      icon,
+      iconX,
+      iconY,
+      iconSize,
+      cap: "",
+      label: node.label,
+      color,
+      cx,
+      cy: iconY + iconSize / 2,
+      capY: iconY,
+      labelY: iconY + iconSize + 18,
+      hx: cx - boundsWidth / 2,
+      hy: iconY,
+      hw: boundsWidth,
+      hh: iconSize + 25,
+    };
+  }
+
+  const a = projectIso(node.x, node.y);
+  const c = projectIso(node.x + w, node.y + h);
+  const cx = (a[0] + c[0]) / 2;
+  const cy = (a[1] + c[1]) / 2;
+  const iconX = cx - iconSize / 2;
+  const iconY = cy - iconSize / 2;
+  return {
+    id: node.id,
+    source: node,
+    faces: [],
+    bare: true,
+    icon,
+    iconX,
+    iconY,
+    iconSize,
+    cap: "",
+    label: node.label,
+    color,
+    cx,
+    cy,
+    capY: iconY,
+    labelY: iconY + iconSize + 18,
+    hx: cx - boundsWidth / 2,
+    hy: iconY,
+    hw: boundsWidth,
+    hh: iconSize + 25,
+  };
+}
+
+function iconLabelWidth(label: string) {
+  return Math.min(180, Math.max(44, label.length * 6.2));
+}
+
+function iconSizeForNode(w: number, h: number) {
+  return Math.max(20, Math.min(112, Math.min(w, h - 25)));
+}
+
+function layoutFramedIconNode(
+  node: DiagramNode,
+  def: DiagramKindDefinition,
+  icon: DiagramIconKind,
+  color: { fill: string; stroke: string },
+  w: number,
+  h: number,
+  iso: boolean,
+): DiagramLayoutNode {
+  const iconSize = Math.max(18, Math.min(28, w - 32, h - 42));
+  if (!iso) {
+    const cx = node.x + w / 2;
+    const iconY = node.y + Math.max(12, (h - iconSize) / 2 - 8);
+    return {
+      id: node.id,
+      source: node,
+      faces: [{ d: roundedRectPath(node.x, node.y, w, h, 8), fill: color.fill, stroke: color.stroke }],
+      bare: false,
+      icon,
+      iconX: cx - iconSize / 2,
+      iconY,
+      iconSize,
+      cap: def.cap,
+      label: node.label,
+      color: color.stroke,
+      cx,
+      cy: node.y + h / 2,
+      capY: node.y + 19,
+      labelY: node.y + h - 13,
+      hx: node.x,
+      hy: node.y,
+      hw: w,
+      hh: h,
+    };
+  }
+
+  const a = projectIso(node.x, node.y);
+  const b = projectIso(node.x + w, node.y);
+  const c = projectIso(node.x + w, node.y + h);
+  const d = projectIso(node.x, node.y + h);
+  const top = `M${a[0]} ${a[1]}L${b[0]} ${b[1]}L${c[0]} ${c[1]}L${d[0]} ${d[1]}z`;
+  const left = `M${d[0]} ${d[1]}L${c[0]} ${c[1]}L${c[0]} ${c[1] + isoDepth}L${d[0]} ${d[1] + isoDepth}z`;
+  const right = `M${c[0]} ${c[1]}L${b[0]} ${b[1]}L${b[0]} ${b[1] + isoDepth}L${c[0]} ${c[1] + isoDepth}z`;
+  const cx = (a[0] + c[0]) / 2;
+  const cy = (a[1] + c[1]) / 2;
+  const xs = [a[0], b[0], c[0], d[0]];
+  const ys = [a[1], b[1], c[1], d[1] + isoDepth];
+  return {
+    id: node.id,
+    source: node,
+    faces: [
+      { d: left, fill: "rgba(0,0,0,.16)", stroke: color.stroke },
+      { d: right, fill: "rgba(0,0,0,.08)", stroke: color.stroke },
+      { d: top, fill: color.fill, stroke: color.stroke },
+    ],
+    bare: false,
+    icon,
+    iconX: cx - iconSize / 2,
+    iconY: cy - iconSize / 2 - 7,
+    iconSize,
+    cap: def.cap,
+    label: node.label,
+    color: color.stroke,
+    cx,
+    cy,
+    capY: cy - 8,
+    labelY: cy + 18,
+    hx: Math.min(...xs),
+    hy: Math.min(...ys),
+    hw: Math.max(...xs) - Math.min(...xs),
+    hh: Math.max(...ys) - Math.min(...ys),
+  };
+}
+
 function sizeForNode(node: DiagramNode) {
   const def = diagramKinds[node.kind] ?? diagramKinds.box;
   return { w: node.w ?? def.w, h: node.h ?? def.h };
+}
+
+function connectionSize(layout: DiagramLayoutNode, source: DiagramNode) {
+  return layout.bare ? { w: layout.iconSize, h: layout.iconSize } : sizeForNode(source);
+}
+
+export function diagramIconForKind(kind: DiagramKind): DiagramIconKind | null {
+  if (isDiagramIconKind(kind)) {
+    return kind;
+  }
+  if (kind === "client") {
+    return "browser";
+  }
+  if (kind === "user") {
+    return "person";
+  }
+  if (kind === "service") {
+    return "fn";
+  }
+  return null;
+}
+
+function colorForIconGroup(group: string): DiagramColor {
+  if (group === "Data") {
+    return "green";
+  }
+  if (group === "Network") {
+    return "violet";
+  }
+  if (group === "Observability") {
+    return "amber";
+  }
+  return group === "Compute" ? "blue" : "slate";
 }
 
 function projectIso(x: number, y: number): [number, number] {
@@ -563,6 +827,7 @@ function normalizeNode(value: unknown): DiagramNode {
     w: typeof node.w === "number" ? node.w : undefined,
     h: typeof node.h === "number" ? node.h : undefined,
     shape: node.shape === "ellipse" ? "ellipse" : undefined,
+    boxed: node.boxed === true ? true : undefined,
   };
 }
 

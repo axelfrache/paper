@@ -1198,6 +1198,9 @@ kbd,
 }
 
 .diagram-editor-mode {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   height: 25px;
   border: 1px solid var(--line-button);
   border-radius: 6px;
@@ -1205,11 +1208,7 @@ kbd,
   padding: 0 9px;
   color: var(--muted-strong);
   font-size: 11px;
-}
-
-.diagram-editor-mode:hover {
-  border-color: var(--line-hover-strong);
-  color: var(--text);
+  font-weight: 550;
 }
 
 .diagram-editor-body {
@@ -1388,11 +1387,11 @@ kbd,
   margin: 0 5px;
 }
 
-.diagram-toolbar > button:nth-child(2) {
+.diagram-toolbar > button:nth-child(3) {
   margin-right: 5px;
 }
 
-.diagram-toolbar > button:nth-child(2)::after {
+.diagram-toolbar > button:nth-child(3)::after {
   position: absolute;
   width: 1px;
   height: 22px;
@@ -1419,14 +1418,29 @@ kbd,
   left: 50%;
   z-index: 4;
   display: grid;
-  width: 176px;
-  gap: 2px;
+  width: 226px;
+  max-height: min(520px, calc(100vh - 180px));
+  gap: 7px;
+  overflow-y: auto;
   border: 1px solid var(--line-control);
   border-radius: 9px;
   background: var(--surface-raised);
   box-shadow: var(--shadow);
   padding: 5px;
   transform: translateX(-50%);
+}
+
+.diagram-element-menu-group {
+  display: grid;
+  gap: 2px;
+}
+
+.diagram-element-menu-group strong {
+  padding: 3px 7px 2px;
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
 }
 
 .diagram-toolbar .diagram-element-menu button {
@@ -1444,6 +1458,13 @@ kbd,
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
+}
+
+.diagram-system-icon {
+  display: block;
+  flex: none;
+  width: 15px;
+  height: 15px;
 }
 
 .diagram-toolbar .diagram-swatch {
@@ -1496,6 +1517,33 @@ kbd,
   font-size: 11px;
 }
 
+.diagram-inspector-style,
+.diagram-inspector-size {
+  display: grid;
+  gap: 6px;
+}
+
+.diagram-inspector-style > span,
+.diagram-inspector-size > span {
+  color: var(--faint);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.diagram-inspector-style > div,
+.diagram-inspector-size > div {
+  display: grid;
+  gap: 6px;
+}
+
+.diagram-inspector-style > div {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.diagram-inspector-size > div {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .diagram-inspector button {
   display: flex;
   align-items: center;
@@ -1512,6 +1560,20 @@ kbd,
 .diagram-inspector button:hover {
   border-color: var(--danger);
   color: var(--danger);
+}
+
+.diagram-inspector-style button,
+.diagram-inspector-size button {
+  padding: 5px 0;
+}
+
+.diagram-inspector-style button.active,
+.diagram-inspector-style button:hover,
+.diagram-inspector-size button.active,
+.diagram-inspector-size button:hover {
+  border-color: var(--accent);
+  background: var(--selection);
+  color: var(--accent);
 }
 
 .ai-markdown,

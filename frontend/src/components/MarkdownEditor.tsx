@@ -33,7 +33,7 @@ import {
   readSource,
 } from "../lib/markdown/dom";
 import type { AIAction } from "../types/note";
-import type { Diagram, DiagramPreview } from "../lib/diagram";
+import type { Diagram, DiagramMode, DiagramPreview } from "../lib/diagram";
 import type { Caret, TextRange } from "../lib/markdown/edit";
 
 type MarkdownEditorProps = {
@@ -59,7 +59,7 @@ type SlashItem = {
   link?: boolean;
   block?: string;
   date?: boolean;
-  diagram?: boolean;
+  diagram?: DiagramMode;
   ai?: AIAction;
 };
 
@@ -92,7 +92,8 @@ const slashItems: SlashItem[] = [
   { id: "strike", label: "Strikethrough", hint: "Crossed text", icon: "S", wrap: "~~" },
   { id: "underline", label: "Underline", hint: "Underlined text", icon: "U", wrap: "<u>", closeWrap: "</u>" },
   { id: "link", label: "Link", hint: "Hyperlink", icon: "↗", link: true },
-  { id: "diagram", label: "Diagram", hint: "Flat or isometric canvas", icon: "◫", diagram: true },
+  { id: "diagram", label: "Flat diagram", hint: "2D schematic", icon: "◫", diagram: "flat" },
+  { id: "diagram-iso", label: "Isometric diagram", hint: "Projected schematic", icon: "◨", diagram: "iso" },
   { id: "divider", label: "Divider", hint: "Horizontal rule", icon: "—", block: "---" },
   { id: "date", label: "Today's date", hint: "Insert as text", icon: "◷", date: true },
   { id: "ai-summary", label: "Summarize note", hint: "AI", icon: "≡", ai: "summarize" },
@@ -637,7 +638,7 @@ export function MarkdownEditor({
     }
 
     if (item.diagram) {
-      const diagram = createDefaultDiagram();
+      const diagram = createDefaultDiagram(item.diagram);
       const marker = serializeDiagramMarker(diagram);
       const keepLine = stem.trim() || after.trim();
       lines.splice(caret.line, 1, stem + after, marker, "");
