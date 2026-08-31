@@ -36,7 +36,8 @@ export function buildDiagramGenerationPrompt(prompt: string, mode: DiagramMode, 
     "",
     `Diagram mode: ${mode}`,
     `Allowed node kinds: ${allowedDiagramKinds}`,
-    `Allowed colors: ${colors.join(", ")}`,
+    `Allowed node colors: ${colors.join(", ")}`,
+    "Generated edges must use color slate. Keep visual emphasis on nodes, not relationships.",
     edgeRouteInstruction(mode),
     "Allowed edge ends: none, arrow",
     "",
@@ -64,7 +65,8 @@ export function buildDiagramAdditionPrompt(prompt: string, current: Diagram) {
     "",
     `Diagram mode: ${current.mode}`,
     `Allowed node kinds: ${allowedDiagramKinds}`,
-    `Allowed colors: ${colors.join(", ")}`,
+    `Allowed node colors: ${colors.join(", ")}`,
+    "Generated edges must use color slate. Keep visual emphasis on nodes, not relationships.",
     edgeRouteInstruction(current.mode),
     "Allowed edge ends: none, arrow",
     "",
@@ -110,7 +112,7 @@ export function parseGeneratedDiagram(answer: string, mode: DiagramMode): Diagra
         id: uniqueGeneratedId(typeof item.id === "string" ? item.id : `e${index + 1}`, usedEdgeIds),
         from,
         to,
-        color: toDiagramColor(item.color),
+        color: generatedEdgeColor(),
         route: toDiagramEdgeRoute(item.route, mode),
         corner: toDiagramEdgeCorner(item.corner),
         dashed: item.dashed === true ? true : undefined,
@@ -161,7 +163,7 @@ export function addGeneratedDiagram(answer: string, current: Diagram) {
       id: uniqueGeneratedId(typeof item.id === "string" ? item.id : `e${index + 1}`, usedEdgeIds),
       from,
       to,
-      color: toDiagramColor(item.color),
+      color: generatedEdgeColor(),
       route: toDiagramEdgeRoute(item.route, current.mode),
       corner: toDiagramEdgeCorner(item.corner),
       dashed: item.dashed === true ? true : undefined,
@@ -450,6 +452,10 @@ function toDiagramKind(value: unknown): DiagramKind {
 
 function toDiagramColor(value: unknown): DiagramColor {
   return typeof value === "string" && colors.includes(value as DiagramColor) ? (value as DiagramColor) : "slate";
+}
+
+function generatedEdgeColor(): DiagramColor {
+  return "slate";
 }
 
 function edgeRouteInstruction(mode: DiagramMode) {

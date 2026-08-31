@@ -8,6 +8,7 @@ describe("diagram AI generation", () => {
 
     expect(prompt).toContain("Generate a complete Paper diagram");
     expect(prompt).toContain("No existing diagram.");
+    expect(prompt).toContain("Generated edges must use color slate");
     expect(prompt).not.toContain("Operation:");
     expect(prompt).not.toContain("append");
   });
@@ -44,7 +45,7 @@ describe("diagram AI generation", () => {
 
     expect(diagram.nodes.map((node) => node.id)).toEqual(["db", "kube"]);
     expect(diagram.nodes.map((node) => node.kind)).toEqual(["postgresql", "kubernetes"]);
-    expect(diagram.edges).toMatchObject([{ from: "db", to: "kube", color: "amber", route: "curved", end: "arrow" }]);
+    expect(diagram.edges).toMatchObject([{ from: "db", to: "kube", color: "slate", route: "curved", end: "arrow" }]);
   });
 
   it("arranges generated nodes by edge flow instead of response order", () => {
@@ -84,7 +85,7 @@ describe("diagram AI generation", () => {
     expect(diagram.nodes).toHaveLength(2);
     expect(kube).toMatchObject({ x: 220, y: 90 });
     expect(db?.kind).toBe("postgresql");
-    expect(diagram.edges).toMatchObject([{ from: "db", to: "kube", color: "green" }]);
+    expect(diagram.edges).toMatchObject([{ from: "db", to: "kube", color: "slate" }]);
     expect(addedNodeIds).toEqual(["db"]);
   });
 
@@ -101,5 +102,6 @@ describe("diagram AI generation", () => {
     );
 
     expect(diagram.edges[0]?.route).toBe("straight");
+    expect(diagram.edges[0]?.color).toBe("slate");
   });
 });
