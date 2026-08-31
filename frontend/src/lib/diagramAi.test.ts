@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildDiagramGenerationPrompt, parseGeneratedDiagram } from "./diagramAi";
+import { addGeneratedDiagram, buildDiagramAdditionPrompt, buildDiagramGenerationPrompt, parseGeneratedDiagram } from "./diagramAi";
+import type { Diagram } from "./diagram";
 
 describe("diagram AI generation", () => {
   it("builds a one-shot generation prompt without append mode", () => {
@@ -9,6 +10,21 @@ describe("diagram AI generation", () => {
     expect(prompt).toContain("No existing diagram.");
     expect(prompt).not.toContain("Operation:");
     expect(prompt).not.toContain("append");
+  });
+
+  it("builds an addition prompt that asks for a patch", () => {
+    const current: Diagram = {
+      version: 1,
+      mode: "iso",
+      nodes: [{ id: "kube", kind: "kubernetes", x: 120, y: 80, label: "Cluster Kube", color: "blue" }],
+      edges: [],
+    };
+    const prompt = buildDiagramAdditionPrompt("add postgres connected to kube", current);
+
+    expect(prompt).toContain("Add to the existing Paper diagram");
+    expect(prompt).toContain("Return only the new nodes to add");
+    expect(prompt).toContain("reuse that existing element id");
+    expect(prompt).toContain("kube");
   });
 
   it("parses a complete diagram response", () => {
@@ -32,5 +48,26 @@ describe("diagram AI generation", () => {
 
     expect(byId.get("client")?.x).toBeLessThan(byId.get("api")?.x ?? 0);
     expect(byId.get("api")?.x).toBeLessThan(byId.get("store")?.x ?? 0);
+  });
+
+  it("adds generated nodes without replacing existing diagram content", () => {
+    const current: Diagram = {
+      version: 1,
+      mode: "flat",
+      nodes: [{ id: "kube", kind: "kubernetes", x: 220, y: 90, label: "Cluster Kube", color: "blue" }],
+      edges: [],
+    };
+    const { diagram, addedNodeIds } = addGeneratedDiagram(
+      `{"nodes":[{"id":"db","kind":"postgresql","label":"Database","color":"green"}],"edges":[{"from":"db","to":"kube","color":"green"}]}`,
+      current,
+    );
+    const kube = diagram.nodes.find((node) => node.id === "kube");
+    const db = diagram.nodes.find((node) => node.id === "db");
+
+    expect(diagram.nodes).toHaveLength(2);
+    expect(kube).toMatchObject({ x: 220, y: 90 });
+    expect(db?.kind).toBe("postgresql");
+    expect(diagram.edges).toMatchObject([{ from: "db", to: "kube", color: "green" }]);
+    expect(addedNodeIds).toEqual(["db"]);
   });
 });

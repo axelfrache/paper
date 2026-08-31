@@ -12,7 +12,7 @@ import {
   screenToDiagramPoint,
 } from "../lib/diagram";
 import { generateAI } from "../lib/api";
-import { buildDiagramGenerationPrompt, parseGeneratedDiagram } from "../lib/diagramAi";
+import { addGeneratedDiagram, buildDiagramAdditionPrompt } from "../lib/diagramAi";
 import { diagramIconCatalog, diagramIconHref } from "../lib/diagramIcons";
 import type {
   Diagram,
@@ -728,11 +728,11 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
     setAiError(null);
     try {
       const currentDiagram = diagramRef.current;
-      const response = await generateAI(buildDiagramGenerationPrompt(prompt, currentDiagram.mode, currentDiagram));
-      const generated = parseGeneratedDiagram(response.text, currentDiagram.mode);
-      patchDiagram(() => generated);
-      setSelectedIds(generated.nodes.map((node) => node.id));
-      setSelectedEdgeId(null);
+      const response = await generateAI(buildDiagramAdditionPrompt(prompt, currentDiagram));
+      const generated = addGeneratedDiagram(response.text, currentDiagram);
+      patchDiagram(() => generated.diagram);
+      setSelectedIds(generated.addedNodeIds);
+      setSelectedEdgeId(generated.addedNodeIds.length ? null : generated.addedEdgeIds[0] ?? null);
       setPendingFromId(null);
       setTool("select");
       setAiDialogOpen(false);
@@ -771,7 +771,7 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
       <dialog
         ref={aiDialogRef}
         className="diagram-ai-dialog"
-        aria-label="Generate diagram"
+        aria-label="Add to diagram"
         onCancel={(event) => {
           if (aiLoading) {
             event.preventDefault();
@@ -791,7 +791,7 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
         >
           <header>
             <div>
-              <strong>Describe diagram</strong>
+              <strong>Add to diagram</strong>
               <span>{liveDiagram.mode === "iso" ? "Isometric" : "Flat"}</span>
             </div>
             <button type="button" className="topbar-icon-button" onClick={closeAiDialog} aria-label="Close" title="Close" disabled={aiLoading}>
@@ -801,7 +801,7 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
           <textarea
             value={aiPrompt}
             onChange={(event) => setAiPrompt(event.target.value)}
-            placeholder="Client web, API, PostgreSQL, Redis, avec un load balancer devant l'API"
+            placeholder="PostgreSQL connecté au cluster Kubernetes avec une flèche"
             autoFocus
           />
           {aiError ? <p className="diagram-ai-dialog-error">{aiError}</p> : null}
@@ -811,7 +811,7 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
             </button>
             <button type="submit" className="strong" disabled={aiLoading || !aiPrompt.trim()}>
               <Wand2 size={14} strokeWidth={1.9} />
-              {aiLoading ? "Generating" : "Generate diagram"}
+              {aiLoading ? "Adding" : "Add"}
             </button>
           </footer>
         </form>

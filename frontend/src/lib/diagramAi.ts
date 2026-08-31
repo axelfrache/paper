@@ -46,6 +46,32 @@ export function buildDiagramGenerationPrompt(prompt: string, mode: DiagramMode, 
   ].join("\n");
 }
 
+export function buildDiagramAdditionPrompt(prompt: string, current: Diagram) {
+  return [
+    "Add to the existing Paper diagram from the user request.",
+    "Return only valid JSON. Do not include markdown fences, explanations, or prose.",
+    "Return only the new nodes to add. Do not recreate existing nodes.",
+    "Edges may connect new nodes to existing nodes by using existing node ids.",
+    "If the user asks to connect something to an existing element, reuse that existing element id in edges instead of creating a duplicate node.",
+    "Keep added nodes close to the existing nodes they connect to. Avoid layouts that make arrows cross.",
+    "",
+    "Schema:",
+    `{"nodes":[{"id":"new_database","kind":"postgresql","label":"Database","color":"green"}],"edges":[{"from":"new_database","to":"existing_cluster_id","color":"green","dashed":false}]}`,
+    "",
+    `Diagram mode: ${current.mode}`,
+    `Allowed node kinds: ${allowedDiagramKinds}`,
+    `Allowed colors: ${colors.join(", ")}`,
+    "Allowed edge routes: straight, curved, orthogonal",
+    "Allowed edge ends: none, arrow",
+    "",
+    "Existing diagram:",
+    describeDiagram(current),
+    "",
+    "User request:",
+    prompt,
+  ].join("\n");
+}
+
 export function parseGeneratedDiagram(answer: string, mode: DiagramMode): Diagram {
   const payload = JSON.parse(extractJson(answer)) as { nodes?: unknown; edges?: unknown };
   const sourceNodes = Array.isArray(payload.nodes) ? payload.nodes : [];
@@ -94,6 +120,75 @@ export function parseGeneratedDiagram(answer: string, mode: DiagramMode): Diagra
   return { version: 1, mode, nodes: arrangeGeneratedNodes(nodes, edges, mode), edges };
 }
 
+export function addGeneratedDiagram(answer: string, current: Diagram) {
+  const payload = JSON.parse(extractJson(answer)) as { nodes?: unknown; edges?: unknown };
+  const sourceNodes = Array.isArray(payload.nodes) ? payload.nodes : [];
+  const sourceEdges = Array.isArray(payload.edges) ? payload.edges : [];
+  const currentNodeIds = new Set(current.nodes.map((node) => node.id));
+  const usedNodeIds = new Set(currentNodeIds);
+  const nodeIdMap = new Map(current.nodes.map((node) => [node.id, node.id]));
+  let addedNodeIndex = 0;
+
+  const nodes = sourceNodes.flatMap((source, index): DiagramNode[] => {
+    const item = source && typeof source === "object" ? (source as Record<string, unknown>) : {};
+    const originalId = typeof item.id === "string" && item.id.trim() ? item.id.trim() : `n${index + 1}`;
+    if (currentNodeIds.has(originalId)) {
+      nodeIdMap.set(originalId, originalId);
+      return [];
+    }
+    const id = uniqueGeneratedId(originalId, usedNodeIds);
+    const kind = toDiagramKind(item.kind);
+    const node = createDiagramNode(kind, appendPoint(current, addedNodeIndex), toDiagramColor(item.color));
+    addedNodeIndex += 1;
+    nodeIdMap.set(originalId, id);
+    return [generatedNodeFromPayload(node, id, kind, item)];
+  });
+
+  const usedEdgeIds = new Set(current.edges.map((edge) => edge.id));
+  const existingPairs = new Set(current.edges.map(edgeKey));
+  const edges = sourceEdges.flatMap((source, index): DiagramEdge[] => {
+    const item = source && typeof source === "object" ? (source as Record<string, unknown>) : {};
+    const from = typeof item.from === "string" ? nodeIdMap.get(item.from) : undefined;
+    const to = typeof item.to === "string" ? nodeIdMap.get(item.to) : undefined;
+    if (!from || !to || from === to) {
+      return [];
+    }
+    const edge: DiagramEdge = {
+      id: uniqueGeneratedId(typeof item.id === "string" ? item.id : `e${index + 1}`, usedEdgeIds),
+      from,
+      to,
+      color: toDiagramColor(item.color),
+      route: toDiagramEdgeRoute(item.route),
+      corner: toDiagramEdgeCorner(item.corner),
+      dashed: item.dashed === true ? true : undefined,
+      start: toDiagramEdgeEnd(item.start),
+      end: toDiagramEdgeEnd(item.end),
+      width: toDiagramEdgeWidth(item.width),
+    };
+    const key = edgeKey(edge);
+    if (existingPairs.has(key)) {
+      return [];
+    }
+    existingPairs.add(key);
+    return [edge];
+  });
+
+  if (!nodes.length && !edges.length) {
+    throw new Error("The AI response did not include anything to add.");
+  }
+
+  const arranged = arrangeAddedNodes(current, nodes, edges);
+  return {
+    diagram: {
+      ...current,
+      nodes: [...current.nodes, ...arranged],
+      edges: [...current.edges, ...edges],
+    },
+    addedNodeIds: arranged.map((node) => node.id),
+    addedEdgeIds: edges.map((edge) => edge.id),
+  };
+}
+
 function generatedNodeFromPayload(
   node: DiagramNode,
   id: string,
@@ -130,6 +225,94 @@ function generatedNodePoint(index: number, mode: DiagramMode, origin: { x: numbe
     x: origin.x + (index % columns) * spacingX,
     y: origin.y + Math.floor(index / columns) * spacingY,
   };
+}
+
+function appendPoint(current: Diagram, index: number) {
+  if (!current.nodes.length) {
+    return { x: 100 + index * 210, y: 120 };
+  }
+  const right = Math.max(...current.nodes.map((node) => node.x + (diagramKinds[node.kind] ?? diagramKinds.box).w));
+  const top = Math.min(...current.nodes.map((node) => node.y));
+  return { x: right + 190 + index * 110, y: top + 70 + index * 34 };
+}
+
+function arrangeAddedNodes(current: Diagram, nodes: DiagramNode[], edges: DiagramEdge[]) {
+  if (!nodes.length) {
+    return nodes;
+  }
+
+  const currentById = new Map(current.nodes.map((node) => [node.id, node]));
+  const addedById = new Map(nodes.map((node) => [node.id, node]));
+  const usedSlots = new Set<string>();
+  const spacingX = current.mode === "iso" ? 245 : 235;
+  const spacingY = current.mode === "iso" ? 160 : 140;
+  const orphanOrigin = appendPoint(current, 0);
+
+  return nodes.map((node, index) => {
+    const anchors = edges.flatMap((edge) => {
+      if (edge.to === node.id) {
+        const anchor = currentById.get(edge.from);
+        return anchor ? [{ node: anchor, direction: 1 }] : [];
+      }
+      if (edge.from === node.id) {
+        const anchor = currentById.get(edge.to);
+        return anchor ? [{ node: anchor, direction: -1 }] : [];
+      }
+      return [];
+    });
+    const def = diagramKinds[node.kind] ?? diagramKinds.box;
+    const relatedAdded = edges.flatMap((edge) => {
+      if (edge.to === node.id) {
+        return addedById.get(edge.from) ? [addedById.get(edge.from)!] : [];
+      }
+      if (edge.from === node.id) {
+        return addedById.get(edge.to) ? [addedById.get(edge.to)!] : [];
+      }
+      return [];
+    });
+    const base =
+      anchors.length > 0
+        ? averageAnchor(anchors, spacingX)
+        : relatedAdded.length > 0
+          ? { x: relatedAdded[0].x + spacingX, y: relatedAdded[0].y }
+          : { x: orphanOrigin.x + index * 120, y: orphanOrigin.y + index * 34 };
+    const slot = freeSlot(base, spacingY, usedSlots);
+    return {
+      ...node,
+      x: Math.round(slot.x - def.w / 2),
+      y: Math.round(slot.y - def.h / 2),
+    };
+  });
+}
+
+function averageAnchor(anchors: Array<{ node: DiagramNode; direction: number }>, spacingX: number) {
+  const points = anchors.map((anchor) => {
+    const def = diagramKinds[anchor.node.kind] ?? diagramKinds.box;
+    return {
+      x: anchor.node.x + def.w / 2 + anchor.direction * spacingX,
+      y: anchor.node.y + def.h / 2,
+    };
+  });
+  return {
+    x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+    y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
+  };
+}
+
+function freeSlot(point: { x: number; y: number }, spacingY: number, usedSlots: Set<string>) {
+  let candidate = { ...point };
+  let index = 0;
+  while (usedSlots.has(slotKey(candidate))) {
+    index += 1;
+    const direction = index % 2 === 0 ? -1 : 1;
+    candidate = { x: point.x, y: point.y + direction * Math.ceil(index / 2) * spacingY };
+  }
+  usedSlots.add(slotKey(candidate));
+  return candidate;
+}
+
+function slotKey(point: { x: number; y: number }) {
+  return `${Math.round(point.x / 20)}:${Math.round(point.y / 20)}`;
 }
 
 function arrangeGeneratedNodes(nodes: DiagramNode[], edges: DiagramEdge[], mode: DiagramMode) {
@@ -194,6 +377,10 @@ function arrangeGeneratedNodes(nodes: DiagramNode[], edges: DiagramEdge[], mode:
       y: Math.round(origin.y + yOffset + row * spacingY - def.h / 2),
     };
   });
+}
+
+function edgeKey(edge: Pick<DiagramEdge, "from" | "to" | "color" | "dashed" | "start" | "end">) {
+  return [edge.from, edge.to, edge.color, edge.dashed === true, edge.start ?? "none", edge.end ?? "arrow"].join(":");
 }
 
 function relationMap(edges: DiagramEdge[], key: "from" | "to", value: "from" | "to") {
