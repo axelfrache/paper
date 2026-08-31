@@ -16,9 +16,11 @@ import type {
   DiagramMode,
   DiagramNode,
 } from "./diagram";
+import { isDiagramIconKind } from "./diagramIcons";
 
 const colors = Object.keys(diagramPalette) as DiagramColor[];
 const allowedDiagramKinds = Object.keys(diagramKinds).join(", ");
+const generatedIconSize = { w: 76, h: 101 };
 
 export function buildDiagramGenerationPrompt(prompt: string, mode: DiagramMode, current?: Diagram) {
   return [
@@ -37,6 +39,7 @@ export function buildDiagramGenerationPrompt(prompt: string, mode: DiagramMode, 
     `Diagram mode: ${mode}`,
     `Allowed node kinds: ${allowedDiagramKinds}`,
     `Allowed node colors: ${colors.join(", ")}`,
+    "Use size M for every generated element. Do not vary node dimensions.",
     "Generated edges must use color slate. Keep visual emphasis on nodes, not relationships.",
     edgeRouteInstruction(mode),
     "Allowed edge ends: none, arrow",
@@ -66,6 +69,7 @@ export function buildDiagramAdditionPrompt(prompt: string, current: Diagram) {
     `Diagram mode: ${current.mode}`,
     `Allowed node kinds: ${allowedDiagramKinds}`,
     `Allowed node colors: ${colors.join(", ")}`,
+    "Use size M for every generated element. Do not vary node dimensions.",
     "Generated edges must use color slate. Keep visual emphasis on nodes, not relationships.",
     edgeRouteInstruction(current.mode),
     "Allowed edge ends: none, arrow",
@@ -208,8 +212,7 @@ function generatedNodeFromPayload(
     boxed: item.boxed === true ? true : undefined,
     labelBoxed: typeof item.labelBoxed === "boolean" ? item.labelBoxed : undefined,
     shape: item.shape === "ellipse" ? "ellipse" : undefined,
-    w: typeof item.w === "number" ? item.w : node.w,
-    h: typeof item.h === "number" ? item.h : node.h,
+    ...(isDiagramIconKind(kind) ? generatedIconSize : {}),
   };
 }
 
