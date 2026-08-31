@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { Bold, Code2, Italic, Link, Strikethrough, Underline } from "lucide-react";
+import { Bold, Code2, Italic, Link, Sparkles, Strikethrough, Underline, Wand2, X } from "lucide-react";
 import {
   createDefaultDiagram,
   parseDiagramMarker,
@@ -8,6 +8,8 @@ import {
   serializeDiagramMarker,
   updateDiagramPreview,
 } from "../lib/diagram";
+import { generateAI } from "../lib/api";
+import { buildDiagramGenerationPrompt, parseGeneratedDiagram } from "../lib/diagramAi";
 import {
   deleteBackward,
   deleteBackwardWord,
@@ -63,6 +65,7 @@ type SlashItem = {
   block?: string;
   date?: boolean;
   diagram?: DiagramMode;
+  diagramDescribe?: boolean;
   ai?: AIAction;
 };
 
@@ -82,6 +85,10 @@ type SelectionToolbarState = {
 
 type SelectionToolbarAction = "bold" | "italic" | "code" | "strike" | "underline" | "link";
 
+type DiagramDescribeTarget = {
+  line: number;
+};
+
 const slashItems: SlashItem[] = [
   { id: "h1", label: "Heading", hint: "Large section title", icon: "H", prefix: "# " },
   { id: "h2", label: "Subheading", hint: "Medium title", icon: "H", prefix: "## " },
@@ -95,6 +102,7 @@ const slashItems: SlashItem[] = [
   { id: "strike", label: "Strikethrough", hint: "Crossed text", icon: "S", wrap: "~~" },
   { id: "underline", label: "Underline", hint: "Underlined text", icon: "U", wrap: "<u>", closeWrap: "</u>" },
   { id: "link", label: "Link", hint: "Hyperlink", icon: "↗", link: true },
+  { id: "diagram-describe", label: "Describe diagram", hint: "AI generated diagram", icon: "✦", diagramDescribe: true },
   { id: "diagram", label: "Flat diagram", hint: "2D schematic", icon: "◫", diagram: "flat" },
   { id: "diagram-iso", label: "Isometric diagram", hint: "Projected schematic", icon: "◨", diagram: "iso" },
   { id: "divider", label: "Divider", hint: "Horizontal rule", icon: "—", block: "---" },
@@ -118,12 +126,19 @@ export function MarkdownEditor({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const slashBodyRef = useRef<HTMLDivElement | null>(null);
+  const diagramDescribeDialogRef = useRef<HTMLDialogElement | null>(null);
   const focusedRef = useRef(false);
   const caretRef = useRef<Caret | null>(null);
   const activeLineRef = useRef(-1);
   const handledFocusRequestRef = useRef("");
   const [slash, setSlash] = useState<SlashState | null>(null);
   const [selectionToolbar, setSelectionToolbar] = useState<SelectionToolbarState | null>(null);
+  const [diagramDescribeOpen, setDiagramDescribeOpen] = useState(false);
+  const [diagramDescribeTarget, setDiagramDescribeTarget] = useState<DiagramDescribeTarget | null>(null);
+  const [diagramDescribePrompt, setDiagramDescribePrompt] = useState("");
+  const [diagramDescribeMode, setDiagramDescribeMode] = useState<DiagramMode>("flat");
+  const [diagramDescribeLoading, setDiagramDescribeLoading] = useState(false);
+  const [diagramDescribeError, setDiagramDescribeError] = useState<string | null>(null);
 
   useLayoutEffect(() => {
     renderMarkdown(editorRef.current, value, focusedRef.current ? caretRef.current?.line ?? -1 : -1);
@@ -182,6 +197,18 @@ export function MarkdownEditor({
       body.scrollTop = bottom - body.clientHeight;
     }
   }, [slash?.index, slash?.query]);
+
+  useLayoutEffect(() => {
+    const dialog = diagramDescribeDialogRef.current;
+    if (!dialog) {
+      return;
+    }
+    if (diagramDescribeOpen && !dialog.open) {
+      dialog.showModal();
+    } else if (!diagramDescribeOpen && dialog.open) {
+      dialog.close();
+    }
+  }, [diagramDescribeOpen]);
 
   const syncActiveLine = () => {
     const range = getSelectionRange(editorRef.current);
@@ -530,6 +557,60 @@ export function MarkdownEditor({
           </button>
         </div>
       ) : null}
+      <dialog
+        ref={diagramDescribeDialogRef}
+        className="diagram-ai-dialog"
+        aria-label="Describe diagram"
+        onCancel={(event) => {
+          if (diagramDescribeLoading) {
+            event.preventDefault();
+            return;
+          }
+          closeDiagramDescribeDialog();
+        }}
+        onClose={() => setDiagramDescribeOpen(false)}
+      >
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void generateDiagramFromDescription();
+          }}
+        >
+          <header>
+            <div>
+              <strong>Describe diagram</strong>
+              <span>{diagramDescribeMode === "iso" ? "Isometric" : "Flat"}</span>
+            </div>
+            <button type="button" className="topbar-icon-button" onClick={closeDiagramDescribeDialog} aria-label="Close" title="Close" disabled={diagramDescribeLoading}>
+              <X size={17} strokeWidth={2} />
+            </button>
+          </header>
+          <textarea
+            value={diagramDescribePrompt}
+            onChange={(event) => setDiagramDescribePrompt(event.target.value)}
+            placeholder="PostgreSQL connecté à un cluster Kubernetes avec une flèche"
+            autoFocus
+          />
+          <div className="diagram-ai-dialog-options" role="group" aria-label="Diagram style">
+            <button type="button" className={diagramDescribeMode === "flat" ? "active" : ""} onClick={() => setDiagramDescribeMode("flat")} disabled={diagramDescribeLoading}>
+              Flat
+            </button>
+            <button type="button" className={diagramDescribeMode === "iso" ? "active" : ""} onClick={() => setDiagramDescribeMode("iso")} disabled={diagramDescribeLoading}>
+              Isometric
+            </button>
+          </div>
+          {diagramDescribeError ? <p className="diagram-ai-dialog-error">{diagramDescribeError}</p> : null}
+          <footer>
+            <button type="button" onClick={closeDiagramDescribeDialog} disabled={diagramDescribeLoading}>
+              Cancel
+            </button>
+            <button type="submit" className="strong" disabled={diagramDescribeLoading || !diagramDescribePrompt.trim()}>
+              {diagramDescribeLoading ? <Sparkles size={14} strokeWidth={1.9} /> : <Wand2 size={14} strokeWidth={1.9} />}
+              {diagramDescribeLoading ? "Generating" : "Generate diagram"}
+            </button>
+          </footer>
+        </form>
+      </dialog>
     </div>
   );
 
@@ -642,6 +723,21 @@ export function MarkdownEditor({
       lines[caret.line] = stem + after;
       setSource(lines.join("\n"), { line: caret.line, col: stem.length });
       onAssist?.(item.ai);
+      return;
+    }
+
+    if (item.diagramDescribe) {
+      const keepLine = stem.trim() || after.trim();
+      if (keepLine) {
+        lines[caret.line] = stem + after;
+      } else {
+        lines.splice(caret.line, 1);
+      }
+      setDiagramDescribeTarget({ line: keepLine ? caret.line + 1 : caret.line });
+      setDiagramDescribePrompt("");
+      setDiagramDescribeError(null);
+      setDiagramDescribeOpen(true);
+      setSource(lines.join("\n"), keepLine ? { line: caret.line, col: stem.length } : { line: Math.max(0, Math.min(caret.line, lines.length - 1)), col: 0 });
       return;
     }
 
@@ -771,6 +867,37 @@ export function MarkdownEditor({
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   }
+
+  function closeDiagramDescribeDialog() {
+    if (diagramDescribeLoading) {
+      return;
+    }
+    setDiagramDescribeOpen(false);
+    setDiagramDescribeError(null);
+  }
+
+  async function generateDiagramFromDescription() {
+    const prompt = diagramDescribePrompt.trim();
+    if (!prompt || diagramDescribeLoading || !diagramDescribeTarget) {
+      return;
+    }
+
+    setDiagramDescribeLoading(true);
+    setDiagramDescribeError(null);
+    try {
+      const response = await generateAI(buildDiagramGenerationPrompt(prompt, diagramDescribeMode));
+      const diagram = parseGeneratedDiagram(response.text, diagramDescribeMode);
+      const next = insertDiagramMarkerAt(value, diagramDescribeTarget.line, diagram);
+      setSource(next.value, next.caret);
+      setDiagramDescribeOpen(false);
+      setDiagramDescribeTarget(null);
+      setDiagramDescribePrompt("");
+    } catch (error) {
+      setDiagramDescribeError(error instanceof Error ? error.message : "Unable to generate diagram.");
+    } finally {
+      setDiagramDescribeLoading(false);
+    }
+  }
 }
 
 function renderMarkdown(el: HTMLDivElement | null, value: string, activeLine: number) {
@@ -849,6 +976,16 @@ function moveLine(value: string, from: number, to: number, after: boolean) {
   }
   lines.splice(insertAt, 0, line);
   return lines.join("\n");
+}
+
+function insertDiagramMarkerAt(value: string, line: number, diagram: Diagram) {
+  const lines = value ? value.split("\n") : [];
+  const markerLine = Math.max(0, Math.min(line, lines.length));
+  lines.splice(markerLine, 0, serializeDiagramMarker(diagram), "");
+  return {
+    value: lines.join("\n"),
+    caret: { line: markerLine + 1, col: 0 },
+  };
 }
 
 function filteredSlashItems(query: string) {

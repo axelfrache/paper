@@ -1085,7 +1085,7 @@ function isDiagramColor(value: unknown): value is DiagramColor {
 }
 
 function isDiagramEdgeRoute(value: unknown): value is DiagramEdgeRoute {
-  return value === "orthogonal" || value === "straight";
+  return value === "orthogonal" || value === "straight" || value === "curved";
 }
 
 function isDiagramEdgeCorner(value: unknown): value is DiagramEdgeCorner {
