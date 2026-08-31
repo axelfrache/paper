@@ -248,11 +248,31 @@ export function updateDiagramPreview(diagram: Diagram, preview: DiagramPreview):
 }
 
 export function describeDiagram(diagram: Diagram) {
-  const label = (id: string) => diagram.nodes.find((node) => node.id === id)?.label || "?";
-  if (diagram.edges.length) {
-    return diagram.edges.map((edge) => `${label(edge.from)} -> ${label(edge.to)}`).join("\n");
+  const lines: string[] = ["```mermaid", "flowchart TD"];
+
+  for (const node of diagram.nodes) {
+    const safeLabel = node.label.replace(/"/g, "'");
+    if (node.kind === "database") {
+      lines.push(`  ${node.id}[("${safeLabel}")]`);
+    } else if (node.kind === "user" || node.shape === "ellipse") {
+      lines.push(`  ${node.id}(("${safeLabel}"))`);
+    } else {
+      lines.push(`  ${node.id}["${safeLabel}"]`);
+    }
   }
-  return diagram.nodes.map((node) => `- ${node.label}`).join("\n");
+
+  for (const edge of diagram.edges) {
+    let arrow = "-->";
+    if (edge.dashed) arrow = "-.->";
+    else if (edge.end === "none" && edge.start !== "arrow") arrow = "---";
+    else if (edge.start === "arrow" && edge.end === "arrow") arrow = "<-->";
+    else if (edge.start === "arrow" && (edge.end === "none" || !edge.end)) arrow = "<--";
+
+    lines.push(`  ${edge.from} ${arrow} ${edge.to}`);
+  }
+
+  lines.push("```");
+  return lines.join("\n");
 }
 
 export function layoutDiagram(diagram: Diagram): DiagramLayout {

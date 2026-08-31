@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Box, ChevronDown, Copy, Hand, Maximize, Minus, MousePointer2, Plus, Square, Trash2, Type } from "lucide-react";
+import { ArrowRight, Box, ChevronDown, Copy, Hand, Maximize, Minus, MousePointer2, Plus, Square, Trash2, Type, X, Sparkles, Wand2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
   createDiagramEdge,
@@ -12,6 +12,7 @@ import {
   layoutDiagram,
   screenToDiagramPoint,
 } from "../lib/diagram";
+import { askNotes } from "../lib/api";
 import { diagramIconCatalog, diagramIconHref } from "../lib/diagramIcons";
 import type {
   Diagram,
@@ -33,7 +34,6 @@ type DiagramEditorProps = {
   diagram: Diagram;
   onChange: (diagram: Diagram) => void;
   onClose: () => void;
-  onDescribe: (description: string) => void;
 };
 
 type DiagramClipboard = {
@@ -78,6 +78,8 @@ const groupedElementCatalog = elementCatalog.reduce<Array<{ group: string; items
   return groups;
 }, []);
 
+const allowedDiagramKinds = elementCatalog.map((item) => item.id).join(", ");
+
 const colors = Object.keys(diagramPalette) as DiagramColor[];
 const iconSizes = [
   { label: "S", value: 56 },
@@ -109,8 +111,9 @@ const minZoom = 0.25;
 const maxZoom = 3;
 const defaultViewport: EditorViewport = { x: -120, y: -120, width: 1040, height: 680 };
 
-export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: DiagramEditorProps) {
+export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const aiDialogRef = useRef<HTMLDialogElement | null>(null);
   const labelInputRef = useRef<HTMLInputElement | null>(null);
   const diagramRef = useRef(diagram);
   const clipboardRef = useRef<DiagramClipboard | null>(null);
@@ -128,6 +131,11 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
   const [pendingFromId, setPendingFromId] = useState<string | null>(null);
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
   const [color, setColor] = useState<DiagramColor>("blue");
+  const [aiDialogOpen, setAiDialogOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiOperation, setAiOperation] = useState<"replace" | "append">("replace");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
   const elementMenuRef = useRef<HTMLDivElement | null>(null);
   const layout = layoutDiagram(liveDiagram);
   layoutRef.current = layout;
@@ -167,6 +175,19 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
       input?.select();
     });
   }, [editingId]);
+
+  useEffect(() => {
+    const dialog = aiDialogRef.current;
+    if (!dialog) {
+      return;
+    }
+    if (aiDialogOpen && !dialog.open) {
+      dialog.showModal();
+    }
+    if (!aiDialogOpen && dialog.open) {
+      dialog.close();
+    }
+  }, [aiDialogOpen]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -239,7 +260,7 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
 
     const point = screenToDiagramPoint(event, event.currentTarget, diagramRef.current);
     const node = createDiagramNode(tool, point, color);
-    if (diagramRef.current.mode === "iso" && diagramIconForKind(tool)) {
+    if (diagramIconForKind(tool)) {
       node.w = 76;
       node.h = 101;
     }
@@ -687,6 +708,46 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
     });
   };
 
+  const openAiDialog = () => {
+    setAiError(null);
+    setAiDialogOpen(true);
+  };
+
+  const closeAiDialog = () => {
+    if (aiLoading) {
+      return;
+    }
+    setAiDialogOpen(false);
+    setAiError(null);
+  };
+
+  const generateDiagramFromPrompt = async () => {
+    const prompt = aiPrompt.trim();
+    if (!prompt || aiLoading) {
+      return;
+    }
+
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const currentDiagram = diagramRef.current;
+      const response = await askNotes(buildDiagramGenerationPrompt(prompt, currentDiagram, aiOperation));
+      const generated = parseGeneratedDiagram(response.answer, currentDiagram, aiOperation);
+      const existingIds = new Set(currentDiagram.nodes.map((node) => node.id));
+      patchDiagram(() => generated);
+      setSelectedIds(aiOperation === "replace" ? generated.nodes.map((node) => node.id) : generated.nodes.filter((node) => !existingIds.has(node.id)).map((node) => node.id));
+      setSelectedEdgeId(null);
+      setPendingFromId(null);
+      setTool("select");
+      setAiDialogOpen(false);
+      setAiPrompt("");
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : "Unable to generate diagram.");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) {
@@ -700,20 +761,73 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
     <div className="diagram-editor" role="dialog" aria-modal="true" aria-label="Diagram editor">
       <header className="diagram-editor-topbar">
         <strong>Diagram</strong>
-        <span className="diagram-editor-mode">
-          <span>{liveDiagram.mode === "iso" ? "◨" : "◫"}</span>
-          <span>{liveDiagram.mode === "iso" ? "Isometric" : "Flat"}</span>
-        </span>
-        <span>{hintForTool(tool, pendingFromId)}</span>
         <div>
-          <button className="topbar-button" onClick={() => onDescribe(describeDiagram(liveDiagram))}>
-            Describe in words
+          <button className="topbar-button" onClick={openAiDialog}>
+            <Sparkles size={14} strokeWidth={1.9} />
+            Describe
           </button>
-          <button className="topbar-button strong" onClick={onClose}>
-            Done
+          <button className="topbar-icon-button" style={{ marginLeft: "4px" }} onClick={onClose} aria-label="Close" title="Close">
+            <X size={17} strokeWidth={2} />
           </button>
         </div>
       </header>
+
+      <dialog
+        ref={aiDialogRef}
+        className="diagram-ai-dialog"
+        aria-label="Generate diagram"
+        onCancel={(event) => {
+          if (aiLoading) {
+            event.preventDefault();
+            return;
+          }
+          setAiDialogOpen(false);
+        }}
+        onClose={() => {
+          setAiDialogOpen(false);
+        }}
+      >
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void generateDiagramFromPrompt();
+          }}
+        >
+          <header>
+            <div>
+              <strong>Describe diagram</strong>
+              <span>{liveDiagram.mode === "iso" ? "Isometric" : "Flat"}</span>
+            </div>
+            <button type="button" className="topbar-icon-button" onClick={closeAiDialog} aria-label="Close" title="Close" disabled={aiLoading}>
+              <X size={17} strokeWidth={2} />
+            </button>
+          </header>
+          <textarea
+            value={aiPrompt}
+            onChange={(event) => setAiPrompt(event.target.value)}
+            placeholder="Client web, API, PostgreSQL, Redis, avec un load balancer devant l'API"
+            autoFocus
+          />
+          <div className="diagram-ai-dialog-options" role="group" aria-label="Generation mode">
+            <button type="button" className={aiOperation === "replace" ? "active" : ""} onClick={() => setAiOperation("replace")} disabled={aiLoading}>
+              Replace
+            </button>
+            <button type="button" className={aiOperation === "append" ? "active" : ""} onClick={() => setAiOperation("append")} disabled={aiLoading}>
+              Add
+            </button>
+          </div>
+          {aiError ? <p className="diagram-ai-dialog-error">{aiError}</p> : null}
+          <footer>
+            <button type="button" onClick={closeAiDialog} disabled={aiLoading}>
+              Cancel
+            </button>
+            <button type="submit" className="strong" disabled={aiLoading || !aiPrompt.trim()}>
+              <Wand2 size={14} strokeWidth={1.9} />
+              {aiLoading ? "Generating" : "Generate diagram"}
+            </button>
+          </footer>
+        </form>
+      </dialog>
 
       <div className="diagram-editor-body">
         <svg
@@ -1236,6 +1350,150 @@ function ElementIcon({ item, mode }: { item: ElementCatalogItem; mode: Diagram["
 
 function safeSvgId(value: string) {
   return value.replace(/[^A-Za-z0-9_-]/g, "-");
+}
+
+function buildDiagramGenerationPrompt(prompt: string, current: Diagram, operation: "replace" | "append") {
+  return [
+    "Generate a Paper diagram from the user request.",
+    "Return only valid JSON. Do not include markdown fences, explanations, or prose.",
+    "",
+    "Schema:",
+    `{"nodes":[{"id":"n1","kind":"client","label":"Client","color":"slate"}],"edges":[{"from":"n1","to":"n2","color":"slate","dashed":false}]}`,
+    "",
+    `Diagram mode: ${current.mode}`,
+    `Operation: ${operation}`,
+    `Allowed node kinds: ${allowedDiagramKinds}`,
+    `Allowed colors: ${colors.join(", ")}`,
+    "Allowed edge routes: straight, curved, orthogonal",
+    "Allowed edge ends: none, arrow",
+    "",
+    "Current diagram:",
+    describeDiagram(current),
+    "",
+    "User request:",
+    prompt,
+  ].join("\n");
+}
+
+function parseGeneratedDiagram(answer: string, current: Diagram, operation: "replace" | "append"): Diagram {
+  const payload = JSON.parse(extractJson(answer)) as { nodes?: unknown; edges?: unknown };
+  const sourceNodes = Array.isArray(payload.nodes) ? payload.nodes : [];
+  if (!sourceNodes.length) {
+    throw new Error("The AI response did not include any nodes.");
+  }
+
+  const usedNodeIds = new Set(operation === "append" ? current.nodes.map((node) => node.id) : []);
+  const nodeIdMap = new Map<string, string>();
+  const origin = generatedDiagramOrigin(current, operation);
+  const nodes = sourceNodes.map((source, index) => {
+    const item = source && typeof source === "object" ? (source as Record<string, unknown>) : {};
+    const originalId = typeof item.id === "string" && item.id.trim() ? item.id.trim() : `n${index + 1}`;
+    const id = uniqueGeneratedId(originalId, usedNodeIds);
+    const kind = toDiagramKind(item.kind);
+    const point = generatedNodePoint(index, current.mode, origin);
+    const node = createDiagramNode(kind, point, toDiagramColor(item.color));
+    nodeIdMap.set(originalId, id);
+    return {
+      ...node,
+      id,
+      label: typeof item.label === "string" && item.label.trim() ? item.label.trim() : diagramKinds[kind].label,
+      boxed: item.boxed === true ? true : undefined,
+    };
+  });
+
+  const usedEdgeIds = new Set(operation === "append" ? current.edges.map((edge) => edge.id) : []);
+  const edges = (Array.isArray(payload.edges) ? payload.edges : []).flatMap((source, index): DiagramEdge[] => {
+    const item = source && typeof source === "object" ? (source as Record<string, unknown>) : {};
+    const from = typeof item.from === "string" ? nodeIdMap.get(item.from) : undefined;
+    const to = typeof item.to === "string" ? nodeIdMap.get(item.to) : undefined;
+    if (!from || !to || from === to) {
+      return [];
+    }
+    return [
+      {
+        id: uniqueGeneratedId(typeof item.id === "string" ? item.id : `e${index + 1}`, usedEdgeIds),
+        from,
+        to,
+        color: toDiagramColor(item.color),
+        route: toDiagramEdgeRoute(item.route),
+        corner: toDiagramEdgeCorner(item.corner),
+        dashed: item.dashed === true ? true : undefined,
+        start: toDiagramEdgeEnd(item.start),
+        end: toDiagramEdgeEnd(item.end),
+        width: toDiagramEdgeWidth(item.width),
+      },
+    ];
+  });
+
+  if (operation === "append") {
+    return { ...current, nodes: [...current.nodes, ...nodes], edges: [...current.edges, ...edges] };
+  }
+  return { version: 1, mode: current.mode, nodes, edges };
+}
+
+function extractJson(value: string) {
+  const withoutFence = value.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
+  const start = withoutFence.indexOf("{");
+  const end = withoutFence.lastIndexOf("}");
+  if (start < 0 || end <= start) {
+    throw new Error("The AI response was not valid JSON.");
+  }
+  return withoutFence.slice(start, end + 1);
+}
+
+function generatedDiagramOrigin(current: Diagram, operation: "replace" | "append") {
+  if (operation === "replace" || !current.nodes.length) {
+    return { x: 100, y: 120 };
+  }
+  const right = Math.max(...current.nodes.map((node) => node.x + sizeForNode(node).w));
+  const top = Math.min(...current.nodes.map((node) => node.y));
+  return { x: right + 170, y: top + 60 };
+}
+
+function generatedNodePoint(index: number, mode: Diagram["mode"], origin: { x: number; y: number }) {
+  const columns = 3;
+  const spacingX = mode === "iso" ? 230 : 210;
+  const spacingY = mode === "iso" ? 170 : 145;
+  return {
+    x: origin.x + (index % columns) * spacingX,
+    y: origin.y + Math.floor(index / columns) * spacingY,
+  };
+}
+
+function uniqueGeneratedId(value: string, used: Set<string>) {
+  const base = (value.trim().replace(/[^A-Za-z0-9_-]/g, "-") || "generated").slice(0, 32);
+  let candidate = base;
+  let index = 1;
+  while (used.has(candidate)) {
+    candidate = `${base}-${index}`;
+    index += 1;
+  }
+  used.add(candidate);
+  return candidate;
+}
+
+function toDiagramKind(value: unknown): DiagramKind {
+  return typeof value === "string" && value in diagramKinds ? (value as DiagramKind) : "box";
+}
+
+function toDiagramColor(value: unknown): DiagramColor {
+  return typeof value === "string" && colors.includes(value as DiagramColor) ? (value as DiagramColor) : "slate";
+}
+
+function toDiagramEdgeRoute(value: unknown): DiagramEdgeRoute | undefined {
+  return value === "straight" || value === "curved" || value === "orthogonal" ? value : undefined;
+}
+
+function toDiagramEdgeCorner(value: unknown): DiagramEdgeCorner | undefined {
+  return value === "rounded" || value === "square" ? value : undefined;
+}
+
+function toDiagramEdgeEnd(value: unknown): DiagramEdgeEnd | undefined {
+  return value === "none" || value === "arrow" ? value : undefined;
+}
+
+function toDiagramEdgeWidth(value: unknown): DiagramEdgeWidth | undefined {
+  return value === "thin" || value === "medium" || value === "thick" ? value : undefined;
 }
 
 function hintForTool(tool: DiagramTool, pendingFromId: string | null) {

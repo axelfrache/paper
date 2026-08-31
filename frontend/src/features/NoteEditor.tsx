@@ -174,19 +174,6 @@ export function NoteEditor({
     onContentChange(nextContent);
   };
 
-  const describeDiagram = (description: string) => {
-    if (!diagramEdit) {
-      return;
-    }
-    const lines = latestContentRef.current.split("\n");
-    const insertAt = Math.min(lines.length, diagramEdit.line + 1);
-    lines.splice(insertAt, 0, "", description, "");
-    const nextContent = lines.join("\n");
-    latestContentRef.current = nextContent;
-    closeDiagram();
-    onContentChange(nextContent);
-  };
-
   if (!note) {
     return (
       <main className="editor-shell">
@@ -314,7 +301,6 @@ export function NoteEditor({
           diagram={diagramEdit.diagram}
           onChange={changeDiagram}
           onClose={closeDiagram}
-          onDescribe={describeDiagram}
         />
       ) : null}
     </main>
