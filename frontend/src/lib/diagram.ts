@@ -24,6 +24,7 @@ export type DiagramNode = {
   h?: number;
   shape?: "rect" | "ellipse";
   boxed?: boolean;
+  labelBoxed?: boolean;
 };
 
 export type DiagramEdge = {
@@ -1014,6 +1015,7 @@ function normalizeNode(value: unknown): DiagramNode {
     h: typeof node.h === "number" ? node.h : undefined,
     shape: node.shape === "ellipse" ? "ellipse" : undefined,
     boxed: node.boxed === true ? true : undefined,
+    labelBoxed: typeof node.labelBoxed === "boolean" ? node.labelBoxed : undefined,
   };
 }
 

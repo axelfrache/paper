@@ -239,6 +239,10 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
 
     const point = screenToDiagramPoint(event, event.currentTarget, diagramRef.current);
     const node = createDiagramNode(tool, point, color);
+    if (diagramRef.current.mode === "iso" && diagramIconForKind(tool)) {
+      node.w = 76;
+      node.h = 101;
+    }
     patchDiagram((current) => ({ ...current, nodes: [...current.nodes, node] }));
     setSelectedIds([node.id]);
     setSelectedEdgeId(null);
@@ -584,6 +588,19 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
     }));
   };
 
+  const setSelectedNodeLabelBoxed = (labelBoxed?: boolean) => {
+    if (!selectedIds.length) {
+      return;
+    }
+    const selected = new Set(selectedIds);
+    patchDiagram((current) => ({
+      ...current,
+      nodes: current.nodes.map((node) =>
+        selected.has(node.id) ? { ...node, labelBoxed } : node,
+      ),
+    }));
+  };
+
   const startCanvasPan = (event: PointerEvent) => {
     const svg = svgRef.current;
     if (!svg) {
@@ -793,16 +810,17 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
                   />
                 </foreignObject>
               ) : (
-                <text
-                  x={node.cx}
-                  y={node.labelY}
-                  textAnchor="middle"
-                  fontSize={node.bare ? "11.5" : "13"}
-                  fontWeight={node.bare ? "500" : "530"}
-                  fill={node.bare ? "var(--muted-strong)" : "var(--text)"}
+                <foreignObject
+                  x={node.cx - 100}
+                  y={node.labelY - 18}
+                  width="200"
+                  height="28"
+                  style={{ overflow: "visible", pointerEvents: "none" }}
                 >
-                  {node.label}
-                </text>
+                  <div className={(node.source.labelBoxed ?? (liveDiagram.mode === "iso" && node.bare)) ? "diagram-node-label bare" : "diagram-node-label"}>
+                    <span>{node.label}</span>
+                  </div>
+                </foreignObject>
               )}
               <rect
                 x={node.hx}
@@ -981,6 +999,23 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
                 </div>
               </div>
             ) : null}
+            <div className="diagram-inspector-style">
+              <span>Label</span>
+              <div>
+                <button
+                  className={!(selectedNode.labelBoxed ?? (liveDiagram.mode === "iso" && selectedLayoutNodes[0]?.bare)) ? "active" : ""}
+                  onClick={() => setSelectedNodeLabelBoxed(false)}
+                >
+                  Plain
+                </button>
+                <button
+                  className={(selectedNode.labelBoxed ?? (liveDiagram.mode === "iso" && selectedLayoutNodes[0]?.bare)) ? "active" : ""}
+                  onClick={() => setSelectedNodeLabelBoxed(true)}
+                >
+                  Badge
+                </button>
+              </div>
+            </div>
             <button onClick={duplicateSelected}>
               <Copy size={14} strokeWidth={1.9} />
               Duplicate
@@ -1007,6 +1042,23 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
                     onClick={() => applyColor(name)}
                   />
                 ))}
+              </div>
+            </div>
+            <div className="diagram-inspector-style">
+              <span>Label</span>
+              <div>
+                <button
+                  className={selectedNodes.every((node) => node.labelBoxed === false) ? "active" : ""}
+                  onClick={() => setSelectedNodeLabelBoxed(false)}
+                >
+                  Plain
+                </button>
+                <button
+                  className={selectedNodes.every((node) => node.labelBoxed === true) ? "active" : ""}
+                  onClick={() => setSelectedNodeLabelBoxed(true)}
+                >
+                  Badge
+                </button>
               </div>
             </div>
             <button onClick={duplicateSelected}>
