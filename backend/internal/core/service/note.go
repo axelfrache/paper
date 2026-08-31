@@ -147,6 +147,14 @@ func (s *Note) AskNotes(ctx context.Context, req domain.AskRequest) (domain.AskA
 	return fallbackAskAnswer(relevant), nil
 }
 
+func (s *Note) GenerateAI(ctx context.Context, req domain.AICompletionRequest) (domain.AICompletion, error) {
+	prompt := strings.TrimSpace(req.Prompt)
+	if prompt == "" {
+		return domain.AICompletion{}, domain.NewInvalidError("A prompt is required.")
+	}
+	return s.assistant.Generate(ctx, prompt)
+}
+
 func rankNotes(query string, notes []domain.Note) []domain.Note {
 	words := queryWords(query)
 	type scoredNote struct {

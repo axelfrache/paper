@@ -100,3 +100,19 @@ func newAskAnswerDTO(answer domain.AskAnswer) askAnswerDTO {
 		SourceIDs: answer.SourceIDs,
 	}
 }
+
+type aiGenerateRequestDTO struct {
+	Prompt string `json:"prompt"`
+}
+
+func (d aiGenerateRequestDTO) toDomain() domain.AICompletionRequest {
+	return domain.AICompletionRequest{Prompt: d.Prompt}
+}
+
+type aiGenerateResponseDTO struct {
+	Text string `json:"text"`
+}
+
+func newAIGenerateResponseDTO(completion domain.AICompletion) aiGenerateResponseDTO {
+	return aiGenerateResponseDTO{Text: completion.Text}
+}

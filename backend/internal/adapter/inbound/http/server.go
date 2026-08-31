@@ -20,6 +20,7 @@ func NewRouter(notes port.NoteService, allowedOrigins []string) stdhttp.Handler 
 	mux.HandleFunc("DELETE /api/notes/{id}", handler.DeleteNote)
 	mux.HandleFunc("POST /api/notes/{id}/assist", handler.AssistNote)
 	mux.HandleFunc("POST /api/notes/ask", handler.AskNotes)
+	mux.HandleFunc("POST /api/ai/generate", handler.GenerateAI)
 	mux.HandleFunc("POST /api/search", handler.SearchNotes)
 
 	return cors(allowedOrigins)(mux)

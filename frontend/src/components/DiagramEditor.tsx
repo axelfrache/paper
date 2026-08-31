@@ -12,7 +12,7 @@ import {
   layoutDiagram,
   screenToDiagramPoint,
 } from "../lib/diagram";
-import { askNotes } from "../lib/api";
+import { generateAI } from "../lib/api";
 import { diagramIconCatalog, diagramIconHref } from "../lib/diagramIcons";
 import type {
   Diagram,
@@ -731,8 +731,8 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
     setAiError(null);
     try {
       const currentDiagram = diagramRef.current;
-      const response = await askNotes(buildDiagramGenerationPrompt(prompt, currentDiagram, aiOperation));
-      const generated = parseGeneratedDiagram(response.answer, currentDiagram, aiOperation);
+      const response = await generateAI(buildDiagramGenerationPrompt(prompt, currentDiagram, aiOperation));
+      const generated = parseGeneratedDiagram(response.text, currentDiagram, aiOperation);
       const existingIds = new Set(currentDiagram.nodes.map((node) => node.id));
       patchDiagram(() => generated);
       setSelectedIds(aiOperation === "replace" ? generated.nodes.map((node) => node.id) : generated.nodes.filter((node) => !existingIds.has(node.id)).map((node) => node.id));

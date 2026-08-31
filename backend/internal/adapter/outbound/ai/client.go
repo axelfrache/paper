@@ -78,6 +78,23 @@ func (c *Client) Ask(ctx context.Context, question string, notes []domain.Note) 
 	return domain.AskAnswer{Answer: suggestion.Text, SourceIDs: sourceIDs}, nil
 }
 
+func (c *Client) Generate(ctx context.Context, prompt string) (domain.AICompletion, error) {
+	var suggestion domain.AISuggestion
+	var err error
+	switch c.provider {
+	case "ollama":
+		suggestion, err = c.assistWithOllama(ctx, prompt, domain.AIAction("generate"))
+	case "openai-compatible":
+		suggestion, err = c.assistWithOpenAICompatible(ctx, prompt, domain.AIAction("generate"))
+	default:
+		suggestion, err = c.assistWithGateway(ctx, prompt, domain.AIAction("generate"))
+	}
+	if err != nil {
+		return domain.AICompletion{}, err
+	}
+	return domain.AICompletion{Text: suggestion.Text}, nil
+}
+
 func (c *Client) assistWithGateway(ctx context.Context, prompt string, action domain.AIAction) (domain.AISuggestion, error) {
 	if c.apiKey == "" {
 		return domain.AISuggestion{}, domain.NewAIError(http.StatusInternalServerError,

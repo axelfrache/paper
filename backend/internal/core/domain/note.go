@@ -52,6 +52,14 @@ type AskAnswer struct {
 	SourceIDs []string
 }
 
+type AICompletionRequest struct {
+	Prompt string
+}
+
+type AICompletion struct {
+	Text string
+}
+
 func (n Note) Matches(q SearchQuery) bool {
 	query := strings.ToLower(strings.TrimSpace(q.Query))
 	if query != "" {

@@ -15,6 +15,7 @@ type NoteService interface {
 	DeleteNote(ctx context.Context, id string) error
 	AssistNote(ctx context.Context, id string, action domain.AIAction) (domain.AISuggestion, error)
 	AskNotes(ctx context.Context, req domain.AskRequest) (domain.AskAnswer, error)
+	GenerateAI(ctx context.Context, req domain.AICompletionRequest) (domain.AICompletion, error)
 }
 
 type NoteRepository interface {
@@ -28,4 +29,5 @@ type NoteRepository interface {
 type NoteAssistant interface {
 	Assist(ctx context.Context, note domain.Note, action domain.AIAction) (domain.AISuggestion, error)
 	Ask(ctx context.Context, question string, notes []domain.Note) (domain.AskAnswer, error)
+	Generate(ctx context.Context, prompt string) (domain.AICompletion, error)
 }

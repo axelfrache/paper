@@ -121,6 +121,21 @@ func (h *Handler) AskNotes(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	writeJSON(w, stdhttp.StatusOK, newAskAnswerDTO(answer))
 }
 
+func (h *Handler) GenerateAI(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	var dto aiGenerateRequestDTO
+	if err := decodeJSON(w, r, &dto); err != nil {
+		writeError(w, err)
+		return
+	}
+
+	completion, err := h.service.GenerateAI(r.Context(), dto.toDomain())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, stdhttp.StatusOK, newAIGenerateResponseDTO(completion))
+}
+
 func (h *Handler) Health(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
 	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": "ok"})
 }

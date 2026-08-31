@@ -1,4 +1,4 @@
-import type { AIAction, AISuggestion, AskAnswer, Note, NoteDraft } from "../types/note";
+import type { AIAction, AICompletion, AISuggestion, AskAnswer, Note, NoteDraft } from "../types/note";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -63,5 +63,12 @@ export function askNotes(question: string) {
   return request<AskAnswer>("/api/notes/ask", {
     method: "POST",
     body: JSON.stringify({ question }),
+  });
+}
+
+export function generateAI(prompt: string) {
+  return request<AICompletion>("/api/ai/generate", {
+    method: "POST",
+    body: JSON.stringify({ prompt }),
   });
 }

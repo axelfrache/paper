@@ -32,3 +32,7 @@ export type AskAnswer = {
   answer: string;
   sourceIds: string[];
 };
+
+export type AICompletion = {
+  text: string;
+};
