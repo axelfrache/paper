@@ -22,4 +22,15 @@ describe("diagram AI generation", () => {
     expect(diagram.nodes.map((node) => node.kind)).toEqual(["postgresql", "kubernetes"]);
     expect(diagram.edges).toMatchObject([{ from: "db", to: "kube", color: "amber", route: "curved", end: "arrow" }]);
   });
+
+  it("arranges generated nodes by edge flow instead of response order", () => {
+    const diagram = parseGeneratedDiagram(
+      `{"nodes":[{"id":"store","kind":"postgresql","label":"Database","color":"green"},{"id":"client","kind":"client","label":"Client","color":"slate"},{"id":"api","kind":"server","label":"API","color":"blue"}],"edges":[{"from":"client","to":"api","color":"slate"},{"from":"api","to":"store","color":"green"}]}`,
+      "flat",
+    );
+    const byId = new Map(diagram.nodes.map((node) => [node.id, node]));
+
+    expect(byId.get("client")?.x).toBeLessThan(byId.get("api")?.x ?? 0);
+    expect(byId.get("api")?.x).toBeLessThan(byId.get("store")?.x ?? 0);
+  });
 });

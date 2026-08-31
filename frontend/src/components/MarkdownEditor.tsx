@@ -888,6 +888,11 @@ export function MarkdownEditor({
       const response = await generateAI(buildDiagramGenerationPrompt(prompt, diagramDescribeMode));
       const diagram = parseGeneratedDiagram(response.text, diagramDescribeMode);
       const next = insertDiagramMarkerAt(value, diagramDescribeTarget.line, diagram);
+      focusedRef.current = false;
+      activeLineRef.current = -1;
+      caretRef.current = null;
+      window.getSelection()?.removeAllRanges();
+      editorRef.current?.blur();
       setSource(next.value, next.caret);
       setDiagramDescribeOpen(false);
       setDiagramDescribeTarget(null);
