@@ -1,16 +1,18 @@
-const iconBasePath = "/diagram-icons/cloud-native";
+const isoIconBasePath = "/diagram-icons/cloud-native";
+const flatIconBasePath = "/diagram-icons/flat";
 
 type DiagramIconDefinition = {
   label: string;
   group: string;
-  src: string;
+  isoSrc: string;
+  flatSrc: string;
   w: number;
   h: number;
   visible?: boolean;
 };
 
 function icon(src: string, label: string, group: string, w = 92, h = 108, visible = true): DiagramIconDefinition {
-  return { src: `${iconBasePath}/${src}`, label, group, w, h, visible };
+  return { isoSrc: `${isoIconBasePath}/${src}`, flatSrc: `${flatIconBasePath}/${src}`, label, group, w, h, visible };
 }
 
 export const diagramIcons = {
@@ -95,8 +97,9 @@ export const diagramIconDefinitions = Object.entries(diagramIcons).map(([id, def
 
 export const diagramIconCatalog = diagramIconDefinitions.filter((icon) => icon.visible !== false);
 
-export function diagramIconHref(kind: DiagramIconKind) {
-  return diagramIcons[kind].src;
+export function diagramIconHref(kind: DiagramIconKind, mode: "flat" | "iso" = "iso") {
+  const icon = diagramIcons[kind];
+  return mode === "flat" ? icon.flatSrc : icon.isoSrc;
 }
 
 export function diagramIconSize(kind: DiagramIconKind) {

@@ -22,6 +22,7 @@ import type {
   DiagramEdgeRoute,
   DiagramEdgeWidth,
   DiagramKind,
+  DiagramLayoutNode,
   DiagramNode,
 } from "../lib/diagram";
 import type { DiagramIconKind } from "../lib/diagramIcons";
@@ -767,17 +768,7 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
                   {node.cap}
                 </text>
               ) : null}
-              {node.icon ? (
-                <image
-                  className="diagram-node-icon"
-                  href={diagramIconHref(node.icon)}
-                  x={node.iconX}
-                  y={node.iconY}
-                  width={node.iconSize}
-                  height={node.iconSize}
-                  preserveAspectRatio="xMidYMid meet"
-                />
-              ) : null}
+              {node.icon ? <DiagramNodeIcon node={node} mode={liveDiagram.mode} /> : null}
               {editingId === node.id ? (
                 <foreignObject x={node.cx - inlineLabelWidth(node.hw) / 2} y={node.labelY - 16} width={inlineLabelWidth(node.hw)} height="26">
                   <input
@@ -914,7 +905,7 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
                           setElementMenuOpen(false);
                         }}
                       >
-                        <ElementIcon item={item} />
+                        <ElementIcon item={item} mode={liveDiagram.mode} />
                         <span>{item.label}</span>
                       </button>
                     ))}
@@ -1126,12 +1117,73 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
   );
 }
 
-function ElementIcon({ item }: { item: ElementCatalogItem }) {
+function DiagramNodeIcon({ node, mode }: { node: DiagramLayoutNode; mode: Diagram["mode"] }) {
+  if (!node.icon) {
+    return null;
+  }
+  const href = diagramIconHref(node.icon, mode);
+  if (mode === "flat") {
+    const maskId = `diagram-editor-icon-mask-${safeSvgId(node.id)}`;
+    return (
+      <>
+        <defs>
+          <mask
+            id={maskId}
+            maskUnits="userSpaceOnUse"
+            x={node.iconX}
+            y={node.iconY}
+            width={node.iconSize}
+            height={node.iconSize}
+            style={{ maskType: "alpha" }}
+          >
+            <image href={href} x={node.iconX} y={node.iconY} width={node.iconSize} height={node.iconSize} preserveAspectRatio="xMidYMid meet" />
+          </mask>
+        </defs>
+        <rect
+          className="diagram-node-icon diagram-node-icon-mask"
+          x={node.iconX}
+          y={node.iconY}
+          width={node.iconSize}
+          height={node.iconSize}
+          fill={node.color}
+          mask={`url(#${maskId})`}
+        />
+      </>
+    );
+  }
+  return (
+    <image
+      className="diagram-node-icon"
+      href={href}
+      x={node.iconX}
+      y={node.iconY}
+      width={node.iconSize}
+      height={node.iconSize}
+      preserveAspectRatio="xMidYMid meet"
+    />
+  );
+}
+
+function ElementIcon({ item, mode }: { item: ElementCatalogItem; mode: Diagram["mode"] }) {
   if (item.iconKind) {
-    return <img className="diagram-system-icon" src={diagramIconHref(item.iconKind)} alt="" aria-hidden="true" loading="lazy" />;
+    const href = diagramIconHref(item.iconKind, mode);
+    if (mode === "flat") {
+      return (
+        <span
+          className="diagram-system-icon diagram-system-icon-mask"
+          aria-hidden="true"
+          style={{ WebkitMaskImage: `url(${href})`, maskImage: `url(${href})` }}
+        />
+      );
+    }
+    return <img className="diagram-system-icon" src={href} alt="" aria-hidden="true" loading="lazy" />;
   }
   const Icon = item.icon ?? Box;
   return <Icon className="diagram-system-icon" size={18} strokeWidth={1.9} />;
+}
+
+function safeSvgId(value: string) {
+  return value.replace(/[^A-Za-z0-9_-]/g, "-");
 }
 
 function hintForTool(tool: DiagramTool, pendingFromId: string | null) {

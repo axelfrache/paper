@@ -320,7 +320,7 @@ export function diagramToSvgMarkup(diagram: Diagram, maxHeight = 340) {
       const cap = node.cap
         ? `<text x="${node.cx}" y="${node.capY}" text-anchor="middle" font-size="8.5" letter-spacing="1" font-weight="700" fill="${node.color}">${escapeHtml(node.cap)}</text>`
         : "";
-      const icon = nodeIconSvg(node);
+      const icon = nodeIconSvg(node, diagram.mode);
       const labelSize = node.bare ? "11.5" : "13";
       const labelWeight = node.bare ? "500" : "530";
       const labelFill = node.bare ? "var(--muted-strong)" : "var(--text)";
@@ -350,11 +350,15 @@ function contentBounds(layout: DiagramLayout) {
   };
 }
 
-function nodeIconSvg(node: DiagramLayoutNode) {
+function nodeIconSvg(node: DiagramLayoutNode, mode: DiagramMode) {
   if (!node.icon) {
     return "";
   }
-  const href = escapeAttribute(diagramIconHref(node.icon));
+  const href = escapeAttribute(diagramIconHref(node.icon, mode));
+  if (mode === "flat") {
+    const maskId = escapeAttribute(`diagram-icon-mask-${safeSvgId(node.id)}`);
+    return `<defs><mask id="${maskId}" maskUnits="userSpaceOnUse" x="${node.iconX}" y="${node.iconY}" width="${node.iconSize}" height="${node.iconSize}" style="mask-type:alpha;"><image href="${href}" x="${node.iconX}" y="${node.iconY}" width="${node.iconSize}" height="${node.iconSize}" preserveAspectRatio="xMidYMid meet"/></mask></defs><rect class="diagram-node-icon diagram-node-icon-mask" x="${node.iconX}" y="${node.iconY}" width="${node.iconSize}" height="${node.iconSize}" fill="${node.color}" mask="url(#${maskId})"/>`;
+  }
   return `<image class="diagram-node-icon" href="${href}" x="${node.iconX}" y="${node.iconY}" width="${node.iconSize}" height="${node.iconSize}" preserveAspectRatio="xMidYMid meet"/>`;
 }
 
@@ -1088,4 +1092,8 @@ function escapeHtml(value: string) {
 
 function escapeAttribute(value: string) {
   return escapeHtml(value);
+}
+
+function safeSvgId(value: string) {
+  return value.replace(/[^A-Za-z0-9_-]/g, "-");
 }

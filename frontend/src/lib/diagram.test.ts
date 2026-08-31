@@ -233,6 +233,17 @@ describe("diagram system icons", () => {
     });
 
     expect(html).toContain("diagram-node-icon");
+    expect(html).toContain('href="/diagram-icons/flat/load-balancer.svg"');
+  });
+
+  it("renders isometric icons in isometric diagram previews", () => {
+    const html = diagramToSvgMarkup({
+      version: 1,
+      mode: "iso",
+      nodes: [{ id: "n1", kind: "load-balancer", x: 10, y: 20, label: "Gateway", color: "violet" }],
+      edges: [],
+    });
+
     expect(html).toContain('href="/diagram-icons/cloud-native/load-balancer.svg"');
   });
 
