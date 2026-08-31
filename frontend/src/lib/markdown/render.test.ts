@@ -34,6 +34,14 @@ describe("markdown rendering parser", () => {
     ]);
   });
 
+  it("parses combined strong and emphasis markers", () => {
+    expect(parseInline("Use ***both*** now")).toEqual([
+      { type: "text", text: "Use " },
+      { type: "strong", children: [{ type: "em", children: [{ type: "text", text: "both" }] }] },
+      { type: "text", text: " now" },
+    ]);
+  });
+
   it("parses nested inline formatting inside links", () => {
     expect(parseInline("[**Paper** notes](https://paper.home.axelfrache.com)")).toEqual([
       {

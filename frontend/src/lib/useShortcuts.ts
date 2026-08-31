@@ -74,7 +74,7 @@ export function useShortcuts(handlers: ShortcutHandlers) {
 
       if (mod && event.key.toLowerCase() === "k") {
         const selection = window.getSelection();
-        if (!event.shiftKey && contentEditable && selection && !selection.isCollapsed) {
+        if (!event.shiftKey && contentEditable && selection) {
           return;
         }
         event.preventDefault();

@@ -38,6 +38,19 @@ export function parseInline(text: string): MarkdownInline[] {
       continue;
     }
 
+    if (text.startsWith("***", index)) {
+      const end = text.indexOf("***", index + 3);
+      if (end > index + 3) {
+        pushBuffer();
+        nodes.push({
+          type: "strong",
+          children: [{ type: "em", children: parseInline(text.slice(index + 3, end)) }],
+        });
+        index = end + 3;
+        continue;
+      }
+    }
+
     if (text[index] === "`") {
       const end = text.indexOf("`", index + 1);
       if (end > index + 1) {

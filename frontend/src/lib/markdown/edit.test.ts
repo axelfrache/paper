@@ -14,7 +14,10 @@ import {
   normalizeRange,
   replaceRange,
   selectedText,
+  toggleLink,
+  toggleSelection,
   wrapLink,
+  wrapLinkWithHref,
   wrapSelection,
 } from "./edit";
 
@@ -37,6 +40,62 @@ describe("markdown editing operations", () => {
     expect(wrapSelection("underline this", { start: { line: 0, col: 0 }, end: { line: 0, col: 9 } }, "<u>", "</u>")).toEqual({
       value: "<u>underline</u> this",
       caret: { line: 0, col: 16 },
+    });
+  });
+
+  it("toggles selected plain text into formatting", () => {
+    expect(toggleSelection("make this bold", { start: { line: 0, col: 10 }, end: { line: 0, col: 14 } }, "**")).toEqual({
+      value: "make this **bold**",
+      caret: { line: 0, col: 18 },
+    });
+  });
+
+  it("toggles selected formatted text back to plain text", () => {
+    expect(toggleSelection("make this **bold**", { start: { line: 0, col: 12 }, end: { line: 0, col: 16 } }, "**")).toEqual({
+      value: "make this bold",
+      caret: { line: 0, col: 14 },
+    });
+  });
+
+  it("toggles selected formatted text when the selection reaches the closing mark", () => {
+    expect(toggleSelection("make this **bold**", { start: { line: 0, col: 12 }, end: { line: 0, col: 18 } }, "**")).toEqual({
+      value: "make this bold",
+      caret: { line: 0, col: 14 },
+    });
+  });
+
+  it("toggles formatted text when the selection includes trailing text", () => {
+    expect(toggleSelection("make this **bold** now", { start: { line: 0, col: 12 }, end: { line: 0, col: 19 } }, "**")).toEqual({
+      value: "make this bold now",
+      caret: { line: 0, col: 14 },
+    });
+  });
+
+  it("adds italic inside bold without capturing bold markers", () => {
+    expect(toggleSelection("make this **bold** now", { start: { line: 0, col: 12 }, end: { line: 0, col: 18 } }, "*")).toEqual({
+      value: "make this ***bold*** now",
+      caret: { line: 0, col: 19 },
+    });
+  });
+
+  it("removes bold from combined bold and italic text", () => {
+    expect(toggleSelection("make this ***bold*** now", { start: { line: 0, col: 13 }, end: { line: 0, col: 19 } }, "**")).toEqual({
+      value: "make this *bold* now",
+      caret: { line: 0, col: 16 },
+    });
+  });
+
+  it("removes italic from combined bold and italic text", () => {
+    expect(toggleSelection("make this ***bold*** now", { start: { line: 0, col: 13 }, end: { line: 0, col: 19 } }, "*")).toEqual({
+      value: "make this **bold** now",
+      caret: { line: 0, col: 18 },
+    });
+  });
+
+  it("toggles underline formatting back to plain text", () => {
+    expect(toggleSelection("underline <u>this</u>", { start: { line: 0, col: 13 }, end: { line: 0, col: 17 } }, "<u>", "</u>")).toEqual({
+      value: "underline this",
+      caret: { line: 0, col: 14 },
     });
   });
 
@@ -69,10 +128,52 @@ describe("markdown editing operations", () => {
     });
   });
 
+  it("uses a selected URL as the markdown link href", () => {
+    expect(wrapLink("https://axelfrache.com", { start: { line: 0, col: 0 }, end: { line: 0, col: 22 } })).toEqual({
+      value: "[https://axelfrache.com](https://axelfrache.com)",
+      caret: { line: 0, col: 48 },
+    });
+  });
+
   it("inserts a placeholder link at a collapsed caret", () => {
     expect(wrapLink("Visit ", { start: { line: 0, col: 6 }, end: { line: 0, col: 6 } })).toEqual({
       value: "Visit [link](https://)",
       caret: { line: 0, col: 21 },
+    });
+  });
+
+  it("wraps selected text with a supplied href", () => {
+    expect(wrapLinkWithHref("Visit Paper", { start: { line: 0, col: 6 }, end: { line: 0, col: 11 } }, "https://example.com")).toEqual({
+      value: "Visit [Paper](https://example.com)",
+      caret: { line: 0, col: 34 },
+    });
+  });
+
+  it("toggles plain selected text into a markdown link", () => {
+    expect(toggleLink("Visit Paper", { start: { line: 0, col: 6 }, end: { line: 0, col: 11 } })).toEqual({
+      value: "Visit [Paper](https://)",
+      caret: { line: 0, col: 22 },
+    });
+  });
+
+  it("toggles a selected markdown link label back to plain text", () => {
+    expect(toggleLink("Visit [Paper](https://example.com) today", { start: { line: 0, col: 7 }, end: { line: 0, col: 12 } })).toEqual({
+      value: "Visit Paper today",
+      caret: { line: 0, col: 11 },
+    });
+  });
+
+  it("toggles a rendered-link-like selection back to plain text", () => {
+    expect(toggleLink("Visit [Paper](https://example.com) today", { start: { line: 0, col: 7 }, end: { line: 0, col: 34 } })).toEqual({
+      value: "Visit Paper today",
+      caret: { line: 0, col: 11 },
+    });
+  });
+
+  it("toggles a collapsed caret inside a markdown link back to plain text", () => {
+    expect(toggleLink("Visit [Paper](https://example.com) today", { start: { line: 0, col: 9 }, end: { line: 0, col: 9 } })).toEqual({
+      value: "Visit Paper today",
+      caret: { line: 0, col: 11 },
     });
   });
 

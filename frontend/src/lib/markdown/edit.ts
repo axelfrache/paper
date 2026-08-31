@@ -1,3 +1,5 @@
+import { safeHref } from "./inline";
+
 export type Caret = {
   line: number;
   col: number;
@@ -51,11 +53,45 @@ export function wrapSelection(value: string, range: TextRange, mark: string, clo
   };
 }
 
-export function wrapLink(value: string, range: TextRange) {
+export function toggleSelection(value: string, range: TextRange, mark: string, closingMark = mark) {
   range = normalizeRange(range);
+  const wrapper = wrapperAtRange(value, range, mark, closingMark);
+  if (!wrapper) {
+    return wrapSelection(value, normalizeRangeForInlineWrap(value, range), mark, closingMark);
+  }
+  return replaceRange(value, {
+    start: { line: range.start.line, col: wrapper.start },
+    end: { line: range.start.line, col: wrapper.end },
+  }, wrapper.text);
+}
+
+export function wrapLink(value: string, range: TextRange) {
+  range = normalizeRangeForLinkWrap(value, normalizeRange(range));
   const text = selectedText(value, range) || "link";
+  const selectedHref = safeHref(text.trim());
+  if (selectedHref) {
+    return replaceRange(value, range, `[${text}](${selectedHref})`);
+  }
   const href = "https://";
   return replaceRange(value, range, `[${text}](${href})`, text.length + href.length + 3);
+}
+
+export function wrapLinkWithHref(value: string, range: TextRange, href: string) {
+  range = normalizeRange(range);
+  const text = selectedText(value, range) || href;
+  return replaceRange(value, range, `[${text}](${href})`);
+}
+
+export function toggleLink(value: string, range: TextRange) {
+  range = normalizeRange(range);
+  const link = linkAtRange(value, range);
+  if (!link) {
+    return wrapLink(value, range);
+  }
+  return replaceRange(value, {
+    start: { line: range.start.line, col: link.start },
+    end: { line: range.start.line, col: link.end },
+  }, link.label);
 }
 
 export function normalizeRange(range: TextRange): TextRange {
@@ -250,4 +286,262 @@ export function normalizeMarkdownText(text: string) {
 
 function isWordChar(char: string) {
   return /[\p{L}\p{N}_]/u.test(char);
+}
+
+type LinkSpan = {
+  start: number;
+  end: number;
+  labelStart: number;
+  labelEnd: number;
+  label: string;
+};
+
+type WrapperSpan = {
+  start: number;
+  end: number;
+  contentStart: number;
+  contentEnd: number;
+  text: string;
+};
+
+function wrapperAtRange(value: string, range: TextRange, mark: string, closingMark: string): WrapperSpan | null {
+  if (range.start.line !== range.end.line) {
+    return null;
+  }
+  const line = value.split("\n")[range.start.line] ?? "";
+  return wrapperSpans(line, mark, closingMark).find((wrapper) => {
+    if (isCollapsedRange(range)) {
+      return range.start.col > wrapper.contentStart && range.start.col < wrapper.contentEnd;
+    }
+    const rangeInsideWrapper = range.start.col >= wrapper.start && range.end.col <= wrapper.end;
+    const wrapperInsideRange = range.start.col <= wrapper.start && range.end.col >= wrapper.end;
+    const rangeInsideContent = range.start.col >= wrapper.contentStart && range.end.col <= wrapper.contentEnd;
+    const rangeOverlapsContent = range.start.col < wrapper.contentEnd && range.end.col > wrapper.contentStart;
+    return rangeInsideWrapper || wrapperInsideRange || rangeInsideContent || rangeOverlapsContent;
+  }) ?? null;
+}
+
+function wrapperSpans(line: string, mark: string, closingMark: string): WrapperSpan[] {
+  const spans: WrapperSpan[] = mark === "*" && closingMark === "*" ? tripleItalicWrapperSpans(line) : [];
+  let index = 0;
+  while (index < line.length) {
+    const start = findOpeningFormatMark(line, mark, index);
+    if (start < 0) {
+      break;
+    }
+    const contentStart = start + mark.length;
+    const contentEnd = findClosingFormatMark(line, closingMark, contentStart);
+    if (contentEnd < 0 || contentEnd === contentStart) {
+      index = contentStart;
+      continue;
+    }
+    spans.push({
+      start,
+      end: contentEnd + closingMark.length,
+      contentStart,
+      contentEnd,
+      text: line.slice(contentStart, contentEnd),
+    });
+    index = contentEnd + closingMark.length;
+  }
+  return spans.sort((a, b) => a.start - b.start || b.end - a.end);
+}
+
+function tripleItalicWrapperSpans(line: string): WrapperSpan[] {
+  const spans: WrapperSpan[] = [];
+  let index = 0;
+  while (index < line.length) {
+    const start = line.indexOf("***", index);
+    if (start < 0) {
+      break;
+    }
+    const end = line.indexOf("***", start + 3);
+    if (end < 0 || end === start + 3) {
+      index = start + 3;
+      continue;
+    }
+    spans.push({
+      start: start + 2,
+      end: end + 1,
+      contentStart: start + 3,
+      contentEnd: end,
+      text: line.slice(start + 3, end),
+    });
+    index = end + 3;
+  }
+  return spans;
+}
+
+function findOpeningFormatMark(value: string, mark: string, from: number) {
+  for (let index = from; index <= value.length - mark.length; index += 1) {
+    if (!value.startsWith(mark, index)) {
+      continue;
+    }
+    if (mark === "*" && (value[index - 1] === "*" || value[index + 1] === "*")) {
+      continue;
+    }
+    return index;
+  }
+  return -1;
+}
+
+function findClosingFormatMark(value: string, mark: string, from: number) {
+  for (let index = from; index <= value.length - mark.length; index += 1) {
+    if (!value.startsWith(mark, index)) {
+      continue;
+    }
+    if (mark === "**" && value[index + mark.length] === "*") {
+      continue;
+    }
+    if (mark === "*" && (value[index - 1] === "*" || value[index + 1] === "*")) {
+      continue;
+    }
+    return index;
+  }
+  return -1;
+}
+
+function normalizeRangeForInlineWrap(value: string, range: TextRange) {
+  return normalizeRangeWithSpans(value, range, "content");
+}
+
+function normalizeRangeForLinkWrap(value: string, range: TextRange) {
+  return normalizeRangeWithSpans(value, range, "whole");
+}
+
+function normalizeRangeWithSpans(value: string, range: TextRange, mode: "content" | "whole"): TextRange {
+  if (range.start.line !== range.end.line || isCollapsedRange(range)) {
+    return range;
+  }
+  const line = value.split("\n")[range.start.line] ?? "";
+  let start = range.start.col;
+  let end = range.end.col;
+  const spans = [
+    ...wrapperSpans(line, "**", "**"),
+    ...wrapperSpans(line, "*", "*"),
+    ...wrapperSpans(line, "~~", "~~"),
+    ...wrapperSpans(line, "`", "`"),
+    ...wrapperSpans(line, "<u>", "</u>"),
+  ];
+
+  for (const span of spans) {
+    if (start >= span.contentStart && start <= span.contentEnd && end > span.contentEnd && end <= span.end) {
+      end = mode === "whole" ? span.end : span.contentEnd;
+    }
+    if (start >= span.start && start < span.contentStart && end >= span.contentStart && end <= span.contentEnd) {
+      start = mode === "whole" ? span.start : span.contentStart;
+    }
+    if (mode === "whole" && start >= span.contentStart && end <= span.contentEnd) {
+      start = span.start;
+      end = span.end;
+    }
+  }
+
+  for (const link of linkSpans(line)) {
+    if (start >= link.labelStart && start <= link.labelEnd && end > link.labelEnd && end <= link.end) {
+      end = link.labelEnd;
+    }
+    if (start >= link.start && start < link.labelStart && end >= link.labelStart && end <= link.labelEnd) {
+      start = link.labelStart;
+    }
+  }
+
+  return {
+    start: { line: range.start.line, col: start },
+    end: { line: range.end.line, col: end },
+  };
+}
+
+function linkAtRange(value: string, range: TextRange): LinkSpan | null {
+  if (range.start.line !== range.end.line) {
+    return null;
+  }
+  const line = value.split("\n")[range.start.line] ?? "";
+  const links = linkSpans(line);
+  return links.find((link) => {
+    if (isCollapsedRange(range)) {
+      return range.start.col > link.start && range.start.col < link.end;
+    }
+    const rangeInsideLink = range.start.col >= link.start && range.end.col <= link.end;
+    const linkInsideRange = range.start.col <= link.start && range.end.col >= link.end;
+    const rangeInsideLabel = range.start.col >= link.labelStart && range.end.col <= link.labelEnd;
+    const rangeOverlapsLabel = range.start.col < link.labelEnd && range.end.col > link.labelStart;
+    return rangeInsideLink || linkInsideRange || rangeInsideLabel || rangeOverlapsLabel;
+  }) ?? null;
+}
+
+function linkSpans(line: string): LinkSpan[] {
+  const spans: LinkSpan[] = [];
+  let index = 0;
+  while (index < line.length) {
+    const start = line.indexOf("[", index);
+    if (start < 0) {
+      break;
+    }
+    const labelEnd = findUnescapedChar(line, "]", start + 1);
+    if (labelEnd <= start + 1 || line[labelEnd + 1] !== "(") {
+      index = start + 1;
+      continue;
+    }
+    const hrefEnd = findClosingLinkParen(line, labelEnd + 2);
+    if (hrefEnd < 0) {
+      index = start + 1;
+      continue;
+    }
+    spans.push({
+      start,
+      end: hrefEnd + 1,
+      labelStart: start + 1,
+      labelEnd,
+      label: line.slice(start + 1, labelEnd),
+    });
+    index = hrefEnd + 1;
+  }
+  return spans;
+}
+
+function findUnescapedChar(value: string, needle: string, from: number) {
+  for (let index = from; index < value.length; index += 1) {
+    if (value[index] === "\\" && index + 1 < value.length) {
+      index += 1;
+      continue;
+    }
+    if (value[index] === needle) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function findClosingLinkParen(value: string, from: number) {
+  let depth = 0;
+  let quote = "";
+  for (let index = from; index < value.length; index += 1) {
+    const char = value[index];
+    if (char === "\\" && index + 1 < value.length) {
+      index += 1;
+      continue;
+    }
+    if (quote) {
+      if (char === quote) {
+        quote = "";
+      }
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char === "(") {
+      depth += 1;
+      continue;
+    }
+    if (char === ")") {
+      if (depth === 0) {
+        return index;
+      }
+      depth -= 1;
+    }
+  }
+  return -1;
 }

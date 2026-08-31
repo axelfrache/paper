@@ -20,10 +20,13 @@ import {
   insertText,
   isCollapsedRange,
   normalizeRange,
-  wrapLink,
+  toggleLink,
+  toggleSelection,
+  wrapLinkWithHref,
   wrapSelection,
 } from "../lib/markdown/edit";
 import { renderEditableMarkdown } from "../lib/markdown/editorRender";
+import { safeHref } from "../lib/markdown/render";
 import {
   getCaret,
   getSelectionRange,
@@ -290,9 +293,17 @@ export function MarkdownEditor({
       return;
     }
 
-    if (meta && !event.shiftKey && event.key.toLowerCase() === "k" && selectionRange && !isCollapsedRange(selectionRange)) {
+    if (meta && !event.shiftKey && event.key.toLowerCase() === "k") {
       event.preventDefault();
-      const next = wrapLink(value, selectionRange);
+      const next = toggleLink(value, selectionRange ?? { start: caret, end: caret });
+      setSelectionToolbar(null);
+      setSource(next.value, next.caret);
+      return;
+    }
+
+    if (meta && !event.shiftKey && event.key.toLowerCase() === "u") {
+      event.preventDefault();
+      const next = toggleSelection(value, selectionRange ?? { start: caret, end: caret }, "<u>", "</u>");
       setSelectionToolbar(null);
       setSource(next.value, next.caret);
       return;
@@ -301,7 +312,7 @@ export function MarkdownEditor({
     if (meta && ["b", "i"].includes(event.key.toLowerCase())) {
       event.preventDefault();
       const mark = event.key.toLowerCase() === "b" ? "**" : "*";
-      const next = wrapSelection(value, selectionRange ?? { start: caret, end: caret }, mark);
+      const next = toggleSelection(value, selectionRange ?? { start: caret, end: caret }, mark);
       setSelectionToolbar(null);
       setSource(next.value, next.caret);
       return;
@@ -403,13 +414,6 @@ export function MarkdownEditor({
       return;
     }
 
-    const linkTarget = linkElementFromTarget(event.target);
-    if (linkTarget && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault();
-      window.open(linkTarget.href, "_blank", "noopener,noreferrer");
-      return;
-    }
-
     const checkTarget = target?.closest("[data-check]");
     if (!checkTarget) {
       return;
@@ -424,8 +428,14 @@ export function MarkdownEditor({
   };
 
   const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (linkElementFromTarget(event.target)) {
-      event.preventDefault();
+    const linkTarget = linkElementFromTarget(event.target);
+    if (!linkTarget) {
+      return;
+    }
+    event.preventDefault();
+    if (event.metaKey || event.ctrlKey) {
+      event.stopPropagation();
+      window.open(linkTarget.href, "_blank", "noopener,noreferrer");
     }
   };
 
@@ -443,7 +453,11 @@ export function MarkdownEditor({
     setSelectionToolbar(null);
     const text = event.clipboardData.getData("text/plain");
     const caret = getCaret(editorRef.current) ?? { line: 0, col: 0 };
-    const next = insertText(value, getSelectionRange(editorRef.current) ?? { start: caret, end: caret }, text);
+    const range = getSelectionRange(editorRef.current) ?? { start: caret, end: caret };
+    const trimmed = text.trim();
+    const next = !isCollapsedRange(range) && safeHref(trimmed)
+      ? wrapLinkWithHref(value, range, trimmed)
+      : insertText(value, range, text);
     setSource(next.value, next.caret);
   };
 
@@ -528,10 +542,10 @@ export function MarkdownEditor({
     }
 
     const next = action === "link"
-      ? wrapLink(value, range)
+      ? toggleLink(value, range)
       : action === "underline"
-        ? wrapSelection(value, range, "<u>", "</u>")
-        : wrapSelection(value, range, action === "bold" ? "**" : action === "italic" ? "*" : action === "strike" ? "~~" : "`");
+        ? toggleSelection(value, range, "<u>", "</u>")
+        : toggleSelection(value, range, action === "bold" ? "**" : action === "italic" ? "*" : action === "strike" ? "~~" : "`");
     focusedRef.current = true;
     setSlash(null);
     setSelectionToolbar(null);
