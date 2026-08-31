@@ -26,7 +26,9 @@ export function buildDiagramGenerationPrompt(prompt: string, mode: DiagramMode, 
     "Return only valid JSON. Do not include markdown fences, explanations, or prose.",
     "Do not include default placeholder nodes unless the user explicitly asks for them.",
     "Prefer a left-to-right flow: clients and external entrypoints on the left, gateways near the center, services in the middle, data stores and queues on the right or below their owning service.",
-    "Keep related nodes adjacent. Avoid layouts that make arrows cross. Use straight arrows for simple left-to-right relationships and orthogonal arrows for branching relationships.",
+    mode === "iso"
+      ? "Keep related nodes adjacent. Avoid layouts that make arrows cross. Use direct straight arrows only."
+      : "Keep related nodes adjacent. Avoid layouts that make arrows cross. Use straight arrows for simple left-to-right relationships and orthogonal arrows for branching relationships.",
     "Order the nodes array by visual flow from left to right, then top to bottom.",
     "",
     "Schema:",
@@ -35,7 +37,7 @@ export function buildDiagramGenerationPrompt(prompt: string, mode: DiagramMode, 
     `Diagram mode: ${mode}`,
     `Allowed node kinds: ${allowedDiagramKinds}`,
     `Allowed colors: ${colors.join(", ")}`,
-    "Allowed edge routes: straight, curved, orthogonal",
+    edgeRouteInstruction(mode),
     "Allowed edge ends: none, arrow",
     "",
     current ? "Existing diagram, for context only. Replace it with the generated result:" : "No existing diagram.",
@@ -53,7 +55,9 @@ export function buildDiagramAdditionPrompt(prompt: string, current: Diagram) {
     "Return only the new nodes to add. Do not recreate existing nodes.",
     "Edges may connect new nodes to existing nodes by using existing node ids.",
     "If the user asks to connect something to an existing element, reuse that existing element id in edges instead of creating a duplicate node.",
-    "Keep added nodes close to the existing nodes they connect to. Avoid layouts that make arrows cross.",
+    current.mode === "iso"
+      ? "Keep added nodes close to the existing nodes they connect to. Use direct straight arrows only."
+      : "Keep added nodes close to the existing nodes they connect to. Avoid layouts that make arrows cross.",
     "",
     "Schema:",
     `{"nodes":[{"id":"new_database","kind":"postgresql","label":"Database","color":"green"}],"edges":[{"from":"new_database","to":"existing_cluster_id","color":"green","dashed":false}]}`,
@@ -61,7 +65,7 @@ export function buildDiagramAdditionPrompt(prompt: string, current: Diagram) {
     `Diagram mode: ${current.mode}`,
     `Allowed node kinds: ${allowedDiagramKinds}`,
     `Allowed colors: ${colors.join(", ")}`,
-    "Allowed edge routes: straight, curved, orthogonal",
+    edgeRouteInstruction(current.mode),
     "Allowed edge ends: none, arrow",
     "",
     "Existing diagram:",
@@ -107,7 +111,7 @@ export function parseGeneratedDiagram(answer: string, mode: DiagramMode): Diagra
         from,
         to,
         color: toDiagramColor(item.color),
-        route: toDiagramEdgeRoute(item.route),
+        route: toDiagramEdgeRoute(item.route, mode),
         corner: toDiagramEdgeCorner(item.corner),
         dashed: item.dashed === true ? true : undefined,
         start: toDiagramEdgeEnd(item.start),
@@ -158,7 +162,7 @@ export function addGeneratedDiagram(answer: string, current: Diagram) {
       from,
       to,
       color: toDiagramColor(item.color),
-      route: toDiagramEdgeRoute(item.route),
+      route: toDiagramEdgeRoute(item.route, current.mode),
       corner: toDiagramEdgeCorner(item.corner),
       dashed: item.dashed === true ? true : undefined,
       start: toDiagramEdgeEnd(item.start),
@@ -448,7 +452,14 @@ function toDiagramColor(value: unknown): DiagramColor {
   return typeof value === "string" && colors.includes(value as DiagramColor) ? (value as DiagramColor) : "slate";
 }
 
-function toDiagramEdgeRoute(value: unknown): DiagramEdgeRoute | undefined {
+function edgeRouteInstruction(mode: DiagramMode) {
+  return mode === "iso" ? "Allowed edge routes: straight. Every edge must use route straight." : "Allowed edge routes: straight, curved, orthogonal";
+}
+
+function toDiagramEdgeRoute(value: unknown, mode: DiagramMode): DiagramEdgeRoute | undefined {
+  if (mode === "iso") {
+    return "straight";
+  }
   return value === "straight" || value === "curved" || value === "orthogonal" ? value : undefined;
 }
 

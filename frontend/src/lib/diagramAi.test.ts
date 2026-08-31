@@ -27,6 +27,14 @@ describe("diagram AI generation", () => {
     expect(prompt).toContain("kube");
   });
 
+  it("asks for straight edge routes in isometric generation prompts", () => {
+    const prompt = buildDiagramGenerationPrompt("client to api", "iso");
+
+    expect(prompt).toContain("Allowed edge routes: straight");
+    expect(prompt).toContain("direct straight arrows only");
+    expect(prompt).not.toContain("curved, orthogonal");
+  });
+
   it("parses a complete diagram response", () => {
     const diagram = parseGeneratedDiagram(
       `Here is the JSON:
@@ -50,6 +58,15 @@ describe("diagram AI generation", () => {
     expect(byId.get("api")?.x).toBeLessThan(byId.get("store")?.x ?? 0);
   });
 
+  it("forces straight routes for generated isometric diagrams", () => {
+    const diagram = parseGeneratedDiagram(
+      `{"nodes":[{"id":"client","kind":"client","label":"Client","color":"slate"},{"id":"api","kind":"server","label":"API","color":"blue"}],"edges":[{"from":"client","to":"api","color":"slate","route":"orthogonal"}]}`,
+      "iso",
+    );
+
+    expect(diagram.edges[0]?.route).toBe("straight");
+  });
+
   it("adds generated nodes without replacing existing diagram content", () => {
     const current: Diagram = {
       version: 1,
@@ -69,5 +86,20 @@ describe("diagram AI generation", () => {
     expect(db?.kind).toBe("postgresql");
     expect(diagram.edges).toMatchObject([{ from: "db", to: "kube", color: "green" }]);
     expect(addedNodeIds).toEqual(["db"]);
+  });
+
+  it("forces straight routes when adding to isometric diagrams", () => {
+    const current: Diagram = {
+      version: 1,
+      mode: "iso",
+      nodes: [{ id: "kube", kind: "kubernetes", x: 220, y: 90, label: "Cluster Kube", color: "blue" }],
+      edges: [],
+    };
+    const { diagram } = addGeneratedDiagram(
+      `{"nodes":[{"id":"db","kind":"postgresql","label":"Database","color":"green"}],"edges":[{"from":"db","to":"kube","color":"green","route":"curved"}]}`,
+      current,
+    );
+
+    expect(diagram.edges[0]?.route).toBe("straight");
   });
 });
