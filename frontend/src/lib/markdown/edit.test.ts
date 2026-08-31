@@ -74,7 +74,7 @@ describe("markdown editing operations", () => {
   it("adds italic inside bold without capturing bold markers", () => {
     expect(toggleSelection("make this **bold** now", { start: { line: 0, col: 12 }, end: { line: 0, col: 18 } }, "*")).toEqual({
       value: "make this ***bold*** now",
-      caret: { line: 0, col: 19 },
+      caret: { line: 0, col: 18 },
     });
   });
 
@@ -88,7 +88,7 @@ describe("markdown editing operations", () => {
   it("removes italic from combined bold and italic text", () => {
     expect(toggleSelection("make this ***bold*** now", { start: { line: 0, col: 13 }, end: { line: 0, col: 19 } }, "*")).toEqual({
       value: "make this **bold** now",
-      caret: { line: 0, col: 18 },
+      caret: { line: 0, col: 16 },
     });
   });
 

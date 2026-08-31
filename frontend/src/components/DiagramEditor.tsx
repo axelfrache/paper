@@ -12,7 +12,7 @@ import {
   layoutDiagram,
   screenToDiagramPoint,
 } from "../lib/diagram";
-import { diagramIconCatalog, diagramIconMarkup } from "../lib/diagramIcons";
+import { diagramIconCatalog, diagramIconHref } from "../lib/diagramIcons";
 import type {
   Diagram,
   DiagramColor,
@@ -35,12 +35,22 @@ type DiagramEditorProps = {
   onDescribe: (description: string) => void;
 };
 
+type DiagramClipboard = {
+  nodes: DiagramNode[];
+  edges: DiagramEdge[];
+};
+
+type SelectionBox = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 const tools: Array<{ id: DiagramTool; label: string; icon: LucideIcon }> = [
   { id: "select", label: "Select", icon: MousePointer2 },
   { id: "pan", label: "Move canvas", icon: Hand },
   { id: "arrow", label: "Arrow", icon: ArrowRight },
-  { id: "box", label: "Box", icon: Square },
-  { id: "text", label: "Text", icon: Type },
 ];
 
 type ElementCatalogItem = {
@@ -52,7 +62,8 @@ type ElementCatalogItem = {
 };
 
 const elementCatalog: ElementCatalogItem[] = [
-  { id: "service", label: "Service", group: "Compute", iconKind: "fn" },
+  { id: "box", label: "Box", group: "Shapes", icon: Square },
+  { id: "text", label: "Text", group: "Shapes", icon: Type },
   ...diagramIconCatalog.map((icon) => ({ id: icon.id, label: icon.label, group: icon.group, iconKind: icon.id })),
 ];
 
@@ -68,11 +79,11 @@ const groupedElementCatalog = elementCatalog.reduce<Array<{ group: string; items
 
 const colors = Object.keys(diagramPalette) as DiagramColor[];
 const iconSizes = [
-  { label: "S", value: 32 },
-  { label: "M", value: 44 },
-  { label: "L", value: 60 },
+  { label: "S", value: 56 },
+  { label: "M", value: 76 },
+  { label: "L", value: 96 },
 ];
-const boxedIconSize = { w: 132, h: 86 };
+const boxedIconSize = { w: 150, h: 96 };
 const edgeRoutes: Array<{ label: string; value: DiagramEdgeRoute }> = [
   { label: "Direct", value: "straight" },
   { label: "Curve", value: "curved" },
@@ -101,23 +112,28 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
   const svgRef = useRef<SVGSVGElement | null>(null);
   const labelInputRef = useRef<HTMLInputElement | null>(null);
   const diagramRef = useRef(diagram);
-  const clipboardRef = useRef<DiagramNode | null>(null);
+  const clipboardRef = useRef<DiagramClipboard | null>(null);
   const layoutRef = useRef(layoutDiagram(diagram));
   const fitViewportRef = useRef(defaultViewport);
   const viewportRef = useRef(defaultViewport);
   const [tool, setTool] = useState<DiagramTool>("select");
   const [viewport, setViewportState] = useState(defaultViewport);
   const [liveDiagram, setLiveDiagram] = useState(diagram);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [elementMenuOpen, setElementMenuOpen] = useState(false);
+  const [elementMenuRendered, setElementMenuRendered] = useState(false);
   const [pendingFromId, setPendingFromId] = useState<string | null>(null);
+  const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
   const [color, setColor] = useState<DiagramColor>("blue");
   const elementMenuRef = useRef<HTMLDivElement | null>(null);
   const layout = layoutDiagram(liveDiagram);
   layoutRef.current = layout;
-  const selectedNode = liveDiagram.nodes.find((node) => node.id === selectedId) ?? null;
+  const selectedNode = selectedIds.length === 1 ? liveDiagram.nodes.find((node) => node.id === selectedIds[0]) ?? null : null;
+  const selectedNodes = selectedIds.length ? liveDiagram.nodes.filter((node) => selectedIds.includes(node.id)) : [];
+  const selectedLayoutNodes = selectedIds.length ? layout.nodes.filter((node) => selectedIds.includes(node.id)) : [];
+  const groupSelectionBox = selectedLayoutNodes.length > 1 ? boundsForLayoutNodes(selectedLayoutNodes) : null;
   const selectedEdge = liveDiagram.edges.find((edge) => edge.id === selectedEdgeId) ?? null;
   const selectedNodeIcon = selectedNode ? diagramIconForKind(selectedNode.kind) : null;
   const zoom = fitViewportRef.current.width / viewport.width;
@@ -162,12 +178,12 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
         onClose();
         return;
       }
-      if ((event.key === "Delete" || event.key === "Backspace") && (selectedId || selectedEdgeId) && !isTypingTarget(event.target)) {
+      if ((event.key === "Delete" || event.key === "Backspace") && (selectedIds.length || selectedEdgeId) && !isTypingTarget(event.target)) {
         event.preventDefault();
         deleteSelected();
         return;
       }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c" && selectedId && !isTypingTarget(event.target)) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c" && selectedIds.length && !isTypingTarget(event.target)) {
         event.preventDefault();
         copySelected();
         return;
@@ -180,9 +196,9 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
 
     window.addEventListener("keydown", onKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
-  }, [editingId, onClose, selectedId, selectedEdgeId]);
+  }, [editingId, onClose, selectedIds, selectedEdgeId]);
 
-  const patchDiagram =(updater: (current: Diagram) => Diagram, options?: { commit?: boolean }) => {
+  const patchDiagram = (updater: (current: Diagram) => Diagram, options?: { commit?: boolean }) => {
     const next = updater(diagramRef.current);
     diagramRef.current = next;
     setLiveDiagram(next);
@@ -204,21 +220,27 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
     if (event.button !== 0 || event.target !== event.currentTarget) {
       return;
     }
+    event.preventDefault();
     if (tool === "pan") {
       startCanvasPan(event.nativeEvent);
       return;
     }
     if (tool === "select" || tool === "arrow") {
-      setSelectedId(null);
       setSelectedEdgeId(null);
       setPendingFromId(null);
+      if (tool === "select") {
+        startSelectionBox(event.nativeEvent);
+      } else {
+        setSelectedIds([]);
+      }
       return;
     }
 
     const point = screenToDiagramPoint(event, event.currentTarget, diagramRef.current);
     const node = createDiagramNode(tool, point, color);
     patchDiagram((current) => ({ ...current, nodes: [...current.nodes, node] }));
-    setSelectedId(node.id);
+    setSelectedIds([node.id]);
+    setSelectedEdgeId(null);
     setTool("select");
     setElementMenuOpen(false);
   };
@@ -239,7 +261,8 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
     if (tool === "arrow") {
       if (!pendingFromId) {
         setPendingFromId(nodeId);
-        setSelectedId(nodeId);
+        setSelectedIds([nodeId]);
+        setSelectedEdgeId(null);
         return;
       }
       if (pendingFromId !== nodeId) {
@@ -250,16 +273,24 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
       return;
     }
 
-    setSelectedId(nodeId);
+    const multi = event.shiftKey || event.metaKey || event.ctrlKey;
+    if (multi) {
+      setSelectedEdgeId(null);
+      setSelectedIds((current) => current.includes(nodeId) ? current.filter((id) => id !== nodeId) : [...current, nodeId]);
+      return;
+    }
+
+    const movingIds = selectedIds.includes(nodeId) ? selectedIds : [nodeId];
+    setSelectedIds(movingIds);
     setSelectedEdgeId(null);
     const svg = svgRef.current;
-    const node = diagramRef.current.nodes.find((item) => item.id === nodeId);
-    if (!svg || !node) {
+    const movingNodes = diagramRef.current.nodes.filter((item) => movingIds.includes(item.id));
+    if (!svg || !movingNodes.length) {
       return;
     }
 
     const start = screenToDiagramPoint(event, svg, diagramRef.current);
-    const offset = { x: node.x - start.x, y: node.y - start.y };
+    const startPositions = new Map(movingNodes.map((node) => [node.id, { x: node.x, y: node.y }]));
 
     const move = (moveEvent: PointerEvent) => {
       const currentSvg = svgRef.current;
@@ -267,11 +298,13 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
         return;
       }
       const point = screenToDiagramPoint(moveEvent, currentSvg, diagramRef.current);
+      const dx = Math.round(point.x - start.x);
+      const dy = Math.round(point.y - start.y);
       patchDiagram(
         (current) => ({
           ...current,
           nodes: current.nodes.map((item) =>
-            item.id === nodeId ? { ...item, x: Math.round(point.x + offset.x), y: Math.round(point.y + offset.y) } : item,
+            startPositions.has(item.id) ? { ...item, x: (startPositions.get(item.id)?.x ?? item.x) + dx, y: (startPositions.get(item.id)?.y ?? item.y) + dy } : item,
           ),
         }),
         { commit: false },
@@ -298,7 +331,7 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
       return;
     }
 
-    setSelectedId(nodeId);
+    setSelectedIds([nodeId]);
     setSelectedEdgeId(null);
     const start = screenToDiagramPoint(event, svg, diagramRef.current);
     const size = sizeForNode(node);
@@ -338,8 +371,53 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
     event.preventDefault();
     event.stopPropagation();
     setSelectedEdgeId(edgeId);
-    setSelectedId(null);
+    setSelectedIds([]);
     setPendingFromId(null);
+  };
+
+  const startSelectionBox = (event: PointerEvent) => {
+    const svg = svgRef.current;
+    if (!svg) {
+      return;
+    }
+
+    svg.setPointerCapture(event.pointerId);
+    const start = screenToViewportPoint(event, svg);
+    const startClient = { x: event.clientX, y: event.clientY };
+    let moved = false;
+
+    const move = (moveEvent: PointerEvent) => {
+      moveEvent.preventDefault();
+      const point = screenToViewportPoint(moveEvent, svg);
+      if (Math.abs(moveEvent.clientX - startClient.x) + Math.abs(moveEvent.clientY - startClient.y) > 4) {
+        moved = true;
+      }
+      if (!moved) {
+        return;
+      }
+      setSelectionBox(normalizedBox(start, point));
+    };
+
+    const up = (upEvent: PointerEvent) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      if (svg.hasPointerCapture(event.pointerId)) {
+        svg.releasePointerCapture(event.pointerId);
+      }
+      if (!moved) {
+        setSelectedIds([]);
+        setSelectionBox(null);
+        return;
+      }
+
+      const box = normalizedBox(start, screenToViewportPoint(upEvent, svg));
+      const nextIds = layoutRef.current.nodes.filter((node) => boxIntersectsNode(box, node)).map((node) => node.id);
+      setSelectedIds(nextIds);
+      setSelectionBox(null);
+    };
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
   };
 
   const deleteSelected = () => {
@@ -352,55 +430,70 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
       setSelectedEdgeId(null);
       return;
     }
-    const id = selectedId;
-    if (!id) {
+    if (!selectedIds.length) {
       return;
     }
+    const selected = new Set(selectedIds);
     patchDiagram((current) => ({
       ...current,
-      nodes: current.nodes.filter((node) => node.id !== id),
-      edges: current.edges.filter((edge) => edge.from !== id && edge.to !== id),
+      nodes: current.nodes.filter((node) => !selected.has(node.id)),
+      edges: current.edges.filter((edge) => !selected.has(edge.from) && !selected.has(edge.to)),
     }));
-    setSelectedId(null);
+    setSelectedIds([]);
     setPendingFromId(null);
   };
 
   const duplicateSelected = () => {
-    const id = selectedId;
-    if (!id) {
+    if (!selectedIds.length) {
       return;
     }
-    const source = diagramRef.current.nodes.find((node) => node.id === id);
-    if (!source) {
+    const selected = new Set(selectedIds);
+    const sources = diagramRef.current.nodes.filter((node) => selected.has(node.id));
+    if (!sources.length) {
       return;
     }
-    const clone = duplicateDiagramNode(source);
-    patchDiagram((current) => ({ ...current, nodes: [...current.nodes, clone] }));
-    setSelectedId(clone.id);
+    const clones = sources.map((node) => duplicateDiagramNode(node));
+    const idMap = new Map(sources.map((node, index) => [node.id, clones[index].id]));
+    const edges = diagramRef.current.edges
+      .filter((edge) => selected.has(edge.from) && selected.has(edge.to))
+      .map((edge) => {
+        const clone = createDiagramEdge(idMap.get(edge.from) ?? edge.from, idMap.get(edge.to) ?? edge.to, edge.color);
+        return { ...edge, id: clone.id, from: clone.from, to: clone.to };
+      });
+    patchDiagram((current) => ({ ...current, nodes: [...current.nodes, ...clones], edges: [...current.edges, ...edges] }));
+    setSelectedIds(clones.map((node) => node.id));
     setSelectedEdgeId(null);
   };
 
   const copySelected = () => {
-    const id = selectedId;
-    if (!id) {
+    if (!selectedIds.length) {
       return;
     }
-    const source = diagramRef.current.nodes.find((node) => node.id === id);
-    if (!source) {
+    const selected = new Set(selectedIds);
+    const nodes = diagramRef.current.nodes.filter((node) => selected.has(node.id));
+    if (!nodes.length) {
       return;
     }
-    clipboardRef.current = source;
+    clipboardRef.current = {
+      nodes,
+      edges: diagramRef.current.edges.filter((edge) => selected.has(edge.from) && selected.has(edge.to)),
+    };
   };
 
   const pasteClipboard = () => {
-    const template = clipboardRef.current;
-    if (!template) {
+    const clipboard = clipboardRef.current;
+    if (!clipboard || !clipboard.nodes.length) {
       return;
     }
-    const clone = duplicateDiagramNode(template);
-    patchDiagram((current) => ({ ...current, nodes: [...current.nodes, clone] }));
-    clipboardRef.current = clone;
-    setSelectedId(clone.id);
+    const clones = clipboard.nodes.map((node) => duplicateDiagramNode(node));
+    const idMap = new Map(clipboard.nodes.map((node, index) => [node.id, clones[index].id]));
+    const edges = clipboard.edges.map((edge) => {
+      const clone = createDiagramEdge(idMap.get(edge.from) ?? edge.from, idMap.get(edge.to) ?? edge.to, edge.color);
+      return { ...edge, id: clone.id, from: clone.from, to: clone.to };
+    });
+    patchDiagram((current) => ({ ...current, nodes: [...current.nodes, ...clones], edges: [...current.edges, ...edges] }));
+    clipboardRef.current = { nodes: clones, edges };
+    setSelectedIds(clones.map((node) => node.id));
     setSelectedEdgeId(null);
   };
 
@@ -417,7 +510,7 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
   const startInlineLabelEdit = (event: React.MouseEvent<SVGGElement>, nodeId: string) => {
     event.preventDefault();
     event.stopPropagation();
-    setSelectedId(nodeId);
+    setSelectedIds([nodeId]);
     setSelectedEdgeId(null);
     setEditingId(nodeId);
     setTool("select");
@@ -437,12 +530,13 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
       }));
       return;
     }
-    if (!selectedId) {
+    if (!selectedIds.length) {
       return;
     }
+    const selected = new Set(selectedIds);
     patchDiagram((current) => ({
       ...current,
-      nodes: current.nodes.map((node) => (node.id === selectedId ? { ...node, color: nextColor } : node)),
+      nodes: current.nodes.map((node) => (selected.has(node.id) ? { ...node, color: nextColor } : node)),
     }));
   };
 
@@ -451,6 +545,7 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
   };
 
   const setSelectedIconSize = (size: number) => {
+    const selectedId = selectedNode?.id;
     if (!selectedId) {
       return;
     }
@@ -474,10 +569,12 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
   };
 
   const setSelectedIconBoxed = (boxed: boolean) => {
+    const selectedId = selectedNode?.id;
     if (!selectedId) {
       return;
     }
-    const nextSize = boxed ? boxedIconSize : { w: 44, h: 69 };
+    const fallback = diagramKinds[selectedNode.kind] ?? diagramKinds.box;
+    const nextSize = boxed ? boxedIconSize : { w: fallback.w, h: fallback.h };
     patchDiagram((current) => ({
       ...current,
       nodes: current.nodes.map((node) =>
@@ -645,6 +742,16 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
             </g>
           ))}
 
+          {selectionBox ? (
+            <rect
+              className="diagram-selection-box"
+              x={selectionBox.x}
+              y={selectionBox.y}
+              width={selectionBox.width}
+              height={selectionBox.height}
+            />
+          ) : null}
+
           {layout.nodes.map((node) => (
             <g
               key={node.id}
@@ -661,16 +768,14 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
                 </text>
               ) : null}
               {node.icon ? (
-                <g
+                <image
                   className="diagram-node-icon"
-                  transform={`translate(${node.iconX} ${node.iconY}) scale(${node.iconSize / 24})`}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  style={{ color: node.color }}
-                  dangerouslySetInnerHTML={{ __html: diagramIconMarkup(node.icon) }}
+                  href={diagramIconHref(node.icon)}
+                  x={node.iconX}
+                  y={node.iconY}
+                  width={node.iconSize}
+                  height={node.iconSize}
+                  preserveAspectRatio="xMidYMid meet"
                 />
               ) : null}
               {editingId === node.id ? (
@@ -718,9 +823,9 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
                 stroke={pendingFromId === node.id ? "var(--accent)" : node.color}
                 strokeWidth="1.5"
                 strokeDasharray="4 3"
-                opacity={selectedId === node.id || pendingFromId === node.id ? 1 : 0}
+                opacity={selectedIds.includes(node.id) || pendingFromId === node.id ? 1 : 0}
               />
-              {selectedId === node.id && tool !== "pan" ? (
+              {selectedIds.length === 1 && selectedIds.includes(node.id) && tool !== "pan" ? (
                 <rect
                   className="diagram-resize-handle"
                   x={node.hx + node.hw - 7}
@@ -733,6 +838,16 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
               ) : null}
             </g>
           ))}
+
+          {groupSelectionBox ? (
+            <rect
+              className="diagram-group-selection"
+              x={groupSelectionBox.x}
+              y={groupSelectionBox.y}
+              width={groupSelectionBox.width}
+              height={groupSelectionBox.height}
+            />
+          ) : null}
         </svg>
 
         <div className="diagram-zoom-controls" aria-label="Zoom controls">
@@ -776,13 +891,16 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
               title="Elements"
               aria-label="Elements"
               aria-expanded={elementMenuOpen}
-              onClick={() => setElementMenuOpen((open) => !open)}
+              onClick={() => {
+                setElementMenuRendered(true);
+                setElementMenuOpen((open) => !open);
+              }}
             >
               <Box size={15} strokeWidth={1.9} />
               <ChevronDown size={11} strokeWidth={2} />
             </button>
-            {elementMenuOpen ? (
-              <div className="diagram-element-menu">
+            {elementMenuRendered ? (
+              <div className={elementMenuOpen ? "diagram-element-menu" : "diagram-element-menu is-hidden"} aria-hidden={!elementMenuOpen}>
                 {groupedElementCatalog.map((group) => (
                   <div key={group.group} className="diagram-element-menu-group">
                     <strong>{group.group}</strong>
@@ -879,6 +997,34 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
             <button onClick={deleteSelected}>
               <Trash2 size={14} strokeWidth={1.9} />
               Delete node
+            </button>
+          </aside>
+        ) : selectedNodes.length > 1 ? (
+          <aside className="diagram-inspector">
+            <strong>Selected</strong>
+            <div className="diagram-inspector-meta">{selectedNodes.length} nodes</div>
+            <div className="diagram-inspector-style">
+              <span>Color</span>
+              <div className="diagram-inspector-swatches">
+                {colors.map((name) => (
+                  <button
+                    key={name}
+                    className={selectedNodes.every((node) => node.color === name) ? "diagram-swatch active" : "diagram-swatch"}
+                    title={name}
+                    aria-label={name}
+                    style={{ backgroundColor: diagramPalette[name].stroke, color: diagramPalette[name].stroke }}
+                    onClick={() => applyColor(name)}
+                  />
+                ))}
+              </div>
+            </div>
+            <button onClick={duplicateSelected}>
+              <Copy size={14} strokeWidth={1.9} />
+              Duplicate
+            </button>
+            <button onClick={deleteSelected}>
+              <Trash2 size={14} strokeWidth={1.9} />
+              Delete nodes
             </button>
           </aside>
         ) : selectedEdge ? (
@@ -982,22 +1128,10 @@ export function DiagramEditor({ diagram, onChange, onClose, onDescribe }: Diagra
 
 function ElementIcon({ item }: { item: ElementCatalogItem }) {
   if (item.iconKind) {
-    return (
-      <svg
-        className="diagram-system-icon"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-        dangerouslySetInnerHTML={{ __html: diagramIconMarkup(item.iconKind) }}
-      />
-    );
+    return <img className="diagram-system-icon" src={diagramIconHref(item.iconKind)} alt="" aria-hidden="true" loading="lazy" />;
   }
   const Icon = item.icon ?? Box;
-  return <Icon size={14} strokeWidth={1.9} />;
+  return <Icon className="diagram-system-icon" size={18} strokeWidth={1.9} />;
 }
 
 function hintForTool(tool: DiagramTool, pendingFromId: string | null) {
@@ -1030,12 +1164,42 @@ function viewportFromViewBox(viewBox: string): EditorViewport {
 }
 
 function screenToViewportPoint(event: { clientX: number; clientY: number }, svg: SVGSVGElement) {
+  const matrix = svg.getScreenCTM();
+  if (matrix) {
+    const point = svg.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const transformed = point.matrixTransform(matrix.inverse());
+    return { x: transformed.x, y: transformed.y };
+  }
   const rect = svg.getBoundingClientRect();
   const viewBox = svg.getAttribute("viewBox")?.split(/\s+/).map(Number) ?? [0, 0, rect.width, rect.height];
   return {
     x: viewBox[0] + ((event.clientX - rect.left) / Math.max(1, rect.width)) * viewBox[2],
     y: viewBox[1] + ((event.clientY - rect.top) / Math.max(1, rect.height)) * viewBox[3],
   };
+}
+
+function normalizedBox(a: { x: number; y: number }, b: { x: number; y: number }): SelectionBox {
+  return {
+    x: Math.min(a.x, b.x),
+    y: Math.min(a.y, b.y),
+    width: Math.abs(b.x - a.x),
+    height: Math.abs(b.y - a.y),
+  };
+}
+
+function boxIntersectsNode(box: SelectionBox, node: { hx: number; hy: number; hw: number; hh: number }) {
+  return box.x <= node.hx + node.hw && box.x + box.width >= node.hx && box.y <= node.hy + node.hh && box.y + box.height >= node.hy;
+}
+
+function boundsForLayoutNodes(nodes: Array<{ hx: number; hy: number; hw: number; hh: number }>): SelectionBox {
+  const pad = 9;
+  const minX = Math.min(...nodes.map((node) => node.hx)) - pad;
+  const minY = Math.min(...nodes.map((node) => node.hy)) - pad;
+  const maxX = Math.max(...nodes.map((node) => node.hx + node.hw)) + pad;
+  const maxY = Math.max(...nodes.map((node) => node.hy + node.hh)) + pad;
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
 function inlineLabelWidth(nodeWidth: number) {

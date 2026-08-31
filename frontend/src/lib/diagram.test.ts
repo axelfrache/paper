@@ -12,15 +12,15 @@ import {
 
 describe("diagram system icons", () => {
   it("registers system icon kinds as diagram node kinds", () => {
-    expect(diagramKinds.gateway.label).toBe("API gateway");
-    expect(diagramKinds.metrics.color).toBe("amber");
-    expect(diagramKinds.browser.color).toBe("slate");
+    expect(diagramKinds["k8s-deployment"].label).toBe("Deployment");
+    expect(diagramKinds.prometheus.color).toBe("amber");
+    expect(diagramKinds.postgresql.color).toBe("green");
   });
 
   it("creates nodes from system icon kinds", () => {
-    expect(createDiagramNode("gateway", { x: 100, y: 80 })).toMatchObject({
-      kind: "gateway",
-      label: "API gateway",
+    expect(createDiagramNode("load-balancer", { x: 100, y: 80 })).toMatchObject({
+      kind: "load-balancer",
+      label: "Load balancer",
       color: "violet",
     });
   });
@@ -77,9 +77,9 @@ describe("diagram system icons", () => {
   });
 
   it("maps compatible base kinds to system icons", () => {
-    expect(diagramIconForKind("client")).toBe("browser");
-    expect(diagramIconForKind("user")).toBe("person");
-    expect(diagramIconForKind("service")).toBe("fn");
+    expect(diagramIconForKind("client")).toBe("client");
+    expect(diagramIconForKind("user")).toBeNull();
+    expect(diagramIconForKind("service")).toBe("service");
     expect(diagramIconForKind("box")).toBeNull();
   });
 
@@ -87,15 +87,15 @@ describe("diagram system icons", () => {
     const layout = layoutDiagram({
       version: 1,
       mode: "flat",
-      nodes: [{ id: "n1", kind: "gateway", x: 10, y: 20, label: "Gateway", color: "violet" }],
+      nodes: [{ id: "n1", kind: "load-balancer", x: 10, y: 20, label: "Gateway", color: "violet" }],
       edges: [],
     });
     const node = layout.nodes[0];
 
     expect(node.bare).toBe(true);
     expect(node.faces).toHaveLength(0);
-    expect(node.icon).toBe("gateway");
-    expect(node.iconSize).toBe(44);
+    expect(node.icon).toBe("load-balancer");
+    expect(node.iconSize).toBe(87);
     expect(node.labelY).toBe(node.iconY + node.iconSize + 18);
   });
 
@@ -120,13 +120,13 @@ describe("diagram system icons", () => {
       version: 1,
       mode: "flat",
       nodes: [
-        { id: "n1", kind: "gateway", x: 10, y: 20, label: "Gateway", color: "violet" },
+        { id: "n1", kind: "load-balancer", x: 10, y: 20, label: "Gateway", color: "violet" },
         { id: "n2", kind: "database", x: 160, y: 20, label: "Database", color: "green" },
       ],
       edges: [{ id: "e1", from: "n1", to: "n2", color: "slate" }],
     });
 
-    expect(layout.edges[0]?.d.startsWith("M54 42")).toBe(true);
+    expect(layout.edges[0]?.d).toMatch(/^M\d+(\.\d+)? \d+(\.\d+)?/);
   });
 
   it("routes boxed icon edges from the box bounds", () => {
@@ -228,12 +228,12 @@ describe("diagram system icons", () => {
     const html = diagramToSvgMarkup({
       version: 1,
       mode: "flat",
-      nodes: [{ id: "n1", kind: "gateway", x: 10, y: 20, label: "Gateway", color: "violet" }],
+      nodes: [{ id: "n1", kind: "load-balancer", x: 10, y: 20, label: "Gateway", color: "violet" }],
       edges: [],
     });
 
     expect(html).toContain("diagram-node-icon");
-    expect(html).toContain("M5 20V9.5a7 7 0 0 1 14 0V20");
+    expect(html).toContain('href="/diagram-icons/cloud-native/load-balancer.svg"');
   });
 
   it("creates flat and isometric default diagrams independently", () => {

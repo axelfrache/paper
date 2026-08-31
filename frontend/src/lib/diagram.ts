@@ -1,4 +1,4 @@
-import { diagramIconCatalog, diagramIconMarkup, isDiagramIconKind } from "./diagramIcons";
+import { diagramIconDefinitions, diagramIconHref, isDiagramIconKind } from "./diagramIcons";
 import type { DiagramIconKind } from "./diagramIcons";
 
 export type DiagramMode = "flat" | "iso";
@@ -103,12 +103,12 @@ export const diagramPalette: Record<DiagramColor, { fill: string; stroke: string
 type DiagramKindDefinition = { cap: string; w: number; h: number; color: DiagramColor; label: string };
 
 const systemDiagramKinds = Object.fromEntries(
-  diagramIconCatalog.map((icon) => [
+  diagramIconDefinitions.map((icon) => [
     icon.id,
     {
       cap: "",
-      w: 44,
-      h: 69,
+      w: icon.w,
+      h: icon.h,
       color: colorForIconGroup(icon.group),
       label: icon.label,
     },
@@ -126,7 +126,7 @@ const baseDiagramKinds: Record<BaseDiagramKind, DiagramKindDefinition> = {
   text: { cap: "", w: 130, h: 30, color: "slate", label: "Label" },
 };
 
-export const diagramKinds = { ...systemDiagramKinds, ...baseDiagramKinds } as Record<DiagramKind, DiagramKindDefinition>;
+export const diagramKinds = { ...baseDiagramKinds, ...systemDiagramKinds } as Record<DiagramKind, DiagramKindDefinition>;
 
 const isoCos = 0.866;
 const isoSin = 0.5;
@@ -354,7 +354,8 @@ function nodeIconSvg(node: DiagramLayoutNode) {
   if (!node.icon) {
     return "";
   }
-  return `<g class="diagram-node-icon" transform="translate(${node.iconX} ${node.iconY}) scale(${node.iconSize / 24})" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:${node.color};">${diagramIconMarkup(node.icon)}</g>`;
+  const href = escapeAttribute(diagramIconHref(node.icon));
+  return `<image class="diagram-node-icon" href="${href}" x="${node.iconX}" y="${node.iconY}" width="${node.iconSize}" height="${node.iconSize}" preserveAspectRatio="xMidYMid meet"/>`;
 }
 
 export function screenToDiagramPoint(
@@ -912,14 +913,8 @@ export function diagramIconForKind(kind: DiagramKind): DiagramIconKind | null {
   if (isDiagramIconKind(kind)) {
     return kind;
   }
-  if (kind === "client") {
-    return "browser";
-  }
   if (kind === "user") {
-    return "person";
-  }
-  if (kind === "service") {
-    return "fn";
+    return null;
   }
   return null;
 }
@@ -931,10 +926,10 @@ function colorForIconGroup(group: string): DiagramColor {
   if (group === "Network") {
     return "violet";
   }
-  if (group === "Observability") {
+  if (group === "Observability" || group === "Delivery") {
     return "amber";
   }
-  return group === "Compute" ? "blue" : "slate";
+  return group === "Core" || group === "Kubernetes" || group === "Cloud" ? "blue" : "slate";
 }
 
 function projectIso(x: number, y: number): [number, number] {
@@ -1089,4 +1084,8 @@ function escapeHtml(value: string) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function escapeAttribute(value: string) {
+  return escapeHtml(value);
 }
