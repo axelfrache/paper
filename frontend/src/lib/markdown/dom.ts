@@ -24,8 +24,21 @@ export function readSource(el: HTMLDivElement | null) {
     return "";
   }
   return Array.from(el.querySelectorAll("[data-line]"))
-    .map((line) => lineNodes(line).map((node) => node.nodeValue ?? "").join(""))
+    .map((line) => sourceText(line))
     .join("\n");
+}
+
+function sourceText(node: Node): string {
+  if (node instanceof HTMLElement && node.dataset.source) {
+    return node.dataset.source;
+  }
+  if (node.nodeType === Node.TEXT_NODE) {
+    return node.nodeValue ?? "";
+  }
+  if (node instanceof HTMLElement && node.dataset.deco) {
+    return "";
+  }
+  return Array.from(node.childNodes).map(sourceText).join("");
 }
 
 export function getCaret(el: HTMLDivElement | null): Caret | null {
@@ -114,6 +127,9 @@ export function lineLength(lineEl: Element) {
 }
 
 export function sourceTextLength(node: Node): number {
+  if (node instanceof HTMLElement && node.dataset.source) {
+    return node.dataset.source.length;
+  }
   if (node.nodeType === Node.TEXT_NODE) {
     return node.nodeValue?.length ?? 0;
   }

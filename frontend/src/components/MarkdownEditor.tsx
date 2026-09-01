@@ -37,13 +37,14 @@ import {
   placeSelection,
   readSource,
 } from "../lib/markdown/dom";
-import type { AIAction } from "../types/note";
+import type { AIAction, NoteImage } from "../types/note";
 import type { Diagram, DiagramMode, DiagramPreview } from "../lib/diagram";
 import type { Caret, TextRange } from "../lib/markdown/edit";
 
 type MarkdownEditorProps = {
   value: string;
   onChange: (value: string) => void;
+  onUploadImage?: (file: File) => Promise<NoteImage>;
   onAssist?: (action: AIAction) => void;
   onCaretLineChange?: (line: number) => void;
   focusRequest?: { key: string; placement: "start" | "end" | "last" } | null;
@@ -66,6 +67,7 @@ type SlashItem = {
   date?: boolean;
   diagram?: DiagramMode;
   diagramDescribe?: boolean;
+  image?: boolean;
   ai?: AIAction;
 };
 
@@ -102,6 +104,7 @@ const slashItems: SlashItem[] = [
   { id: "strike", label: "Strikethrough", hint: "Crossed text", icon: "S", wrap: "~~" },
   { id: "underline", label: "Underline", hint: "Underlined text", icon: "U", wrap: "<u>", closeWrap: "</u>" },
   { id: "link", label: "Link", hint: "Hyperlink", icon: "↗", link: true },
+  { id: "image", label: "Image", hint: "Upload from your device", icon: "▧", image: true },
   { id: "diagram-describe", label: "Describe diagram", hint: "AI generated diagram", icon: "✦", diagramDescribe: true },
   { id: "diagram", label: "Flat diagram", hint: "2D schematic", icon: "◫", diagram: "flat" },
   { id: "diagram-iso", label: "Isometric diagram", hint: "Projected schematic", icon: "◨", diagram: "iso" },
@@ -115,6 +118,7 @@ const slashItems: SlashItem[] = [
 export function MarkdownEditor({
   value,
   onChange,
+  onUploadImage,
   onAssist,
   onCaretLineChange,
   focusRequest = null,
@@ -125,12 +129,14 @@ export function MarkdownEditor({
 }: MarkdownEditorProps) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
   const slashBodyRef = useRef<HTMLDivElement | null>(null);
   const diagramDescribeDialogRef = useRef<HTMLDialogElement | null>(null);
   const focusedRef = useRef(false);
   const caretRef = useRef<Caret | null>(null);
   const activeLineRef = useRef(-1);
   const handledFocusRequestRef = useRef("");
+  const valueRef = useRef(value);
   const [slash, setSlash] = useState<SlashState | null>(null);
   const [selectionToolbar, setSelectionToolbar] = useState<SelectionToolbarState | null>(null);
   const [diagramDescribeOpen, setDiagramDescribeOpen] = useState(false);
@@ -141,6 +147,7 @@ export function MarkdownEditor({
   const [diagramDescribeError, setDiagramDescribeError] = useState<string | null>(null);
 
   useLayoutEffect(() => {
+    valueRef.current = value;
     renderMarkdown(editorRef.current, value, focusedRef.current ? caretRef.current?.line ?? -1 : -1);
     activeLineRef.current = focusedRef.current ? caretRef.current?.line ?? -1 : -1;
     if (focusedRef.current && caretRef.current) {
@@ -236,6 +243,7 @@ export function MarkdownEditor({
   };
 
   const setSource = (nextValue: string, caret: Caret | null) => {
+    valueRef.current = nextValue;
     caretRef.current = caret;
     if (caret) {
       onCaretLineChange?.(caret.line);
@@ -475,6 +483,14 @@ export function MarkdownEditor({
   };
 
   const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    const image = Array.from(event.clipboardData.files ?? []).find((file) => file.type.startsWith("image/"));
+    if (image) {
+      event.preventDefault();
+      setSlash(null);
+      setSelectionToolbar(null);
+      insertImageFile(image, getCaret(editorRef.current) ?? { line: 0, col: 0 });
+      return;
+    }
     event.preventDefault();
     setSlash(null);
     setSelectionToolbar(null);
@@ -486,6 +502,15 @@ export function MarkdownEditor({
       ? wrapLinkWithHref(value, range, trimmed)
       : insertText(value, range, text);
     setSource(next.value, next.caret);
+  };
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    const image = Array.from(event.dataTransfer.files).find((file) => file.type.startsWith("image/"));
+    if (!image) {
+      return;
+    }
+    event.preventDefault();
+    insertImageFile(image, getCaret(editorRef.current) ?? { line: 0, col: 0 });
   };
 
   const filteredItems = filteredSlashItems(slash?.query ?? "");
@@ -507,6 +532,25 @@ export function MarkdownEditor({
         onPointerDown={handlePointerDown}
         onClick={handleClick}
         onPaste={handlePaste}
+        onDragOver={(event) => {
+          if (Array.from(event.dataTransfer.items).some((item) => item.type.startsWith("image/"))) {
+            event.preventDefault();
+          }
+        }}
+        onDrop={handleDrop}
+      />
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file) {
+            insertImageFile(file, caretRef.current ?? { line: 0, col: 0 });
+          }
+        }}
       />
       {!value ? <div className="markdown-editor-placeholder">{placeholder}</div> : null}
       {slash && filteredItems.length ? (
@@ -719,6 +763,14 @@ export function MarkdownEditor({
     const stem = before.slice(0, start);
     setSlash(null);
 
+    if (item.image) {
+      lines[caret.line] = stem + after;
+      setSource(lines.join("\n"), { line: caret.line, col: stem.length });
+      caretRef.current = { line: caret.line, col: stem.length };
+      window.requestAnimationFrame(() => imageInputRef.current?.click());
+      return;
+    }
+
     if (item.ai) {
       lines[caret.line] = stem + after;
       setSource(lines.join("\n"), { line: caret.line, col: stem.length });
@@ -792,6 +844,29 @@ export function MarkdownEditor({
     const prefix = item.prefix ?? "";
     lines[caret.line] = prefix + body + after;
     setSource(lines.join("\n"), { line: caret.line, col: prefix.length + body.length });
+  }
+
+  async function insertImageFile(file: File, caret: Caret) {
+    if (!file.type.startsWith("image/") || !onUploadImage) {
+      return;
+    }
+    try {
+      const image = await onUploadImage(file);
+      const lines = valueRef.current.split("\n");
+      const line = lines[caret.line] ?? "";
+      const alt = image.name.replace(/\.[^.]+$/, "").replace(/[\[\]]/g, "");
+      const marker = `![${alt || "image"}](${image.url})`;
+      const before = line.slice(0, caret.col);
+      const after = line.slice(caret.col);
+      if (!before && !after) {
+        lines.splice(caret.line, 1, marker, "");
+      } else {
+        lines.splice(caret.line, 1, before, marker, after);
+      }
+      setSource(lines.join("\n"), { line: caret.line + 1, col: 0 });
+    } catch {
+      window.requestAnimationFrame(() => editorRef.current?.focus());
+    }
   }
 
   function startDiagramBlockDrag(event: PointerEvent, line: number, card: Element | null) {

@@ -60,6 +60,20 @@ type AICompletion struct {
 	Text string
 }
 
+type NoteImage struct {
+	ID          string
+	Name        string
+	ContentType string
+	Size        int64
+	URL         string
+}
+
+type ImageUpload struct {
+	Name        string
+	ContentType string
+	Data        []byte
+}
+
 func (n Note) Matches(q SearchQuery) bool {
 	query := strings.ToLower(strings.TrimSpace(q.Query))
 	if query != "" {

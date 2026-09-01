@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { PanelLeftOpen, Search, Star } from "lucide-react";
+import { PanelLeftOpen, Plus, Search, Star } from "lucide-react";
 import { stripDiagramMarkers } from "../lib/diagram";
 import type { Note } from "../types/note";
 
@@ -14,6 +14,7 @@ type NotesColumnProps = {
   sidebarHidden: boolean;
   focusRequest: number;
   onQueryChange: (query: string) => void;
+  onNew: () => void;
   onSelect: (note: Note, extend: boolean) => void;
   onNavigate: (direction: NoteDirection, extend: boolean) => void;
   onFocusTitle: () => void;
@@ -30,6 +31,7 @@ export function NotesColumn({
   sidebarHidden,
   focusRequest,
   onQueryChange,
+  onNew,
   onSelect,
   onNavigate,
   onFocusTitle,
@@ -69,6 +71,9 @@ export function NotesColumn({
           <Search size={13} strokeWidth={2} />
           <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Filter notes" />
         </div>
+        <button className="notes-new-button" onClick={onNew} aria-label="New note" title="New note (⌘N)">
+          <Plus size={15} strokeWidth={2} />
+        </button>
       </div>
 
       <div className="list-title">

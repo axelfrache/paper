@@ -5,7 +5,7 @@ import { NotesColumn } from "../components/NotesColumn";
 import { Sidebar, type ViewKey } from "../components/Sidebar";
 import { Toast } from "../components/Toast";
 import { NoteEditor, type AIResult } from "../features/NoteEditor";
-import { askNotes, assistNote, createNote, deleteNote, listNotes, updateNote } from "../lib/api";
+import { askNotes, assistNote, createNote, deleteNote, listNotes, updateNote, uploadNoteImage } from "../lib/api";
 import { useShortcuts } from "../lib/useShortcuts";
 import type { AIAction, AskAnswer, Note, NoteDraft } from "../types/note";
 
@@ -598,6 +598,7 @@ export function NotesPage() {
         sidebarHidden={sidebarHidden}
         focusRequest={noteCardFocusRequest}
         onQueryChange={setQuery}
+        onNew={() => void handleNew()}
         onSelect={selectNote}
         onNavigate={navigateNote}
         onFocusTitle={focusActiveTitle}
@@ -613,6 +614,17 @@ export function NotesPage() {
         contentFocusRequest={contentFocusRequest}
         onTitleChange={(title) => patchActive({ title })}
         onContentChange={(content) => patchActive({ content })}
+        onUploadImage={async (file) => {
+          if (!activeNote) {
+            throw new Error("No note selected");
+          }
+          try {
+            return await uploadNoteImage(activeNote.id, file);
+          } catch (error) {
+            flash(error instanceof Error ? error.message : "Could not upload image");
+            throw error;
+          }
+        }}
         onTagDraftChange={setTagDraft}
         onAddTag={addTag}
         onRemoveTag={removeTag}

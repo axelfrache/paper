@@ -8,8 +8,8 @@ import (
 	"github.com/axelfrache/paper/backend/internal/core/port"
 )
 
-func NewRouter(notes port.NoteService, allowedOrigins []string) stdhttp.Handler {
-	handler := NewHandler(notes)
+func NewRouter(notes port.NoteService, images port.NoteImageService, allowedOrigins []string) stdhttp.Handler {
+	handler := NewHandler(notes, images)
 
 	mux := stdhttp.NewServeMux()
 	mux.HandleFunc("GET /api/health", handler.Health)
@@ -19,6 +19,9 @@ func NewRouter(notes port.NoteService, allowedOrigins []string) stdhttp.Handler 
 	mux.HandleFunc("PATCH /api/notes/{id}", handler.UpdateNote)
 	mux.HandleFunc("DELETE /api/notes/{id}", handler.DeleteNote)
 	mux.HandleFunc("POST /api/notes/{id}/assist", handler.AssistNote)
+	mux.HandleFunc("POST /api/notes/{id}/images", handler.UploadNoteImage)
+	mux.HandleFunc("GET /api/images/{imageID}", handler.GetNoteImage)
+	mux.HandleFunc("DELETE /api/images/{imageID}", handler.DeleteNoteImage)
 	mux.HandleFunc("POST /api/notes/ask", handler.AskNotes)
 	mux.HandleFunc("POST /api/ai/generate", handler.GenerateAI)
 	mux.HandleFunc("POST /api/search", handler.SearchNotes)

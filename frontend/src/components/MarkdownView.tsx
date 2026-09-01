@@ -88,6 +88,9 @@ function renderInlineNode(node: MarkdownInline, index: number): ReactNode {
   if (node.type === "text") {
     return node.text;
   }
+  if (node.type === "image") {
+    return node.safe ? <img key={index} src={node.href} alt={node.alt} /> : <span key={index} className="markdown-link-invalid">{`![${node.alt}](${node.source})`}</span>;
+  }
   if (node.type === "code") {
     return <code key={index}>{node.text}</code>;
   }

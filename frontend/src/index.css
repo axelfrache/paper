@@ -453,6 +453,23 @@ kbd,
   font-size: 12.5px;
 }
 
+.notes-new-button {
+  display: grid;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--line-input);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.notes-new-button:hover {
+  border-color: var(--line-hover-strong);
+  color: var(--text);
+}
+
 .list-title {
   display: flex;
   align-items: baseline;
@@ -889,6 +906,22 @@ kbd,
 .markdown-editor a:hover,
 .markdown-view a:hover {
   text-decoration: underline;
+}
+
+.markdown-editor-image {
+  display: block;
+  max-width: 100%;
+  margin: 8px 0;
+}
+
+.markdown-editor-image img,
+.markdown-view img {
+  display: block;
+  max-width: min(100%, 720px);
+  max-height: 520px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  object-fit: contain;
 }
 
 .markdown-link-invalid {

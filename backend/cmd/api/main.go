@@ -13,6 +13,7 @@ import (
 	httpadapter "github.com/axelfrache/paper/backend/internal/adapter/inbound/http"
 	"github.com/axelfrache/paper/backend/internal/adapter/outbound/ai"
 	"github.com/axelfrache/paper/backend/internal/adapter/outbound/postgres"
+	s3adapter "github.com/axelfrache/paper/backend/internal/adapter/outbound/s3"
 	"github.com/axelfrache/paper/backend/internal/config"
 	"github.com/axelfrache/paper/backend/internal/core/service"
 )
@@ -40,8 +41,19 @@ func main() {
 		Model:    cfg.AIModel,
 	})
 	noteService := service.NewNote(notes, assistant)
+	imageStorage, err := s3adapter.New(startupCtx, s3adapter.Config{
+		Endpoint:  cfg.S3Endpoint,
+		Region:    cfg.S3Region,
+		Bucket:    cfg.S3Bucket,
+		AccessKey: cfg.S3AccessKey,
+		SecretKey: cfg.S3SecretKey,
+	})
+	if err != nil {
+		log.Fatalf("image storage configuration failed: %v", err)
+	}
+	imageService := service.NewImage(notes, imageStorage)
 
-	router := httpadapter.NewRouter(noteService, cfg.AllowedOrigins)
+	router := httpadapter.NewRouter(noteService, imageService, cfg.AllowedOrigins)
 	server := httpadapter.NewServer(cfg.Addr(), router)
 
 	go func() {

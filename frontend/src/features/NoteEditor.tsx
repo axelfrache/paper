@@ -4,7 +4,7 @@ import { DiagramEditor } from "../components/DiagramEditor";
 import { MarkdownEditor } from "../components/MarkdownEditor";
 import { MarkdownView } from "../components/MarkdownView";
 import { replaceDiagramMarkerAtLine, stripDiagramMarkers } from "../lib/diagram";
-import type { AIAction, Note } from "../types/note";
+import type { AIAction, Note, NoteImage } from "../types/note";
 import type { Diagram } from "../lib/diagram";
 
 export type AIResult = {
@@ -21,6 +21,7 @@ type NoteEditorProps = {
   contentFocusRequest: { noteId: string; token: number } | null;
   onTitleChange: (title: string) => void;
   onContentChange: (content: string) => void;
+  onUploadImage: (file: File) => Promise<NoteImage>;
   onTagDraftChange: (tag: string) => void;
   onAddTag: () => void;
   onRemoveTag: (tag: string) => void;
@@ -63,6 +64,7 @@ export function NoteEditor({
   contentFocusRequest,
   onTitleChange,
   onContentChange,
+  onUploadImage,
   onTagDraftChange,
   onAddTag,
   onRemoveTag,
@@ -267,6 +269,7 @@ export function NoteEditor({
           <MarkdownEditor
             value={note.content}
             onChange={onContentChange}
+            onUploadImage={onUploadImage}
             onAssist={onAssist}
             onCaretLineChange={onCaretLineChange}
             focusRequest={contentFocusTarget}

@@ -69,6 +69,12 @@ function inlineNode(node: MarkdownInline, active: boolean): string {
   if (node.type === "text") {
     return escapeHtml(node.text);
   }
+  if (node.type === "image") {
+    if (active || !node.safe) {
+      return escapeHtml(`![${node.alt}](${node.source})`);
+    }
+    return `<span data-source="${escapeAttribute(`![${node.alt}](${node.source})`)}" class="markdown-editor-image"><img src="${escapeAttribute(node.href)}" alt="${escapeAttribute(node.alt)}" draggable="false" /></span>`;
+  }
   if (node.type === "code") {
     const content = `<code>${escapeHtml(node.text)}</code>`;
     return active ? `${syntaxMark("`")}${content}${syntaxMark("`")}` : content;

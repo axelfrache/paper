@@ -36,3 +36,11 @@ export type AskAnswer = {
 export type AICompletion = {
   text: string;
 };
+
+export type NoteImage = {
+  id: string;
+  name: string;
+  contentType: string;
+  size: number;
+  url: string;
+};

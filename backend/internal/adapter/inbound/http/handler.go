@@ -4,20 +4,24 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	stdhttp "net/http"
+	"strconv"
 
 	"github.com/axelfrache/paper/backend/internal/core/domain"
 	"github.com/axelfrache/paper/backend/internal/core/port"
 )
 
 const maxRequestBytes = 120_000
+const maxImageRequestBytes = 8<<20 + 64<<10
 
 type Handler struct {
 	service port.NoteService
+	images  port.NoteImageService
 }
 
-func NewHandler(service port.NoteService) *Handler {
-	return &Handler{service: service}
+func NewHandler(service port.NoteService, images port.NoteImageService) *Handler {
+	return &Handler{service: service, images: images}
 }
 
 func (h *Handler) CreateNote(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -134,6 +138,74 @@ func (h *Handler) GenerateAI(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		return
 	}
 	writeJSON(w, stdhttp.StatusOK, newAIGenerateResponseDTO(completion))
+}
+
+func (h *Handler) UploadNoteImage(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	r.Body = stdhttp.MaxBytesReader(w, r.Body, maxImageRequestBytes)
+	if err := r.ParseMultipartForm(maxImageRequestBytes); err != nil {
+		var maxErr *stdhttp.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeError(w, &domain.AppError{Kind: domain.KindTooLarge, Message: "The image must be 8 MB or smaller."})
+			return
+		}
+		writeError(w, domain.NewInvalidError("The image upload is invalid."))
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, domain.NewInvalidError("An image file is required."))
+		return
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(io.LimitReader(file, maxImageRequestBytes+1))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	image, err := h.images.Upload(r.Context(), r.PathValue("id"), domain.ImageUpload{
+		Name:        header.Filename,
+		ContentType: header.Header.Get("Content-Type"),
+		Data:        data,
+	})
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, stdhttp.StatusCreated, newNoteImageDTO(image))
+}
+
+func (h *Handler) GetNoteImage(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	image, err := h.images.Open(r.Context(), r.PathValue("imageID"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	defer image.Body.Close()
+
+	if image.ContentType != "" {
+		w.Header().Set("Content-Type", image.ContentType)
+	}
+	if image.Size >= 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(image.Size, 10))
+	}
+	if image.ETag != "" {
+		w.Header().Set("ETag", `"`+image.ETag+`"`)
+	}
+	if image.Name != "" {
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": image.Name}))
+	}
+	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+	w.WriteHeader(stdhttp.StatusOK)
+	_, _ = io.Copy(w, image.Body)
+}
+
+func (h *Handler) DeleteNoteImage(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	if err := h.images.Delete(r.Context(), r.PathValue("imageID")); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(stdhttp.StatusNoContent)
 }
 
 func (h *Handler) Health(w stdhttp.ResponseWriter, _ *stdhttp.Request) {

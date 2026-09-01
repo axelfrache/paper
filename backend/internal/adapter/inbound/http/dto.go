@@ -116,3 +116,21 @@ type aiGenerateResponseDTO struct {
 func newAIGenerateResponseDTO(completion domain.AICompletion) aiGenerateResponseDTO {
 	return aiGenerateResponseDTO{Text: completion.Text}
 }
+
+type noteImageDTO struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	ContentType string `json:"contentType"`
+	Size        int64  `json:"size"`
+	URL         string `json:"url"`
+}
+
+func newNoteImageDTO(image domain.NoteImage) noteImageDTO {
+	return noteImageDTO{
+		ID:          image.ID,
+		Name:        image.Name,
+		ContentType: image.ContentType,
+		Size:        image.Size,
+		URL:         image.URL,
+	}
+}

@@ -1,6 +1,7 @@
 export type MarkdownInline =
   | { type: "text"; text: string }
   | { type: "link"; text: MarkdownInline[]; href: string; source: string; title?: string; safe: boolean }
+  | { type: "image"; alt: string; href: string; source: string; safe: boolean }
   | { type: "code"; text: string }
   | { type: "strong"; children: MarkdownInline[] }
   | { type: "em"; children: MarkdownInline[] }
@@ -30,6 +31,14 @@ export function parseInline(text: string): MarkdownInline[] {
   };
 
   while (index < text.length) {
+    const image = parseImage(text, index);
+    if (image) {
+      pushBuffer();
+      nodes.push(image.node);
+      index = image.end;
+      continue;
+    }
+
     const link = parseLink(text, index);
     if (link) {
       pushBuffer();
@@ -122,6 +131,41 @@ export function safeHref(value: string) {
     return href;
   }
   return "";
+}
+
+export function safeImageSrc(value: string) {
+  const href = value.trim();
+  if (!href || /[\s\x00-\x1f\x7f]/.test(href)) {
+    return "";
+  }
+  if (/^data:image\/(?:png|jpe?g|gif|webp|svg\+xml);base64,[a-z0-9+/]+=*$/i.test(href)) {
+    return href;
+  }
+  if (href.startsWith("/") && !href.startsWith("//")) {
+    return href;
+  }
+  return /^https?:\/\//i.test(href) ? href : "";
+}
+
+function parseImage(text: string, start: number): ParsedLink | null {
+  if (text[start] !== "!" || text[start + 1] !== "[") {
+    return null;
+  }
+  const labelEnd = findUnescaped(text, "]", start + 2);
+  if (labelEnd <= start + 2 || text[labelEnd + 1] !== "(") {
+    return null;
+  }
+  const hrefEnd = findClosingLinkParen(text, labelEnd + 2);
+  if (hrefEnd < 0) {
+    return null;
+  }
+  const alt = text.slice(start + 2, labelEnd);
+  const source = text.slice(labelEnd + 2, hrefEnd).trim();
+  const href = safeImageSrc(source);
+  return {
+    end: hrefEnd + 1,
+    node: { type: "image", alt, href: href || source, source, safe: Boolean(href) },
+  };
 }
 
 function parseLink(text: string, start: number): ParsedLink | null {

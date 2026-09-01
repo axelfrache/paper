@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultDiagram, serializeDiagramMarker } from "../diagram";
 import { isDivider, normalizeMarkdown, parseBlocks, parseInline, safeHref } from "./render";
+import { safeImageSrc } from "./inline";
 
 describe("markdown rendering parser", () => {
   it("parses headings up to level three", () => {
@@ -115,6 +116,15 @@ describe("markdown rendering parser", () => {
     expect(safeHref("//example.com")).toBe("");
     expect(safeHref("https://example.com/bad url")).toBe("");
     expect(safeHref("javascript:alert(1)")).toBe("");
+  });
+
+  it("parses uploaded images from a local Paper URL", () => {
+    const url = "/api/images/0123456789abcdef0123456789abcdef.png";
+    expect(parseInline(`![Architecture](${url})`)).toEqual([
+      { type: "image", alt: "Architecture", href: url, source: url, safe: true },
+    ]);
+    expect(safeImageSrc("javascript:alert(1)")).toBe("");
+    expect(safeImageSrc("//example.com/image.png")).toBe("");
   });
 
   it("groups task list items", () => {

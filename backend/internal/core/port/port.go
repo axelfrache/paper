@@ -2,6 +2,7 @@ package port
 
 import (
 	"context"
+	"io"
 
 	"github.com/axelfrache/paper/backend/internal/core/domain"
 )
@@ -30,4 +31,24 @@ type NoteAssistant interface {
 	Assist(ctx context.Context, note domain.Note, action domain.AIAction) (domain.AISuggestion, error)
 	Ask(ctx context.Context, question string, notes []domain.Note) (domain.AskAnswer, error)
 	Generate(ctx context.Context, prompt string) (domain.AICompletion, error)
+}
+
+type NoteImageService interface {
+	Upload(ctx context.Context, noteID string, upload domain.ImageUpload) (domain.NoteImage, error)
+	Open(ctx context.Context, imageID string) (StoredImage, error)
+	Delete(ctx context.Context, imageID string) error
+}
+
+type ImageStorage interface {
+	Put(ctx context.Context, key string, upload domain.ImageUpload) error
+	Open(ctx context.Context, key string) (StoredImage, error)
+	Delete(ctx context.Context, key string) error
+}
+
+type StoredImage struct {
+	Body        io.ReadCloser
+	Name        string
+	ContentType string
+	Size        int64
+	ETag        string
 }

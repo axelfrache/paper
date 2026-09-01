@@ -1,4 +1,4 @@
-import type { AIAction, AICompletion, AISuggestion, AskAnswer, Note, NoteDraft } from "../types/note";
+import type { AIAction, AICompletion, AISuggestion, AskAnswer, Note, NoteDraft, NoteImage } from "../types/note";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -71,4 +71,18 @@ export function generateAI(prompt: string) {
     method: "POST",
     body: JSON.stringify({ prompt }),
   });
+}
+
+export async function uploadNoteImage(noteId: string, file: File) {
+  const body = new FormData();
+  body.append("file", file);
+  const response = await fetch(`/api/notes/${encodeURIComponent(noteId)}/images`, {
+    method: "POST",
+    body,
+  });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error ?? "Image upload failed");
+  }
+  return response.json() as Promise<NoteImage>;
 }
