@@ -4,11 +4,14 @@ import type { MarkdownInline } from "./inline";
 
 const syntaxColor = "#a7acb2";
 
-export function renderEditableMarkdown(value: string, activeLine: number) {
-  return value.split("\n").map((line, index) => renderEditableLine(line, index === activeLine, index)).join("");
+export function renderEditableMarkdown(value: string, activeLine: number, selectedResourceLine = -1) {
+  return value
+    .split("\n")
+    .map((line, index) => renderEditableLine(line, index === activeLine, index, index === selectedResourceLine))
+    .join("");
 }
 
-export function renderEditableLine(raw: string, active: boolean, index: number) {
+export function renderEditableLine(raw: string, active: boolean, index: number, selectedResource = false) {
   const base = "min-height:1.75em;";
   const syn = (text: string) =>
     `<span style="color:${syntaxColor};${active ? "" : "display:none;"}">${escapeHtml(text)}</span>`;
@@ -46,19 +49,53 @@ export function renderEditableLine(raw: string, active: boolean, index: number) 
   }
 
   const diagram = parseDiagramMarker(raw);
-  if (diagram && !active) {
+  if (diagram) {
     const preview = [
-      `<span data-diagram-drag-line="${index}" class="markdown-editor-diagram-drag">${diagramToSvgMarkup(diagram, 320)}</span>`,
-      `<span class="markdown-editor-diagram-meta"><span>${escapeHtml(diagramSummary(diagram))}</span><em data-diagram-edit-line="${index}">Edit diagram</em><small>drag to move</small></span>`,
+      `<span class="markdown-editor-diagram-preview">${diagramToSvgMarkup(diagram, 320)}</span>`,
+      `<span class="markdown-editor-diagram-meta"><span>${escapeHtml(diagramSummary(diagram))}</span><em data-diagram-edit-line="${index}">Edit diagram</em></span>`,
       `<span data-diagram-resize-line="${index}" class="markdown-editor-diagram-resize" aria-hidden="true"></span>`,
     ].join("");
-    return `<div data-line="${index}" style="${base}margin:16px 0;">${syn(raw)}${deco(`<span data-diagram-line="${index}" contenteditable="false" class="markdown-editor-diagram-card">${preview}</span>`)}</div>`;
+    return resourceBlock(raw, index, "diagram", preview, selectedResource);
+  }
+
+  const image = standaloneImage(raw);
+  if (image?.safe) {
+    const resized = image.width ? " is-resized" : "";
+    const preview = [
+      `<span class="markdown-editor-image${resized}"><img src="${escapeAttribute(image.href)}" alt="${escapeAttribute(image.alt)}" draggable="false" /></span>`,
+      `<span data-image-resize-line="${index}" class="markdown-editor-image-resize" aria-hidden="true"></span>`,
+    ].join("");
+    return resourceBlock(raw, index, "image", preview, selectedResource, image.width);
   }
 
   if (!raw.length) {
     return `<div data-line="${index}" style="${base}"><br /></div>`;
   }
   return `<div data-line="${index}" style="${base}">${inlineMarkdown(raw, active)}</div>`;
+}
+
+function resourceBlock(
+  raw: string,
+  index: number,
+  kind: "diagram" | "image",
+  preview: string,
+  selected: boolean,
+  width?: number,
+) {
+  const selection = selected ? " is-selected" : "";
+  const surfaceClass = kind === "diagram" ? " markdown-editor-diagram-card" : " markdown-editor-image-card";
+  const surfaceStyle = width ? ` style="width:min(100%, ${width}px);"` : "";
+  return [
+    `<div data-line="${index}" data-resource-line="${index}" data-resource-kind="${kind}" data-source="${escapeAttribute(raw)}" contenteditable="false" class="markdown-editor-resource-line${selection}">`,
+    `<span data-deco="1" class="markdown-editor-resource-controls"><button type="button" data-resource-drag-line="${index}" class="markdown-editor-resource-drag" aria-label="Move ${kind}" title="Move"><span></span><span></span><span></span><span></span><span></span><span></span></button></span>`,
+    `<span data-deco="1" data-resource-surface="${index}"${kind === "diagram" ? ` data-diagram-line="${index}"` : ""} class="markdown-editor-resource-surface${surfaceClass}"${surfaceStyle}>${preview}<button type="button" data-resource-delete-line="${index}" class="markdown-editor-resource-delete" aria-label="Delete ${kind}" title="Delete">×</button></span>`,
+    `</div>`,
+  ].join("");
+}
+
+function standaloneImage(raw: string) {
+  const nodes = parseInline(raw);
+  return nodes.length === 1 && nodes[0].type === "image" ? nodes[0] : null;
 }
 
 function inlineMarkdown(raw: string, active: boolean) {
@@ -70,10 +107,13 @@ function inlineNode(node: MarkdownInline, active: boolean): string {
     return escapeHtml(node.text);
   }
   if (node.type === "image") {
+    const marker = imageMarker(node);
     if (active || !node.safe) {
-      return escapeHtml(`![${node.alt}](${node.source})`);
+      return escapeHtml(marker);
     }
-    return `<span data-source="${escapeAttribute(`![${node.alt}](${node.source})`)}" class="markdown-editor-image"><img src="${escapeAttribute(node.href)}" alt="${escapeAttribute(node.alt)}" draggable="false" /></span>`;
+    const resized = node.width ? " is-resized" : "";
+    const style = node.width ? ` style="width:min(100%, ${node.width}px);"` : "";
+    return `<span data-source="${escapeAttribute(marker)}" class="markdown-editor-image${resized}"${style}><img src="${escapeAttribute(node.href)}" alt="${escapeAttribute(node.alt)}" draggable="false" /></span>`;
   }
   if (node.type === "code") {
     const content = `<code>${escapeHtml(node.text)}</code>`;
@@ -103,6 +143,10 @@ function inlineNode(node: MarkdownInline, active: boolean): string {
     return content;
   }
   return `${syntaxMark("[")}${content}${syntaxMark(`](${node.source})`)}`;
+}
+
+function imageMarker(node: Extract<MarkdownInline, { type: "image" }>) {
+  return `![${node.alt}](${node.source})${node.width ? `{width=${node.width}}` : ""}`;
 }
 
 function syntaxMark(mark: string) {

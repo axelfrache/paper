@@ -1,7 +1,7 @@
 export type MarkdownInline =
   | { type: "text"; text: string }
   | { type: "link"; text: MarkdownInline[]; href: string; source: string; title?: string; safe: boolean }
-  | { type: "image"; alt: string; href: string; source: string; safe: boolean }
+  | { type: "image"; alt: string; href: string; source: string; safe: boolean; width?: number }
   | { type: "code"; text: string }
   | { type: "strong"; children: MarkdownInline[] }
   | { type: "em"; children: MarkdownInline[] }
@@ -162,9 +162,19 @@ function parseImage(text: string, start: number): ParsedLink | null {
   const alt = text.slice(start + 2, labelEnd);
   const source = text.slice(labelEnd + 2, hrefEnd).trim();
   const href = safeImageSrc(source);
+  const size = /^\{width=(\d{2,4})\}/.exec(text.slice(hrefEnd + 1));
+  const width = size ? Number(size[1]) : undefined;
+  const validWidth = width !== undefined && width >= 80 && width <= 1600 ? width : undefined;
   return {
-    end: hrefEnd + 1,
-    node: { type: "image", alt, href: href || source, source, safe: Boolean(href) },
+    end: hrefEnd + 1 + (validWidth ? size?.[0].length ?? 0 : 0),
+    node: {
+      type: "image",
+      alt,
+      href: href || source,
+      source,
+      safe: Boolean(href),
+      ...(validWidth ? { width: validWidth } : {}),
+    },
   };
 }
 

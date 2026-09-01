@@ -4,26 +4,39 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { createDefaultDiagram, serializeDiagramMarker } from "../lib/diagram";
 import { placeCaret, placeSelection, getSelectionRange } from "../lib/markdown/dom";
+import type { NoteImage } from "../types/note";
 import { MarkdownEditor } from "./MarkdownEditor";
 
 let root: Root | null = null;
 
-function ControlledEditor({ initial, focusRequest = null }: { initial: string; focusRequest?: { key: string; placement: "start" | "end" | "last" } | null }) {
+function ControlledEditor({
+  initial,
+  focusRequest = null,
+  onUploadImage,
+}: {
+  initial: string;
+  focusRequest?: { key: string; placement: "start" | "end" | "last" } | null;
+  onUploadImage?: (file: File) => Promise<NoteImage>;
+}) {
   const [value, setValue] = useState(initial);
   return (
     <>
-      <MarkdownEditor value={value} onChange={setValue} focusRequest={focusRequest} />
+      <MarkdownEditor value={value} onChange={setValue} focusRequest={focusRequest} onUploadImage={onUploadImage} />
       <output data-value>{value}</output>
     </>
   );
 }
 
-function mount(initial: string, focusRequest: { key: string; placement: "start" | "end" | "last" } | null = null) {
+function mount(
+  initial: string,
+  focusRequest: { key: string; placement: "start" | "end" | "last" } | null = null,
+  onUploadImage?: (file: File) => Promise<NoteImage>,
+) {
   const host = document.createElement("div");
   document.body.replaceChildren(host);
   root = createRoot(host);
   act(() => {
-    root?.render(<ControlledEditor initial={initial} focusRequest={focusRequest} />);
+    root?.render(<ControlledEditor initial={initial} focusRequest={focusRequest} onUploadImage={onUploadImage} />);
   });
   return host;
 }
@@ -55,6 +68,7 @@ afterEach(() => {
   });
   root = null;
   vi.restoreAllMocks();
+  Reflect.deleteProperty(document, "elementFromPoint");
   document.body.replaceChildren();
 });
 
@@ -335,6 +349,133 @@ describe("MarkdownEditor integration", () => {
     });
 
     expect(open).toHaveBeenCalledWith("https://example.com/docs", "_blank", "noopener,noreferrer");
+  });
+
+  it("selects an image resource without exposing its markdown and deletes it with Delete", () => {
+    const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
+    const host = mount(`${marker}\nAfter`);
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.querySelector("[data-resource-surface='0']")?.dispatchEvent(new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true }));
+    });
+
+    expect(editor.querySelector("[data-resource-line='0']")?.classList.contains("is-selected")).toBe(true);
+    expect(editor.textContent).not.toContain(marker);
+
+    act(() => {
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe("After");
+  });
+
+  it("deletes a selected diagram from its resource action", () => {
+    const marker = serializeDiagramMarker(createDefaultDiagram("flat"));
+    const host = mount(`${marker}\nAfter`);
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.querySelector("[data-resource-surface='0']")?.dispatchEvent(new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true }));
+    });
+
+    act(() => {
+      editor.querySelector("[data-resource-delete-line='0']")?.dispatchEvent(new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe("After");
+  });
+
+  it("moves an image resource from its drag handle", () => {
+    const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
+    const host = mount(`Before\n${marker}\nAfter`);
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.querySelector("[data-resource-drag-line='1']")?.dispatchEvent(new MouseEvent("pointerdown", { button: 0, clientX: 10, clientY: 10, bubbles: true, cancelable: true }));
+    });
+
+    const target = editor.querySelector("[data-line='2']");
+    if (!target) {
+      throw new Error("Missing drop target");
+    }
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: vi.fn(() => target),
+    });
+    vi.spyOn(target, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 200, 40));
+
+    act(() => {
+      window.dispatchEvent(new MouseEvent("pointermove", { clientX: 10, clientY: 30, bubbles: true }));
+      window.dispatchEvent(new MouseEvent("pointerup", { clientX: 10, clientY: 30, bubbles: true }));
+    });
+
+    expect(valueFrom(host)).toBe(`Before\nAfter\n${marker}`);
+  });
+
+  it("resizes an image resource and persists its width", () => {
+    const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
+    const host = mount(marker);
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.querySelector("[data-resource-surface='0']")?.dispatchEvent(new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true }));
+    });
+
+    const surface = editor.querySelector("[data-resource-surface='0']");
+    if (!surface) {
+      throw new Error("Missing image surface");
+    }
+    vi.spyOn(surface, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 200, 120));
+    vi.spyOn(editor, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 800, 600));
+
+    act(() => {
+      editor.querySelector("[data-image-resize-line='0']")?.dispatchEvent(new MouseEvent("pointerdown", { button: 0, clientX: 200, bubbles: true, cancelable: true }));
+      window.dispatchEvent(new MouseEvent("pointermove", { clientX: 350, bubbles: true }));
+      window.dispatchEvent(new MouseEvent("pointerup", { clientX: 350, bubbles: true }));
+    });
+
+    expect(valueFrom(host)).toBe(`${marker}{width=350}`);
+  });
+
+  it("inserts an uploaded image at the slash command caret after the file picker blurs", async () => {
+    const upload = vi.fn(async (): Promise<NoteImage> => ({
+      id: "0123456789abcdef0123456789abcdef.png",
+      name: "architecture.png",
+      contentType: "image/png",
+      size: 128,
+      url: "/api/images/0123456789abcdef0123456789abcdef.png",
+    }));
+    const host = mount("Before\n/image\nAfter", null, upload);
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 1, col: 6 });
+      editor.dispatchEvent(new KeyboardEvent("keyup", { key: "e", bubbles: true }));
+    });
+
+    const imageCommand = Array.from(host.querySelectorAll<HTMLButtonElement>(".slash-menu-row")).find((button) => button.textContent?.includes("Image"));
+    act(() => {
+      imageCommand?.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true }));
+    });
+
+    const input = host.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!input) {
+      throw new Error("Missing image input");
+    }
+    Object.defineProperty(input, "files", {
+      configurable: true,
+      value: [new File(["image"], "architecture.png", { type: "image/png" })],
+    });
+
+    await act(async () => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(upload).toHaveBeenCalledOnce();
+    expect(valueFrom(host)).toBe("Before\n![architecture](/api/images/0123456789abcdef0123456789abcdef.png)\n\nAfter");
   });
 
   it("focuses after a trailing diagram marker", () => {

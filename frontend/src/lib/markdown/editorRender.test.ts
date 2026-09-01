@@ -56,19 +56,42 @@ describe("editable markdown renderer", () => {
     expect(host.querySelector("strong")?.textContent).toBe("now");
   });
 
-  it("renders inactive diagram markers as editable cards", () => {
+  it("renders diagram markers as atomic resource blocks", () => {
     const marker = serializeDiagramMarker(createDefaultDiagram());
     const host = render(renderEditableMarkdown(marker, -1));
 
     expect(host.querySelector("[data-diagram-line='0']")).not.toBeNull();
     expect(host.querySelector("[data-diagram-edit-line='0']")).not.toBeNull();
+    expect(host.querySelector("[data-resource-drag-line='0']")).not.toBeNull();
+    expect(host.querySelector("[data-resource-delete-line='0']")).not.toBeNull();
   });
 
-  it("keeps active diagram markers as plain editable source", () => {
+  it("keeps selected diagrams atomic without exposing their source", () => {
     const marker = serializeDiagramMarker(createDefaultDiagram());
-    const host = render(renderEditableMarkdown(marker, 0));
+    const host = render(renderEditableMarkdown(marker, 0, 0));
 
-    expect(host.querySelector("[data-diagram-line='0']")).toBeNull();
-    expect(host.textContent).toBe(marker);
+    expect(host.querySelector("[data-resource-line='0']")?.classList.contains("is-selected")).toBe(true);
+    expect(host.querySelector("[data-resource-line='0']")?.getAttribute("data-source")).toBe(marker);
+    expect(host.textContent).not.toContain(marker);
+  });
+
+  it("renders standalone images as selectable atomic resources", () => {
+    const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
+    const host = render(renderEditableMarkdown(marker, 0, 0));
+
+    expect(host.querySelector("[data-resource-kind='image']")?.classList.contains("is-selected")).toBe(true);
+    expect(host.querySelector("img")?.getAttribute("src")).toBe("/api/images/0123456789abcdef0123456789abcdef.png");
+    expect(host.querySelector("[data-resource-line='0']")?.getAttribute("data-source")).toBe(marker);
+    expect(host.textContent).not.toContain(marker);
+  });
+
+  it("renders a persisted image width with a resize handle", () => {
+    const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png){width=640}";
+    const host = render(renderEditableMarkdown(marker, -1, 0));
+
+    expect(host.querySelector("[data-resource-surface='0']")?.getAttribute("style")).toContain("640px");
+    expect(host.querySelector(".markdown-editor-image")?.classList.contains("is-resized")).toBe(true);
+    expect(host.querySelector("[data-image-resize-line='0']")).not.toBeNull();
+    expect(host.querySelector("[data-resource-line='0']")?.getAttribute("data-source")).toBe(marker);
   });
 });

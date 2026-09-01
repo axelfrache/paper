@@ -89,7 +89,19 @@ function renderInlineNode(node: MarkdownInline, index: number): ReactNode {
     return node.text;
   }
   if (node.type === "image") {
-    return node.safe ? <img key={index} src={node.href} alt={node.alt} /> : <span key={index} className="markdown-link-invalid">{`![${node.alt}](${node.source})`}</span>;
+    const source = `![${node.alt}](${node.source})${node.width ? `{width=${node.width}}` : ""}`;
+    return node.safe ? (
+      <img
+        key={index}
+        src={node.href}
+        alt={node.alt}
+        style={node.width ? { width: `${node.width}px`, maxWidth: "100%" } : undefined}
+      />
+    ) : (
+      <span key={index} className="markdown-link-invalid">
+        {source}
+      </span>
+    );
   }
   if (node.type === "code") {
     return <code key={index}>{node.text}</code>;

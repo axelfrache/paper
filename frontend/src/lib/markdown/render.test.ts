@@ -127,6 +127,13 @@ describe("markdown rendering parser", () => {
     expect(safeImageSrc("//example.com/image.png")).toBe("");
   });
 
+  it("parses a persisted image width", () => {
+    const url = "/api/images/0123456789abcdef0123456789abcdef.png";
+    expect(parseInline(`![Architecture](${url}){width=640}`)).toEqual([
+      { type: "image", alt: "Architecture", href: url, source: url, safe: true, width: 640 },
+    ]);
+  });
+
   it("groups task list items", () => {
     expect(parseBlocks("- [ ] Write tests\n- [x] Ship parser")).toEqual([
       {
