@@ -17,7 +17,7 @@ done
 if [ ! -f /var/lib/garage/meta/.setup-done ]; then
     echo "Running initial Garage setup..."
     node_id="$(garage -c /etc/garage.toml node id | awk '{print $1}')"
-    garage -c /etc/garage.toml layout assign "$node_id" -z dc1 -c 1G || true
+    garage -c /etc/garage.toml layout assign "$node_id" -z dc1 -c "${GARAGE_CAPACITY:-1G}" || true
     garage -c /etc/garage.toml layout apply --version 1 || true
     garage -c /etc/garage.toml bucket create "$GARAGE_BUCKET" || true
     garage -c /etc/garage.toml key import \

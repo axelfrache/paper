@@ -86,6 +86,9 @@ jobs:
           - name: frontend
             context: ./frontend
             image: paper-frontend
+          - name: garage
+            context: ./services/garage
+            image: paper-garage
 
     steps:
       - name: Checkout
