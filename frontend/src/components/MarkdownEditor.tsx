@@ -29,6 +29,7 @@ import {
   wrapSelection,
 } from "../lib/markdown/edit";
 import { renderEditableMarkdown } from "../lib/markdown/editorRender";
+import { prepareImageForUpload } from "../lib/imageUpload";
 import { parseInline, safeHref } from "../lib/markdown/render";
 import {
   getCaret,
@@ -964,7 +965,7 @@ export function MarkdownEditor({
       return;
     }
     try {
-      const image = await onUploadImage(file);
+      const image = await onUploadImage(await prepareImageForUpload(file));
       const lines = valueRef.current.split("\n");
       const line = lines[caret.line] ?? "";
       const alt = image.name.replace(/\.[^.]+$/, "").replace(/[\[\]]/g, "");
