@@ -385,6 +385,20 @@ describe("MarkdownEditor integration", () => {
     expect(valueFrom(host)).toBe("After");
   });
 
+  it("accepts text input on the line after a trailing image", () => {
+    const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
+    const host = mount(marker);
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 1, col: 0 });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "x", bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe(`${marker}\nx`);
+  });
+
   it("deletes a selected diagram from its resource action", () => {
     const marker = serializeDiagramMarker(createDefaultDiagram("flat"));
     const host = mount(`${marker}\nAfter`);

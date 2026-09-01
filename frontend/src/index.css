@@ -984,6 +984,7 @@ kbd,
 .markdown-editor-resource-surface {
   position: relative;
   display: block;
+  justify-self: start;
   min-width: 0;
   max-width: 100%;
 }
@@ -1026,11 +1027,16 @@ kbd,
 }
 
 .markdown-editor-image-card {
-  width: fit-content;
+  width: max-content;
+  max-width: 100%;
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
   padding: 3px;
+}
+
+.markdown-editor-diagram-card {
+  justify-self: stretch;
 }
 
 .markdown-editor-image.is-resized,
@@ -1215,6 +1221,10 @@ kbd,
   border-radius: 5px;
   color: var(--muted);
   font-size: 10px;
+}
+
+.slash-menu-row > span svg {
+  display: block;
 }
 
 .slash-menu-row strong {

@@ -5,10 +5,12 @@ import type { MarkdownInline } from "./inline";
 const syntaxColor = "#a7acb2";
 
 export function renderEditableMarkdown(value: string, activeLine: number, selectedResourceLine = -1) {
-  return value
-    .split("\n")
+  const lines = value.split("\n");
+  const html = lines
     .map((line, index) => renderEditableLine(line, index === activeLine, index, index === selectedResourceLine))
     .join("");
+  const lastLine = lines[lines.length - 1] ?? "";
+  return isResourceLine(lastLine) ? `${html}${renderEditableLine("", false, lines.length)}` : html;
 }
 
 export function renderEditableLine(raw: string, active: boolean, index: number, selectedResource = false) {
@@ -96,6 +98,10 @@ function resourceBlock(
 function standaloneImage(raw: string) {
   const nodes = parseInline(raw);
   return nodes.length === 1 && nodes[0].type === "image" ? nodes[0] : null;
+}
+
+function isResourceLine(raw: string) {
+  return Boolean(parseDiagramMarker(raw) || standaloneImage(raw)?.safe);
 }
 
 function inlineMarkdown(raw: string, active: boolean) {

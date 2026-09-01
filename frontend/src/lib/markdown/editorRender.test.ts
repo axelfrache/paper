@@ -94,4 +94,11 @@ describe("editable markdown renderer", () => {
     expect(host.querySelector("[data-image-resize-line='0']")).not.toBeNull();
     expect(host.querySelector("[data-resource-line='0']")?.getAttribute("data-source")).toBe(marker);
   });
+
+  it("adds an editable line after a resource at the end of the document", () => {
+    const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
+    const host = render(renderEditableMarkdown(marker, -1));
+
+    expect(host.querySelector("[data-line='1']")?.innerHTML).toContain("<br>");
+  });
 });
