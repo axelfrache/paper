@@ -366,7 +366,8 @@ export function MarkdownEditor({
 
     if (meta && !event.shiftKey && event.key.toLowerCase() === "k") {
       event.preventDefault();
-      const next = toggleLink(value, selectionRange ?? { start: caret, end: caret });
+      const range = selectionRange ?? { start: caret, end: caret };
+      const next = applyAcrossResources(value, range, (source, lineRange) => toggleLink(source, lineRange));
       setSelectionToolbar(null);
       setSource(next.value, next.caret);
       return;
@@ -374,7 +375,8 @@ export function MarkdownEditor({
 
     if (meta && !event.shiftKey && event.key.toLowerCase() === "u") {
       event.preventDefault();
-      const next = toggleSelection(value, selectionRange ?? { start: caret, end: caret }, "<u>", "</u>");
+      const range = selectionRange ?? { start: caret, end: caret };
+      const next = applyAcrossResources(value, range, (source, lineRange) => toggleSelection(source, lineRange, "<u>", "</u>"));
       setSelectionToolbar(null);
       setSource(next.value, next.caret);
       return;
@@ -383,7 +385,8 @@ export function MarkdownEditor({
     if (meta && ["b", "i"].includes(event.key.toLowerCase())) {
       event.preventDefault();
       const mark = event.key.toLowerCase() === "b" ? "**" : "*";
-      const next = toggleSelection(value, selectionRange ?? { start: caret, end: caret }, mark);
+      const range = selectionRange ?? { start: caret, end: caret };
+      const next = applyAcrossResources(value, range, (source, lineRange) => toggleSelection(source, lineRange, mark));
       setSelectionToolbar(null);
       setSource(next.value, next.caret);
       return;
@@ -774,12 +777,11 @@ export function MarkdownEditor({
       setSelectionToolbar(null);
       return;
     }
-
     const next = action === "link"
-      ? toggleLink(value, range)
+      ? applyAcrossResources(value, range, (source, lineRange) => toggleLink(source, lineRange))
       : action === "underline"
-        ? toggleSelection(value, range, "<u>", "</u>")
-        : toggleSelection(value, range, action === "bold" ? "**" : action === "italic" ? "*" : action === "strike" ? "~~" : "`");
+        ? applyAcrossResources(value, range, (source, lineRange) => toggleSelection(source, lineRange, "<u>", "</u>"))
+        : applyAcrossResources(value, range, (source, lineRange) => toggleSelection(source, lineRange, action === "bold" ? "**" : action === "italic" ? "*" : action === "strike" ? "~~" : "`"));
     focusedRef.current = true;
     setSlash(null);
     setSelectionToolbar(null);
@@ -1148,6 +1150,48 @@ function isResourceLine(line: string) {
     return true;
   }
   return Boolean(imageResource(line)?.safe);
+}
+
+function rangeIncludesResource(value: string, range: TextRange) {
+  const normalized = normalizeRange(range);
+  const lines = value.split("\n");
+  for (let line = normalized.start.line; line <= normalized.end.line; line += 1) {
+    if (isResourceLine(lines[line] ?? "")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function applyAcrossResources(
+  value: string,
+  range: TextRange,
+  operation: (value: string, range: TextRange) => { value: string; caret: Caret },
+) {
+  if (!rangeIncludesResource(value, range)) {
+    return operation(value, range);
+  }
+
+  const normalized = normalizeRange(range);
+  const lines = value.split("\n");
+  let nextValue = value;
+  let nextCaret: Caret | null = null;
+
+  for (let line = normalized.end.line; line >= normalized.start.line; line -= 1) {
+    if (isResourceLine(lines[line] ?? "")) {
+      continue;
+    }
+    const start = line === normalized.start.line ? normalized.start.col : 0;
+    const end = line === normalized.end.line ? normalized.end.col : (lines[line] ?? "").length;
+    if (start >= end) {
+      continue;
+    }
+    const result = operation(nextValue, { start: { line, col: start }, end: { line, col: end } });
+    nextValue = result.value;
+    nextCaret = result.caret;
+  }
+
+  return { value: nextValue, caret: nextCaret ?? normalized.start };
 }
 
 function imageResource(line: string) {

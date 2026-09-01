@@ -152,6 +152,21 @@ describe("MarkdownEditor integration", () => {
     expect(valueFrom(host)).toBe("Make Paper bold");
   });
 
+  it("keeps resources atomic while formatting text in a select-all range with ctrl b", () => {
+    const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
+    const host = mount(`${marker}\nAfter\nText`);
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeSelection(editor, { start: { line: 0, col: 0 }, end: { line: 2, col: 4 } });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "b", ctrlKey: true, bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe(`${marker}\n**After**\n**Text**`);
+    expect(editor.textContent).not.toContain(marker);
+  });
+
   it("removes existing bold formatting when selecting the rendered bold text", () => {
     const host = mount("Make **Paper** bold");
     const editor = editorFrom(host);
