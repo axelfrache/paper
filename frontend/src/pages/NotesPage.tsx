@@ -64,6 +64,7 @@ export function NotesPage() {
   const [toast, setToast] = useState("");
   const saveTimers = useRef(new Map<string, number>());
   const toastTimer = useRef<number | null>(null);
+  const aiRequestRef = useRef(0);
   const editorLineRef = useRef<number | null>(null);
   const lastSelectedIdRef = useRef<string | null>(null);
   const historyRef = useRef(new Map<string, NoteHistory>());
@@ -120,6 +121,11 @@ export function NotesPage() {
     () => notes.find((note) => note.id === activeId) ?? null,
     [notes, activeId],
   );
+
+  useEffect(() => {
+    aiRequestRef.current += 1;
+    setAIResult(null);
+  }, [activeId]);
 
   const visibleNotes = useMemo(() => {
     let pool = [...notes].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
@@ -456,13 +462,19 @@ export function NotesPage() {
         flash("Nothing to work with yet");
         return;
       }
+      const request = aiRequestRef.current + 1;
+      aiRequestRef.current = request;
       setAIResult({ action, status: "loading", text: "" });
       try {
         const result = await assistNote(activeNote.id, action);
-        setAIResult({ action, status: "ready", text: result.text });
+        if (aiRequestRef.current === request) {
+          setAIResult({ action, status: "ready", text: result.text });
+        }
       } catch {
-        setAIResult(null);
-        flash("AI request failed");
+        if (aiRequestRef.current === request) {
+          setAIResult(null);
+          flash("AI request failed");
+        }
       }
     },
     [activeNote, flash],
@@ -494,9 +506,15 @@ export function NotesPage() {
     } else {
       patchActive({ content: text });
     }
+    aiRequestRef.current += 1;
     setAIResult(null);
     flash("Applied");
   }, [activeNote, aiResult, patchActive, flash]);
+
+  const dismissAIResult = useCallback(() => {
+    aiRequestRef.current += 1;
+    setAIResult(null);
+  }, []);
 
   const ask = useCallback(
     async (question: string) => {
@@ -638,7 +656,7 @@ export function NotesPage() {
           editorLineRef.current = line;
         }}
         onApplyResult={applyAIResult}
-        onDismissResult={() => setAIResult(null)}
+        onDismissResult={dismissAIResult}
         theme={theme}
       />
 

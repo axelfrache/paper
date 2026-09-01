@@ -28,7 +28,7 @@ import {
   wrapSelection,
 } from "../lib/markdown/edit";
 import { renderEditableMarkdown } from "../lib/markdown/editorRender";
-import { safeHref } from "../lib/markdown/render";
+import { parseInline, safeHref } from "../lib/markdown/render";
 import {
   getCaret,
   getSelectionRange,
@@ -51,6 +51,7 @@ type MarkdownEditorProps = {
   onFocusPrevious?: () => void;
   onFocusNoteList?: () => void;
   onOpenDiagram?: (line: number, diagram: Diagram) => void;
+  diagramDescribeRequest?: { key: string; prompt: string } | null;
   placeholder?: string;
 };
 
@@ -125,6 +126,7 @@ export function MarkdownEditor({
   onFocusPrevious,
   onFocusNoteList,
   onOpenDiagram,
+  diagramDescribeRequest = null,
   placeholder = "Start writing...",
 }: MarkdownEditorProps) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -134,11 +136,14 @@ export function MarkdownEditor({
   const diagramDescribeDialogRef = useRef<HTMLDialogElement | null>(null);
   const focusedRef = useRef(false);
   const caretRef = useRef<Caret | null>(null);
+  const pendingImageCaretRef = useRef<Caret | null>(null);
   const activeLineRef = useRef(-1);
   const handledFocusRequestRef = useRef("");
+  const handledDiagramDescribeRequestRef = useRef("");
   const valueRef = useRef(value);
   const [slash, setSlash] = useState<SlashState | null>(null);
   const [selectionToolbar, setSelectionToolbar] = useState<SelectionToolbarState | null>(null);
+  const [selectedResourceLine, setSelectedResourceLine] = useState<number | null>(null);
   const [diagramDescribeOpen, setDiagramDescribeOpen] = useState(false);
   const [diagramDescribeTarget, setDiagramDescribeTarget] = useState<DiagramDescribeTarget | null>(null);
   const [diagramDescribePrompt, setDiagramDescribePrompt] = useState("");
@@ -148,14 +153,19 @@ export function MarkdownEditor({
 
   useLayoutEffect(() => {
     valueRef.current = value;
-    renderMarkdown(editorRef.current, value, focusedRef.current ? caretRef.current?.line ?? -1 : -1);
+    renderMarkdown(
+      editorRef.current,
+      value,
+      focusedRef.current ? caretRef.current?.line ?? -1 : -1,
+      selectedResourceLine ?? -1,
+    );
     activeLineRef.current = focusedRef.current ? caretRef.current?.line ?? -1 : -1;
-    if (focusedRef.current && caretRef.current) {
+    if (focusedRef.current && caretRef.current && selectedResourceLine === null) {
       placeCaret(editorRef.current, caretRef.current);
       probeSlash(value, caretRef.current);
       onCaretLineChange?.(caretRef.current.line);
     }
-  }, [value]);
+  }, [selectedResourceLine, value]);
 
   useLayoutEffect(() => {
     if (!focusRequest || handledFocusRequestRef.current === focusRequest.key) {
@@ -163,6 +173,7 @@ export function MarkdownEditor({
     }
 
     handledFocusRequestRef.current = focusRequest.key;
+    setSelectedResourceLine(null);
     const target = focusTarget(value, caretRef.current, focusRequest.placement);
     const { caret } = target;
     if (target.value !== value) {
@@ -217,6 +228,19 @@ export function MarkdownEditor({
     }
   }, [diagramDescribeOpen]);
 
+  useLayoutEffect(() => {
+    if (!diagramDescribeRequest || handledDiagramDescribeRequestRef.current === diagramDescribeRequest.key) {
+      return;
+    }
+
+    handledDiagramDescribeRequestRef.current = diagramDescribeRequest.key;
+    const line = valueRef.current ? valueRef.current.split("\n").length : 0;
+    setDiagramDescribeTarget({ line });
+    setDiagramDescribePrompt(diagramDescribeRequest.prompt);
+    setDiagramDescribeError(null);
+    setDiagramDescribeOpen(true);
+  }, [diagramDescribeRequest]);
+
   const syncActiveLine = () => {
     const range = getSelectionRange(editorRef.current);
     if (range && !isCollapsedRange(range)) {
@@ -259,6 +283,18 @@ export function MarkdownEditor({
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const meta = event.metaKey || event.ctrlKey;
+    if (selectedResourceLine !== null) {
+      if (event.key === "Backspace" || event.key === "Delete") {
+        event.preventDefault();
+        removeResource(selectedResourceLine);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setSelectedResourceLine(null);
+      }
+      return;
+    }
     const selectionRange = getSelectionRange(editorRef.current);
     const caret = selectionRange?.end ?? getCaret(editorRef.current);
     if (!caret) {
@@ -397,6 +433,9 @@ export function MarkdownEditor({
 
   const handleFocus = () => {
     focusedRef.current = true;
+    if (selectedResourceLine !== null) {
+      return;
+    }
     caretRef.current = getCaret(editorRef.current) ?? { line: 0, col: 0 };
     onCaretLineChange?.(caretRef.current.line);
     renderMarkdown(editorRef.current, value, caretRef.current.line);
@@ -409,6 +448,7 @@ export function MarkdownEditor({
     caretRef.current = null;
     setSlash(null);
     setSelectionToolbar(null);
+    setSelectedResourceLine(null);
     renderMarkdown(editorRef.current, value, -1);
     activeLineRef.current = -1;
   };
@@ -418,6 +458,27 @@ export function MarkdownEditor({
       return;
     }
     const target = event.target instanceof Element ? event.target : null;
+    const deleteTarget = target?.closest("[data-resource-delete-line]");
+    if (deleteTarget) {
+      event.preventDefault();
+      const line = Number(deleteTarget.getAttribute("data-resource-delete-line"));
+      if (!Number.isNaN(line)) {
+        removeResource(line);
+      }
+      return;
+    }
+
+    const dragTarget = target?.closest("[data-resource-drag-line]");
+    if (dragTarget) {
+      event.preventDefault();
+      const line = Number(dragTarget.getAttribute("data-resource-drag-line"));
+      if (!Number.isNaN(line)) {
+        selectResource(line);
+        startResourceBlockDrag(event.nativeEvent, line, dragTarget.closest("[data-resource-line]"));
+      }
+      return;
+    }
+
     const editTarget = target?.closest("[data-diagram-edit-line]");
     if (editTarget) {
       event.preventDefault();
@@ -429,22 +490,32 @@ export function MarkdownEditor({
       return;
     }
 
-    const dragTarget = target?.closest("[data-diagram-drag-line]");
-    if (dragTarget) {
-      event.preventDefault();
-      const line = Number(dragTarget.getAttribute("data-diagram-drag-line"));
-      if (!Number.isNaN(line)) {
-        startDiagramBlockDrag(event.nativeEvent, line, dragTarget.closest("[data-diagram-line]"));
-      }
-      return;
-    }
-
     const resizeTarget = target?.closest("[data-diagram-resize-line]");
     if (resizeTarget) {
       event.preventDefault();
       const line = Number(resizeTarget.getAttribute("data-diagram-resize-line"));
       if (!Number.isNaN(line)) {
         startDiagramPreviewResize(event.nativeEvent, line, resizeTarget.closest("[data-diagram-line]"));
+      }
+      return;
+    }
+
+    const imageResizeTarget = target?.closest("[data-image-resize-line]");
+    if (imageResizeTarget) {
+      event.preventDefault();
+      const line = Number(imageResizeTarget.getAttribute("data-image-resize-line"));
+      if (!Number.isNaN(line)) {
+        startImagePreviewResize(event.nativeEvent, line, imageResizeTarget.closest("[data-resource-surface]"));
+      }
+      return;
+    }
+
+    const resourceTarget = target?.closest("[data-resource-line]");
+    if (resourceTarget) {
+      event.preventDefault();
+      const line = Number(resourceTarget.getAttribute("data-resource-line"));
+      if (!Number.isNaN(line)) {
+        selectResource(line);
       }
       return;
     }
@@ -480,6 +551,32 @@ export function MarkdownEditor({
       return `${prefix}${current.toLowerCase() === "x" ? " " : "x"}${suffix}`;
     });
     setSource(lines.join("\n"), focusedRef.current ? caretRef.current : null);
+  };
+
+  const selectResource = (line: number) => {
+    editorRef.current?.focus({ preventScroll: true });
+    window.getSelection()?.removeAllRanges();
+    caretRef.current = null;
+    activeLineRef.current = -1;
+    setSlash(null);
+    setSelectionToolbar(null);
+    setSelectedResourceLine(line);
+    onCaretLineChange?.(line);
+  };
+
+  const removeResource = (line: number) => {
+    const lines = valueRef.current.split("\n");
+    if (!isResourceLine(lines[line] ?? "")) {
+      return;
+    }
+    lines.splice(line, 1);
+    if (lines.length === 0) {
+      lines.push("");
+    }
+    const caretLine = Math.min(line, lines.length - 1);
+    setSelectedResourceLine(null);
+    setSource(lines.join("\n"), { line: caretLine, col: 0 });
+    window.requestAnimationFrame(() => editorRef.current?.focus());
   };
 
   const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
@@ -525,8 +622,18 @@ export function MarkdownEditor({
         suppressContentEditableWarning
         onInput={handleInput}
         onKeyDown={handleKeyDown}
-        onKeyUp={syncActiveLine}
-        onMouseUp={syncActiveLine}
+        onKeyUp={() => {
+          if (selectedResourceLine === null) {
+            syncActiveLine();
+          }
+        }}
+        onMouseUp={(event) => {
+          if (event.target instanceof Element && event.target.closest("[data-resource-line]")) {
+            return;
+          }
+          setSelectedResourceLine(null);
+          syncActiveLine();
+        }}
         onFocus={handleFocus}
         onBlur={handleBlur}
         onPointerDown={handlePointerDown}
@@ -547,8 +654,10 @@ export function MarkdownEditor({
         onChange={(event) => {
           const file = event.target.files?.[0];
           event.target.value = "";
+          const caret = pendingImageCaretRef.current ?? caretRef.current ?? { line: 0, col: 0 };
+          pendingImageCaretRef.current = null;
           if (file) {
-            insertImageFile(file, caretRef.current ?? { line: 0, col: 0 });
+            insertImageFile(file, caret);
           }
         }}
       />
@@ -765,8 +874,9 @@ export function MarkdownEditor({
 
     if (item.image) {
       lines[caret.line] = stem + after;
-      setSource(lines.join("\n"), { line: caret.line, col: stem.length });
-      caretRef.current = { line: caret.line, col: stem.length };
+      const imageCaret = { line: caret.line, col: stem.length };
+      pendingImageCaretRef.current = imageCaret;
+      setSource(lines.join("\n"), imageCaret);
       window.requestAnimationFrame(() => imageInputRef.current?.click());
       return;
     }
@@ -869,39 +979,41 @@ export function MarkdownEditor({
     }
   }
 
-  function startDiagramBlockDrag(event: PointerEvent, line: number, card: Element | null) {
+  function startResourceBlockDrag(event: PointerEvent, line: number, card: Element | null) {
     const marker = value.split("\n")[line] ?? "";
-    if (!isDiagramLine(marker)) {
+    if (!isResourceLine(marker)) {
       return;
     }
 
     const start = { x: event.clientX, y: event.clientY };
     let moved = false;
+    const currentCard = () => editorRef.current?.querySelector(`[data-resource-line="${line}"]`) ?? card;
 
     const move = (moveEvent: PointerEvent) => {
       const dx = Math.abs(moveEvent.clientX - start.x);
       const dy = Math.abs(moveEvent.clientY - start.y);
       if (dx + dy > 4) {
         moved = true;
-        card?.classList.add("is-dragging");
+        currentCard()?.classList.add("is-dragging");
       }
     };
 
     const up = (upEvent: PointerEvent) => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
-      card?.classList.remove("is-dragging");
+      currentCard()?.classList.remove("is-dragging");
       if (!moved) {
         return;
       }
 
-      const drop = diagramDropLineAt(upEvent.clientX, upEvent.clientY);
+      const drop = resourceDropLineAt(upEvent.clientX, upEvent.clientY);
       if (!drop || drop.line === line) {
         return;
       }
 
       const next = moveLine(value, line, drop.line, drop.after);
       if (next !== value) {
+        setSelectedResourceLine(null);
         setSource(next, null);
       }
     };
@@ -932,6 +1044,33 @@ export function MarkdownEditor({
       const nextDiagram = updateDiagramPreview(diagram, nextPreview);
       source = replaceDiagramMarkerAtLine(source, line, nextDiagram);
       setSource(source, null);
+    };
+
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  function startImagePreviewResize(event: PointerEvent, line: number, card: Element | null) {
+    const image = imageResource(value.split("\n")[line] ?? "");
+    if (!image || !card) {
+      return;
+    }
+
+    const rect = card.getBoundingClientRect();
+    const startWidth = image.width ?? rect.width;
+    const editorWidth = editorRef.current?.getBoundingClientRect().width ?? 1600;
+    const maxWidth = Math.max(120, Math.min(1600, editorWidth - 36));
+
+    const move = (moveEvent: PointerEvent) => {
+      const width = Math.round(Math.max(80, Math.min(maxWidth, startWidth + moveEvent.clientX - event.clientX)));
+      const lines = value.split("\n");
+      lines[line] = `![${image.alt}](${image.source}){width=${width}}`;
+      setSource(lines.join("\n"), null);
     };
 
     const up = () => {
@@ -980,11 +1119,11 @@ export function MarkdownEditor({
   }
 }
 
-function renderMarkdown(el: HTMLDivElement | null, value: string, activeLine: number) {
+function renderMarkdown(el: HTMLDivElement | null, value: string, activeLine: number, selectedResourceLine = -1) {
   if (!el) {
     return;
   }
-  el.innerHTML = renderEditableMarkdown(value, activeLine);
+  el.innerHTML = renderEditableMarkdown(value, activeLine, selectedResourceLine);
 }
 
 function focusTarget(value: string, current: Caret | null, placement: "start" | "end" | "last") {
@@ -1004,7 +1143,19 @@ function isDiagramLine(line: string) {
   return Boolean(parseDiagramMarker(line));
 }
 
-function diagramDropLineAt(clientX: number, clientY: number): { line: number; after: boolean } | null {
+function isResourceLine(line: string) {
+  if (isDiagramLine(line)) {
+    return true;
+  }
+  return Boolean(imageResource(line)?.safe);
+}
+
+function imageResource(line: string) {
+  const nodes = parseInline(line);
+  return nodes.length === 1 && nodes[0].type === "image" ? nodes[0] : null;
+}
+
+function resourceDropLineAt(clientX: number, clientY: number): { line: number; after: boolean } | null {
   const element = document.elementFromPoint(clientX, clientY);
   let lineElement = element?.closest("[data-line]");
   if (!lineElement) {

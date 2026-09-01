@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Moon, Search, Star, Sun, Trash2 } from "lucide-react";
+import { Moon, Search, Star, Sun, Trash2, X } from "lucide-react";
 import { DiagramEditor } from "../components/DiagramEditor";
 import { MarkdownEditor } from "../components/MarkdownEditor";
 import { MarkdownView } from "../components/MarkdownView";
@@ -45,6 +45,8 @@ const aiActions: Array<{ action: AIAction; label: string; hint: string }> = [
   { action: "clean_up", label: "Clean up", hint: "Tidy raw text" },
 ];
 
+const diagramAction = { label: "Diagram", hint: "Sketch this note as a diagram" };
+
 type ContentFocusTarget = {
   key: string;
   placement: "start" | "end" | "last";
@@ -87,6 +89,7 @@ export function NoteEditor({
   const latestContentRef = useRef(note?.content ?? "");
   const [contentFocusTarget, setContentFocusTarget] = useState<ContentFocusTarget | null>(null);
   const [diagramEdit, setDiagramEdit] = useState<DiagramEditTarget | null>(null);
+  const [diagramDescribeRequest, setDiagramDescribeRequest] = useState<{ key: string; prompt: string } | null>(null);
 
   useEffect(() => {
     latestContentRef.current = note?.content ?? "";
@@ -97,6 +100,28 @@ export function NoteEditor({
       setDiagramEdit(null);
     }
   }, [diagramEdit, note?.id]);
+
+  useEffect(() => {
+    if (!aiResult) {
+      return;
+    }
+
+    const handleResultKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || document.querySelector("dialog[open]")) {
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onDismissResult();
+      } else if (event.key === "Enter" && aiResult.status === "ready") {
+        event.preventDefault();
+        onApplyResult();
+      }
+    };
+
+    window.addEventListener("keydown", handleResultKey);
+    return () => window.removeEventListener("keydown", handleResultKey);
+  }, [aiResult, onApplyResult, onDismissResult]);
 
   useEffect(() => {
     if (
@@ -276,26 +301,41 @@ export function NoteEditor({
             onFocusPrevious={focusTags}
             onFocusNoteList={onFocusNoteList}
             onOpenDiagram={openDiagram}
+            diagramDescribeRequest={diagramDescribeRequest}
             placeholder="Start writing... press / to insert a block"
           />
-
-          {aiResult ? (
-            <AIResultPanel
-              result={aiResult}
-              onApply={onApplyResult}
-              onDismiss={onDismissResult}
-            />
-          ) : null}
         </div>
       </div>
+
+      {aiResult ? (
+        <div className="ai-result-dock">
+          <AIResultPanel
+            result={aiResult}
+            onApply={onApplyResult}
+            onDismiss={onDismissResult}
+          />
+        </div>
+      ) : null}
 
       <footer className="ai-bar">
         <strong>AI</strong>
         {aiActions.map((action) => (
-          <button key={action.action} title={action.hint} onClick={() => onAssist(action.action)}>
+          <button key={action.action} title={action.hint} onClick={() => onAssist(action.action)} disabled={aiResult?.status === "loading"}>
             {action.label}
           </button>
         ))}
+        <button
+          title={diagramAction.hint}
+          disabled={aiResult?.status === "loading"}
+          onClick={() => {
+            setDiagramDescribeRequest({
+              key: `${note.id}-${Date.now()}`,
+              prompt: diagramPromptForNote(note),
+            });
+          }}
+        >
+          {diagramAction.label}
+        </button>
         <span>{wordCount(note.content)}</span>
       </footer>
 
@@ -371,28 +411,71 @@ function AIResultPanel({
   onApply: () => void;
   onDismiss: () => void;
 }) {
+  const tags = result.action === "suggest_tags" && result.status === "ready" ? resultTags(result.text) : [];
+  const count = result.status === "ready" ? resultItemCount(result, tags) : 0;
+
   return (
-    <section className="ai-result">
+    <section className="ai-result" aria-live="polite">
       <header>
-        <span />
+        <span className={result.status === "loading" ? "is-loading" : ""} />
         <strong>{titleForAction(result.action)}</strong>
-        <button onClick={onDismiss}>×</button>
+        {count > 1 ? <small>{count} items</small> : null}
+        <button onClick={onDismiss} aria-label="Dismiss" title="Dismiss">
+          <X size={14} strokeWidth={2} />
+        </button>
       </header>
-      <div className="ai-result-body">
-        {result.status === "loading" ? (
-          <p>Thinking...</p>
-        ) : (
-          <>
-            <MarkdownView text={result.text} className="ai-markdown" />
-            <div className="ai-result-actions">
-              <button onClick={onApply}>{applyLabelForAction(result.action)}</button>
-              <button onClick={onDismiss}>Dismiss</button>
-            </div>
-          </>
-        )}
-      </div>
+      {result.status === "loading" ? (
+        <div className="ai-result-loading" aria-label="Thinking">
+          <span />
+          <span />
+          <span />
+        </div>
+      ) : (
+        <>
+          <div className="ai-result-body">
+            {tags.length ? (
+              <div className="ai-result-tags">
+                {tags.map((tag) => <span key={tag}>#{tag}</span>)}
+              </div>
+            ) : (
+              <MarkdownView text={result.text} className="ai-markdown" />
+            )}
+          </div>
+          <footer className="ai-result-actions">
+            <button onClick={onApply}>{applyLabelForAction(result.action)}</button>
+            <button onClick={onDismiss}>Dismiss</button>
+          </footer>
+        </>
+      )}
     </section>
   );
+}
+
+function resultTags(text: string) {
+  return text
+    .split(/[,\n]+/)
+    .map((tag) => tag.trim().replace(/^[-*#\s]+/, "").toLowerCase().replace(/[^a-z0-9_-]/g, ""))
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+function resultItemCount(result: AIResult, tags: string[]) {
+  if (tags.length) {
+    return tags.length;
+  }
+  if (result.action !== "summarize" && result.action !== "extract_tasks") {
+    return 0;
+  }
+  return result.text.split("\n").filter((line) => /^\s*(?:[-*•]|\d+[.)]|\[[ xX]\])\s+/.test(line)).length;
+}
+
+function diagramPromptForNote(note: Note) {
+  const content = stripDiagramMarkers(note.content).trim();
+  return [
+    note.title.trim() ? `Title: ${note.title.trim()}` : "",
+    note.tags.length ? `Tags: ${note.tags.join(", ")}` : "",
+    content ? `Content:\n${content}` : "",
+  ].filter(Boolean).join("\n\n");
 }
 
 function titleForAction(action: AIAction) {
