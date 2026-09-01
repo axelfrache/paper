@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { Bold, Code2, Italic, Link, Sparkles, Strikethrough, Underline, Wand2, X } from "lucide-react";
+import { Bold, BrainCircuit, Boxes, CalendarDays, Code2, FileText, GitBranch, Heading1, Heading2, Heading3, Image, Italic, Link, List, ListChecks, ListTodo, Minus, Quote, Sparkles, Strikethrough, TextCursorInput, Underline, Wand2, X } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import {
   createDefaultDiagram,
   parseDiagramMarker,
@@ -59,7 +60,7 @@ type SlashItem = {
   id: string;
   label: string;
   hint: string;
-  icon: string;
+  icon: LucideIcon;
   prefix?: string;
   wrap?: string;
   closeWrap?: string;
@@ -93,27 +94,27 @@ type DiagramDescribeTarget = {
 };
 
 const slashItems: SlashItem[] = [
-  { id: "h1", label: "Heading", hint: "Large section title", icon: "H", prefix: "# " },
-  { id: "h2", label: "Subheading", hint: "Medium title", icon: "H", prefix: "## " },
-  { id: "h3", label: "Small heading", hint: "Minor title", icon: "H", prefix: "### " },
-  { id: "task", label: "Task", hint: "Checkbox, feeds the Tasks view", icon: "☐", prefix: "- [ ] " },
-  { id: "bullet", label: "Bullet list", hint: "Plain list item", icon: "•", prefix: "- " },
-  { id: "quote", label: "Quote", hint: "Indented aside", icon: "❝", prefix: "> " },
-  { id: "code", label: "Code", hint: "Inline monospace", icon: "‹›", wrap: "`" },
-  { id: "bold", label: "Bold", hint: "Emphasis", icon: "B", wrap: "**" },
-  { id: "italic", label: "Italic", hint: "Emphasis", icon: "I", wrap: "*" },
-  { id: "strike", label: "Strikethrough", hint: "Crossed text", icon: "S", wrap: "~~" },
-  { id: "underline", label: "Underline", hint: "Underlined text", icon: "U", wrap: "<u>", closeWrap: "</u>" },
-  { id: "link", label: "Link", hint: "Hyperlink", icon: "↗", link: true },
-  { id: "image", label: "Image", hint: "Upload from your device", icon: "▧", image: true },
-  { id: "diagram-describe", label: "Describe diagram", hint: "AI generated diagram", icon: "✦", diagramDescribe: true },
-  { id: "diagram", label: "Flat diagram", hint: "2D schematic", icon: "◫", diagram: "flat" },
-  { id: "diagram-iso", label: "Isometric diagram", hint: "Projected schematic", icon: "◨", diagram: "iso" },
-  { id: "divider", label: "Divider", hint: "Horizontal rule", icon: "—", block: "---" },
-  { id: "date", label: "Today's date", hint: "Insert as text", icon: "◷", date: true },
-  { id: "ai-summary", label: "Summarize note", hint: "AI", icon: "≡", ai: "summarize" },
-  { id: "ai-tasks", label: "Extract tasks", hint: "AI", icon: "☑", ai: "extract_tasks" },
-  { id: "ai-title", label: "Suggest title", hint: "AI", icon: "✎", ai: "suggest_title" },
+  { id: "h1", label: "Heading", hint: "Large section title", icon: Heading1, prefix: "# " },
+  { id: "h2", label: "Subheading", hint: "Medium title", icon: Heading2, prefix: "## " },
+  { id: "h3", label: "Small heading", hint: "Minor title", icon: Heading3, prefix: "### " },
+  { id: "task", label: "Task", hint: "Checkbox, feeds the Tasks view", icon: ListTodo, prefix: "- [ ] " },
+  { id: "bullet", label: "Bullet list", hint: "Plain list item", icon: List, prefix: "- " },
+  { id: "quote", label: "Quote", hint: "Indented aside", icon: Quote, prefix: "> " },
+  { id: "code", label: "Code", hint: "Inline monospace", icon: Code2, wrap: "`" },
+  { id: "bold", label: "Bold", hint: "Emphasis", icon: Bold, wrap: "**" },
+  { id: "italic", label: "Italic", hint: "Emphasis", icon: Italic, wrap: "*" },
+  { id: "strike", label: "Strikethrough", hint: "Crossed text", icon: Strikethrough, wrap: "~~" },
+  { id: "underline", label: "Underline", hint: "Underlined text", icon: Underline, wrap: "<u>", closeWrap: "</u>" },
+  { id: "link", label: "Link", hint: "Hyperlink", icon: Link, link: true },
+  { id: "image", label: "Image", hint: "Upload from your device", icon: Image, image: true },
+  { id: "diagram", label: "Flat diagram", hint: "2D schematic", icon: GitBranch, diagram: "flat" },
+  { id: "diagram-iso", label: "Isometric diagram", hint: "Projected schematic", icon: Boxes, diagram: "iso" },
+  { id: "divider", label: "Divider", hint: "Horizontal rule", icon: Minus, block: "---" },
+  { id: "date", label: "Today's date", hint: "Insert as text", icon: CalendarDays, date: true },
+  { id: "diagram-describe", label: "Describe diagram", hint: "AI", icon: BrainCircuit, diagramDescribe: true },
+  { id: "ai-summary", label: "Summarize note", hint: "AI", icon: FileText, ai: "summarize" },
+  { id: "ai-tasks", label: "Extract tasks", hint: "AI", icon: ListChecks, ai: "extract_tasks" },
+  { id: "ai-title", label: "Suggest title", hint: "AI", icon: TextCursorInput, ai: "suggest_title" },
 ];
 
 export function MarkdownEditor({
@@ -682,7 +683,7 @@ export function MarkdownEditor({
                 }}
                 onMouseEnter={() => setSlash((current) => current ? { ...current, index } : current)}
               >
-                <span>{item.icon}</span>
+                <span><item.icon size={16} strokeWidth={1.8} /></span>
                 <strong>{item.label}</strong>
                 <small>{item.hint}</small>
               </button>
