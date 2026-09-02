@@ -389,9 +389,21 @@ export function screenToDiagramPoint(
   diagram: Diagram,
 ) {
   const rect = svg.getBoundingClientRect();
-  const viewBox = svg.getAttribute("viewBox")?.split(/\s+/).map(Number) ?? [0, 0, rect.width, rect.height];
-  const sx = viewBox[0] + ((event.clientX - rect.left) / rect.width) * viewBox[2];
-  const sy = viewBox[1] + ((event.clientY - rect.top) / rect.height) * viewBox[3];
+  const matrix = typeof svg.getScreenCTM === "function" && typeof svg.createSVGPoint === "function" ? svg.getScreenCTM() : null;
+  let sx: number;
+  let sy: number;
+  if (matrix) {
+    const point = svg.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const transformed = point.matrixTransform(matrix.inverse());
+    sx = transformed.x;
+    sy = transformed.y;
+  } else {
+    const viewBox = svg.getAttribute("viewBox")?.split(/\s+/).map(Number) ?? [0, 0, rect.width, rect.height];
+    sx = viewBox[0] + ((event.clientX - rect.left) / Math.max(1, rect.width)) * viewBox[2];
+    sy = viewBox[1] + ((event.clientY - rect.top) / Math.max(1, rect.height)) * viewBox[3];
+  }
   if (diagram.mode === "iso") {
     const [x, y] = unprojectIso(sx, sy);
     return { x, y };
