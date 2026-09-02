@@ -418,6 +418,27 @@ function nodeIconSvg(node: DiagramLayoutNode, mode: DiagramMode) {
   return `<image class="diagram-node-icon" href="${href}" x="${node.iconX}" y="${node.iconY}" width="${node.iconSize}" height="${node.iconSize}" preserveAspectRatio="xMidYMid meet"/>`;
 }
 
+/**
+ * Diagram coordinates to the coordinates the SVG is drawn in, and back. The isometric
+ * projection is linear, so both also convert deltas, which is what lets a drag be snapped
+ * in the space the user sees and then applied to the model.
+ */
+export function diagramToLayoutPoint(mode: DiagramMode, x: number, y: number) {
+  if (mode !== "iso") {
+    return { x, y };
+  }
+  const [sx, sy] = projectIso(x, y);
+  return { x: sx, y: sy };
+}
+
+export function layoutToDiagramPoint(mode: DiagramMode, x: number, y: number) {
+  if (mode !== "iso") {
+    return { x, y };
+  }
+  const [dx, dy] = unprojectIso(x, y);
+  return { x: dx, y: dy };
+}
+
 export function screenToDiagramPoint(
   event: { clientX: number; clientY: number },
   svg: SVGSVGElement,

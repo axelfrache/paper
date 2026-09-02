@@ -7,11 +7,15 @@ import {
   diagramIconForKind,
   diagramKinds,
   diagramPalette,
+  diagramToLayoutPoint,
   duplicateDiagramNode,
+  layoutToDiagramPoint,
   edgeLabelHalo,
   layoutDiagram,
   screenToDiagramPoint,
 } from "../lib/diagram";
+import { guidesAt, snapToGuides, stepWithMagnet } from "../lib/diagramGuides";
+import type { AlignmentGuide, GuideBox, SpacingHint } from "../lib/diagramGuides";
 import { generateAI } from "../lib/api";
 import { addGeneratedDiagram, buildDiagramAdditionPrompt } from "../lib/diagramAi";
 import { diagramIconCatalog, diagramIconHref } from "../lib/diagramIcons";
@@ -125,6 +129,9 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [guides, setGuides] = useState<AlignmentGuide[]>([]);
+  const [spacing, setSpacing] = useState<SpacingHint[]>([]);
+  const nudgeCommitRef = useRef<number | null>(null);
   const [elementMenuOpen, setElementMenuOpen] = useState(false);
   const [elementMenuRendered, setElementMenuRendered] = useState(false);
   const [pendingFromId, setPendingFromId] = useState<string | null>(null);
@@ -212,12 +219,80 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "v" && clipboardRef.current && !isTypingTarget(event.target)) {
         event.preventDefault();
         pasteClipboard();
+        return;
+      }
+      const nudge = nudgeVectors[event.key];
+      if (nudge && selectedIds.length && !event.metaKey && !event.ctrlKey && !isTypingTarget(event.target)) {
+        event.preventDefault();
+        // One screen pixel, ten with Shift — the step the eye expects, whatever the zoom.
+        const step = screenUnits(svgRef.current, event.shiftKey ? 10 : 1);
+        nudgeSelection(nudge.x * step, nudge.y * step);
       }
     };
 
     window.addEventListener("keydown", onKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
   }, [editingId, onClose, selectedIds, selectedEdgeId]);
+
+  useEffect(() => {
+    return () => {
+      if (nudgeCommitRef.current) {
+        window.clearTimeout(nudgeCommitRef.current);
+      }
+    };
+  }, []);
+
+  /**
+   * Moves the selection by a screen-space step, so an arrow key goes where it points in
+   * both modes — in isometric that is a diagonal in the model. Holding a key repeats, so
+   * the move is committed once the burst stops rather than on every repeat.
+   */
+  const nudgeSelection = (screenX: number, screenY: number) => {
+    const svg = svgRef.current;
+    const startLayout = layoutDiagram(diagramRef.current);
+    const toBox = (node: { id: string; hx: number; hy: number; hw: number; hh: number }): GuideBox => ({
+      id: node.id,
+      x: node.hx,
+      y: node.hy,
+      w: node.hw,
+      h: node.hh,
+    });
+    const movingBoxes = startLayout.nodes.filter((node) => selectedIds.includes(node.id)).map(toBox);
+    const staticBoxes = startLayout.nodes.filter((node) => !selectedIds.includes(node.id)).map(toBox);
+    // A tighter pull than dragging: a magnet as wide as the drag's would take several
+    // presses to escape, which reads as the selection being stuck.
+    const snapped = svg
+      ? snapToGuides(movingBoxes, staticBoxes, screenX, screenY, screenUnits(svg, 3))
+      : { dx: screenX, dy: screenY, guides: [], spacing: [] };
+
+    const stepX = stepWithMagnet(screenX, snapped.dx);
+    const stepY = stepWithMagnet(screenY, snapped.dy);
+    const held = stepX === snapped.dx && stepY === snapped.dy;
+
+    setGuides(guidesAt(movingBoxes, staticBoxes, stepX, stepY));
+    setSpacing(held ? snapped.spacing : []);
+
+    const delta = layoutToDiagramPoint(diagramRef.current.mode, stepX, stepY);
+    const round = (value: number) => Math.round(value * 100) / 100;
+    patchDiagram(
+      (current) => ({
+        ...current,
+        nodes: current.nodes.map((node) =>
+          selectedIds.includes(node.id) ? { ...node, x: round(node.x + delta.x), y: round(node.y + delta.y) } : node,
+        ),
+      }),
+      { commit: false },
+    );
+    if (nudgeCommitRef.current) {
+      window.clearTimeout(nudgeCommitRef.current);
+    }
+    nudgeCommitRef.current = window.setTimeout(() => {
+      nudgeCommitRef.current = null;
+      setGuides([]);
+      setSpacing([]);
+      commitDiagram();
+    }, 400);
+  };
 
   const patchDiagram = (updater: (current: Diagram) => Diagram, options?: { commit?: boolean }) => {
     const next = updater(diagramRef.current);
@@ -321,6 +396,18 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
 
     const start = screenToDiagramPoint(event, svg, diagramRef.current);
     const startPositions = new Map(movingNodes.map((node) => [node.id, { x: node.x, y: node.y }]));
+    // Boxes are taken from the layout, so snapping happens in the space that is drawn:
+    // in isometric mode that is the projected shape, which is what the user is aiming at.
+    const startLayout = layoutDiagram(diagramRef.current);
+    const toBox = (node: { id: string; hx: number; hy: number; hw: number; hh: number }): GuideBox => ({
+      id: node.id,
+      x: node.hx,
+      y: node.hy,
+      w: node.hw,
+      h: node.hh,
+    });
+    const movingBoxes = startLayout.nodes.filter((node) => startPositions.has(node.id)).map(toBox);
+    const staticBoxes = startLayout.nodes.filter((node) => !startPositions.has(node.id)).map(toBox);
 
     const move = (moveEvent: PointerEvent) => {
       const currentSvg = svgRef.current;
@@ -328,8 +415,16 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
         return;
       }
       const point = screenToDiagramPoint(moveEvent, currentSvg, diagramRef.current);
-      const dx = Math.round(point.x - start.x);
-      const dy = Math.round(point.y - start.y);
+      const raw = diagramToLayoutPoint(diagramRef.current.mode, point.x - start.x, point.y - start.y);
+      // Alt drags freely, so alignment stays an aid rather than a constraint.
+      const snapped = moveEvent.altKey
+        ? { dx: raw.x, dy: raw.y, guides: [], spacing: [] }
+        : snapToGuides(movingBoxes, staticBoxes, raw.x, raw.y, snapThreshold(currentSvg));
+      const model = layoutToDiagramPoint(diagramRef.current.mode, snapped.dx, snapped.dy);
+      const dx = Math.round(model.x);
+      const dy = Math.round(model.y);
+      setGuides(snapped.guides);
+      setSpacing(snapped.spacing);
       patchDiagram(
         (current) => ({
           ...current,
@@ -344,6 +439,8 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      setGuides([]);
+      setSpacing([]);
       commitDiagram();
     };
 
@@ -1033,6 +1130,52 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
             </g>
           ))}
 
+          {/* Guides and measurements are already in the space the SVG is drawn in. */}
+          {guides.map((guide, index) => (
+            <line
+              key={`${guide.axis}-${guide.at}-${index}`}
+              className="diagram-guide"
+              x1={guide.axis === "x" ? guide.at : guide.from}
+              y1={guide.axis === "x" ? guide.from : guide.at}
+              x2={guide.axis === "x" ? guide.at : guide.to}
+              y2={guide.axis === "x" ? guide.to : guide.at}
+            />
+          ))}
+
+          {spacing.flatMap((hint) =>
+            hint.segments.map((segment, index) => {
+              const horizontal = hint.axis === "x";
+              const a = horizontal ? { x: segment.start, y: segment.at } : { x: segment.at, y: segment.start };
+              const b = horizontal ? { x: segment.end, y: segment.at } : { x: segment.at, y: segment.end };
+              const tick = 4;
+              return (
+                <g key={`${hint.axis}-${index}`} className="diagram-spacing">
+                  <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
+                  <line
+                    x1={horizontal ? a.x : a.x - tick}
+                    y1={horizontal ? a.y - tick : a.y}
+                    x2={horizontal ? a.x : a.x + tick}
+                    y2={horizontal ? a.y + tick : a.y}
+                  />
+                  <line
+                    x1={horizontal ? b.x : b.x - tick}
+                    y1={horizontal ? b.y - tick : b.y}
+                    x2={horizontal ? b.x : b.x + tick}
+                    y2={horizontal ? b.y + tick : b.y}
+                  />
+                  <text
+                    x={(a.x + b.x) / 2}
+                    y={horizontal ? a.y - 7 : (a.y + b.y) / 2}
+                    textAnchor="middle"
+                    dominantBaseline={horizontal ? "auto" : "central"}
+                  >
+                    {Math.round(hint.gap)}
+                  </text>
+                </g>
+              );
+            }),
+          )}
+
           {groupSelectionBox ? (
             <rect
               className="diagram-group-selection"
@@ -1523,6 +1666,32 @@ function withCenteredNodeSize(node: DiagramNode, nextSize: { w: number; h: numbe
     w: nextSize.w,
     h: nextSize.h,
   };
+}
+
+/**
+ * Distances have to feel the same at every zoom level, so they are expressed in screen
+ * pixels and converted through the current viewBox scale. A keyboard step measured in
+ * diagram units instead would shrink below a pixel when zoomed out, leaving the selection
+ * apparently frozen inside the magnet's reach.
+ */
+const nudgeVectors: Record<string, { x: number; y: number }> = {
+  ArrowLeft: { x: -1, y: 0 },
+  ArrowRight: { x: 1, y: 0 },
+  ArrowUp: { x: 0, y: -1 },
+  ArrowDown: { x: 0, y: 1 },
+};
+
+function screenUnits(svg: SVGSVGElement | null, pixels: number) {
+  const rect = svg?.getBoundingClientRect();
+  const viewBoxWidth = Number(svg?.getAttribute("viewBox")?.split(/\s+/)[2]);
+  if (!rect?.width || !Number.isFinite(viewBoxWidth) || viewBoxWidth <= 0) {
+    return pixels;
+  }
+  return (pixels * viewBoxWidth) / rect.width;
+}
+
+function snapThreshold(svg: SVGSVGElement) {
+  return screenUnits(svg, 6);
 }
 
 function sizeForNode(node: { kind: DiagramKind; w?: number; h?: number }) {

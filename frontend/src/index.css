@@ -1529,6 +1529,34 @@ kbd,
   overscroll-behavior: none;
 }
 
+/* Alignment guide shown while dragging a node past another one. */
+.diagram-guide {
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Distance between the dragged node and its neighbours, once the gaps are equal. */
+.diagram-spacing line {
+  stroke: var(--accent);
+  stroke-width: 1;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.diagram-spacing text {
+  fill: var(--accent);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 4;
+  stroke-linejoin: round;
+  pointer-events: none;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
 /* Halo under an edge label, so the label reads as a break in the line. The stroke has to
    match whatever the diagram is drawn on, which differs between the two surfaces. */
 .diagram-edge-label {
