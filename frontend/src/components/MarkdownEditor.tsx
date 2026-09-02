@@ -92,8 +92,16 @@ type SlashState = {
 
 type SelectionToolbarState = {
   range: TextRange;
+  // Selection box relative to the editor wrap; the toolbar is fitted around it once measured.
+  anchorTop: number;
+  anchorBottom: number;
+  anchorCenter: number;
+};
+
+type SelectionToolbarPlacement = {
   top: number;
   left: number;
+  below: boolean;
 };
 
 type SelectionToolbarAction = "bold" | "italic" | "code" | "strike" | "underline" | "link";
@@ -101,6 +109,8 @@ type SelectionToolbarAction = "bold" | "italic" | "code" | "strike" | "underline
 type DiagramDescribeTarget = {
   line: number;
 };
+
+const selectionToolbarGap = 8;
 
 const slashItems: SlashItem[] = [
   { id: "h1", label: "Heading", hint: "Large section title", icon: Heading1, prefix: "# " },
@@ -149,12 +159,14 @@ export function MarkdownEditor({
   const pendingImageCaretRef = useRef<Caret | null>(null);
   const skipResourceCaretSyncRef = useRef(false);
   const dropIndicatorRef = useRef<HTMLDivElement | null>(null);
+  const selectionToolbarRef = useRef<HTMLDivElement | null>(null);
   const activeLineRef = useRef(-1);
   const handledFocusRequestRef = useRef("");
   const handledDiagramDescribeRequestRef = useRef("");
   const valueRef = useRef(value);
   const [slash, setSlash] = useState<SlashState | null>(null);
   const [selectionToolbar, setSelectionToolbar] = useState<SelectionToolbarState | null>(null);
+  const [selectionToolbarPlacement, setSelectionToolbarPlacement] = useState<SelectionToolbarPlacement | null>(null);
   const [selectedResourceLine, setSelectedResourceLine] = useState<number | null>(null);
   const [diagramDescribeOpen, setDiagramDescribeOpen] = useState(false);
   const [diagramDescribeTarget, setDiagramDescribeTarget] = useState<DiagramDescribeTarget | null>(null);
@@ -205,6 +217,34 @@ export function MarkdownEditor({
       probeSlash(target.value, caret);
     });
   }, [focusRequest, value]);
+
+  useLayoutEffect(() => {
+    const toolbar = selectionToolbarRef.current;
+    const wrap = wrapRef.current;
+    if (!selectionToolbar || !toolbar || !wrap) {
+      setSelectionToolbarPlacement(null);
+      return;
+    }
+
+    const gap = selectionToolbarGap;
+    const height = toolbar.offsetHeight;
+    const halfWidth = toolbar.offsetWidth / 2;
+    const wrapRect = wrap.getBoundingClientRect();
+    const scrollRect = scrollParent(wrap)?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight };
+    const below = wrapRect.top + selectionToolbar.anchorTop - scrollRect.top < height + gap;
+    // The toolbar is translated up by its own height, so `top` is always its bottom edge.
+    const top = below ? selectionToolbar.anchorBottom + gap + height : selectionToolbar.anchorTop - gap;
+    const left = Math.min(
+      Math.max(selectionToolbar.anchorCenter, halfWidth + gap),
+      Math.max(halfWidth + gap, wrapRect.width - halfWidth - gap),
+    );
+
+    setSelectionToolbarPlacement((current) =>
+      current && current.top === top && current.left === left && current.below === below
+        ? current
+        : { top, left, below },
+    );
+  }, [selectionToolbar]);
 
   useLayoutEffect(() => {
     const body = slashBodyRef.current;
@@ -829,7 +869,14 @@ export function MarkdownEditor({
         </div>
       ) : null}
       {selectionToolbar ? (
-        <div className="selection-toolbar" style={{ top: selectionToolbar.top, left: selectionToolbar.left }}>
+        <div
+          ref={selectionToolbarRef}
+          className={selectionToolbarPlacement?.below ? "selection-toolbar is-below" : "selection-toolbar"}
+          style={{
+            top: selectionToolbarPlacement?.top ?? selectionToolbar.anchorTop - selectionToolbarGap,
+            left: selectionToolbarPlacement?.left ?? selectionToolbar.anchorCenter,
+          }}
+        >
           <button type="button" aria-label="Bold" title="Bold" onMouseDown={(event) => runSelectionToolbarAction(event, "bold")}>
             <Bold size={15} strokeWidth={2.1} />
           </button>
@@ -942,9 +989,12 @@ export function MarkdownEditor({
       rect = editor.querySelector(`[data-line="${range.end.line}"]`)?.getBoundingClientRect() ?? rect;
     }
     const wrapRect = wrap.getBoundingClientRect();
-    const left = Math.max(54, Math.min(rect.left + rect.width / 2 - wrapRect.left, wrapRect.width - 54));
-    const top = Math.max(8, rect.top - wrapRect.top - 8);
-    setSelectionToolbar({ range, top, left });
+    setSelectionToolbar({
+      range,
+      anchorTop: rect.top - wrapRect.top,
+      anchorBottom: rect.bottom - wrapRect.top,
+      anchorCenter: rect.left + rect.width / 2 - wrapRect.left,
+    });
   }
 
   function probeSlash(source: string, caret: Caret | null) {

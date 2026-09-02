@@ -57,6 +57,13 @@ function valueFrom(host: Element) {
   return host.querySelector("[data-value]")?.textContent ?? "";
 }
 
+/** Selects a range and lets the editor place its floating toolbar. */
+function showSelectionToolbar(editor: HTMLDivElement, start: number, end: number) {
+  editor.focus();
+  placeSelection(editor, { start: { line: 0, col: start }, end: { line: 0, col: end } });
+  editor.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+}
+
 /** Presses and releases on a resource block, the way a click selects it. */
 function selectResourceBlock(editor: Element, line: number) {
   editor
@@ -801,5 +808,80 @@ describe("MarkdownEditor integration", () => {
     expect(host.querySelector(".markdown-editor-drop-indicator")).toBeNull();
     expect(valueFrom(host)).toBe(`Before\nAfter\n${marker}`);
     expect(selectedResourceLine(editorFrom(host))).toBe(2);
+  });
+
+  it("keeps the selection toolbar above the selection when there is room", () => {
+    const host = mount("Make Paper bold");
+    const editor = editorFrom(host);
+    const wrap = host.querySelector<HTMLElement>(".markdown-editor-wrap");
+    if (!wrap) {
+      throw new Error("Missing editor wrap");
+    }
+    vi.spyOn(wrap, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 600, 400));
+    vi.spyOn(Range.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(100, 200, 60, 20));
+
+    act(() => {
+      showSelectionToolbar(editor, 5, 10);
+    });
+
+    const toolbar = host.querySelector<HTMLElement>(".selection-toolbar");
+    expect(toolbar?.classList.contains("is-below")).toBe(false);
+    expect(toolbar?.style.top).toBe("192px");
+    expect(toolbar?.style.left).toBe("130px");
+  });
+
+  it("flips the selection toolbar below the selection when it would overflow the top", () => {
+    const host = mount("Make Paper bold");
+    const editor = editorFrom(host);
+    const wrap = host.querySelector<HTMLElement>(".markdown-editor-wrap");
+    if (!wrap) {
+      throw new Error("Missing editor wrap");
+    }
+    vi.spyOn(wrap, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 600, 400));
+    vi.spyOn(Range.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(100, 4, 60, 20));
+
+    act(() => {
+      showSelectionToolbar(editor, 5, 10);
+    });
+
+    const toolbar = host.querySelector<HTMLElement>(".selection-toolbar");
+    if (!toolbar) {
+      throw new Error("Missing selection toolbar");
+    }
+    expect(toolbar.classList.contains("is-below")).toBe(true);
+
+    // jsdom reports a zero-sized toolbar, so pin the real arithmetic with a measured height.
+    Object.defineProperty(toolbar, "offsetHeight", { configurable: true, value: 44 });
+    act(() => {
+      editor.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+    });
+
+    expect(toolbar.style.top).toBe("76px");
+  });
+
+  it("keeps the selection toolbar inside the editor near an edge", () => {
+    const host = mount("Make Paper bold");
+    const editor = editorFrom(host);
+    const wrap = host.querySelector<HTMLElement>(".markdown-editor-wrap");
+    if (!wrap) {
+      throw new Error("Missing editor wrap");
+    }
+    vi.spyOn(wrap, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 600, 400));
+    vi.spyOn(Range.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 200, 4, 20));
+
+    act(() => {
+      showSelectionToolbar(editor, 5, 10);
+    });
+
+    const toolbar = host.querySelector<HTMLElement>(".selection-toolbar");
+    if (!toolbar) {
+      throw new Error("Missing selection toolbar");
+    }
+    Object.defineProperty(toolbar, "offsetWidth", { configurable: true, value: 240 });
+    act(() => {
+      editor.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+    });
+
+    expect(toolbar.style.left).toBe("128px");
   });
 });

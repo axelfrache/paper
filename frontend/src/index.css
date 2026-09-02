@@ -1277,7 +1277,35 @@ kbd,
   box-shadow: var(--shadow);
   padding: 5px;
   transform: translate(-50%, -100%);
-  animation: slide-up 0.13s ease both;
+  /* Keyframes must carry the offset transform: with fill-mode both, `transform: none`
+     from a shared animation would win over the declaration above, forever. */
+  animation: selection-toolbar-in 0.13s ease both;
+}
+
+.selection-toolbar.is-below {
+  animation-name: selection-toolbar-in-below;
+}
+
+@keyframes selection-toolbar-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-100% + 6px));
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -100%);
+  }
+}
+
+@keyframes selection-toolbar-in-below {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-100% - 6px));
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -100%);
+  }
 }
 
 .selection-toolbar button {
