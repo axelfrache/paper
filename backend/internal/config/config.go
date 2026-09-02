@@ -2,7 +2,9 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -12,6 +14,7 @@ type Config struct {
 	AIBaseURL      string
 	AIAPIKey       string
 	AIModel        string
+	AITimeout      time.Duration
 	S3Endpoint     string
 	S3AccessKey    string
 	S3SecretKey    string
@@ -29,6 +32,7 @@ func Load() Config {
 		AIBaseURL:      defaultBaseURL(provider),
 		AIAPIKey:       getEnv("AI_API_KEY", os.Getenv("AI_GATEWAY_API_KEY")),
 		AIModel:        getEnv("AI_MODEL", getEnv("AI_GATEWAY_MODEL", defaultModel(provider))),
+		AITimeout:      getDuration("AI_TIMEOUT_SECONDS", 120*time.Second),
 		S3Endpoint:     getEnv("S3_ENDPOINT", "http://localhost:3902"),
 		S3AccessKey:    getEnv("S3_ACCESS_KEY", getEnv("GARAGE_ACCESS_KEY_ID", "GK31c2f27ecc0e4d0c1928e5fa")),
 		S3SecretKey:    getEnv("S3_SECRET_KEY", getEnv("GARAGE_SECRET_ACCESS_KEY", "7d37e5a2f7c18b4e9d5f6a2c3b4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e")),
@@ -47,6 +51,15 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// getDuration reads a whole number of seconds, falling back when unset or unusable.
+func getDuration(key string, fallback time.Duration) time.Duration {
+	seconds, err := strconv.Atoi(getEnv(key, ""))
+	if err != nil || seconds <= 0 {
+		return fallback
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 func defaultBaseURL(provider string) string {

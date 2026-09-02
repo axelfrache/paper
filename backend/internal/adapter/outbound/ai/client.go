@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -17,7 +19,12 @@ type Config struct {
 	BaseURL  string
 	APIKey   string
 	Model    string
+	Timeout  time.Duration
 }
+
+// DefaultTimeout has to cover a gateway that walks a model fallback chain, where the
+// total is a multiple of any single model's own timeout.
+const DefaultTimeout = 120 * time.Second
 
 type Client struct {
 	provider string
@@ -33,12 +40,17 @@ func New(cfg Config) *Client {
 		provider = "ai-gateway"
 	}
 
+	timeout := cfg.Timeout
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
+
 	return &Client{
 		provider: provider,
 		baseURL:  strings.TrimRight(cfg.BaseURL, "/"),
 		apiKey:   strings.TrimSpace(cfg.APIKey),
 		model:    strings.TrimSpace(cfg.Model),
-		http:     &http.Client{Timeout: 60 * time.Second},
+		http:     &http.Client{Timeout: timeout},
 	}
 }
 
@@ -174,6 +186,10 @@ func (c *Client) postJSON(ctx context.Context, url string, payload any, auth boo
 
 	resp, err := c.http.Do(req)
 	if err != nil {
+		// A slow provider is not an unreachable one; saying so sends debugging the wrong way.
+		if errors.Is(err, context.DeadlineExceeded) || os.IsTimeout(err) {
+			return nil, domain.NewAIError(http.StatusGatewayTimeout, "The AI service took too long to respond.")
+		}
 		return nil, domain.NewAIError(http.StatusBadGateway, "The AI service is currently unreachable.")
 	}
 	defer resp.Body.Close()

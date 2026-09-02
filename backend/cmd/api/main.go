@@ -39,6 +39,7 @@ func main() {
 		BaseURL:  cfg.AIBaseURL,
 		APIKey:   cfg.AIAPIKey,
 		Model:    cfg.AIModel,
+		Timeout:  cfg.AITimeout,
 	})
 	noteService := service.NewNote(notes, assistant)
 	imageStorage, err := s3adapter.New(startupCtx, s3adapter.Config{
@@ -54,7 +55,7 @@ func main() {
 	imageService := service.NewImage(notes, imageStorage)
 
 	router := httpadapter.NewRouter(noteService, imageService, cfg.AllowedOrigins)
-	server := httpadapter.NewServer(cfg.Addr(), router)
+	server := httpadapter.NewServer(cfg.Addr(), router, cfg.AITimeout+30*time.Second)
 
 	go func() {
 		log.Printf("Paper API listening on %s", cfg.Addr())

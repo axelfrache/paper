@@ -29,13 +29,18 @@ func NewRouter(notes port.NoteService, images port.NoteImageService, allowedOrig
 	return cors(allowedOrigins)(mux)
 }
 
-func NewServer(addr string, handler stdhttp.Handler) *stdhttp.Server {
+// NewServer builds the API server. writeTimeout must stay above the AI client's own
+// timeout, otherwise the server cuts the response before the provider ever answers.
+func NewServer(addr string, handler stdhttp.Handler, writeTimeout time.Duration) *stdhttp.Server {
+	if writeTimeout <= 0 {
+		writeTimeout = 90 * time.Second
+	}
 	return &stdhttp.Server{
 		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      90 * time.Second,
+		WriteTimeout:      writeTimeout,
 		IdleTimeout:       60 * time.Second,
 	}
 }
