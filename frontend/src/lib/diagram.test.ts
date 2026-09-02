@@ -300,7 +300,7 @@ describe("edge labels", () => {
 
   it("renders the label with a halo sized on the stroke so it cuts the line", () => {
     const svg = diagramToSvgMarkup(build("straight", "pulls"));
-    expect(svg).toContain(">pulls</text>");
+    expect(svg).toContain(">pulls</tspan>");
     // The halo colours live in CSS; only its width depends on the edge.
     expect(svg).toContain('class="diagram-edge-label"');
     expect(svg).toContain(`stroke-width="${edgeLabelHalo(layoutDiagram(build("straight", "pulls")).edges[0].width)}"`);

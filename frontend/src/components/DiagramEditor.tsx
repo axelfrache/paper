@@ -11,6 +11,8 @@ import {
   duplicateDiagramNode,
   layoutToDiagramPoint,
   edgeLabelHalo,
+  edgeLabelPlate,
+  labelLines,
   layoutDiagram,
   screenToDiagramPoint,
 } from "../lib/diagram";
@@ -117,7 +119,7 @@ const defaultViewport: EditorViewport = { x: -120, y: -120, width: 1040, height:
 export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const aiDialogRef = useRef<HTMLDialogElement | null>(null);
-  const labelInputRef = useRef<HTMLInputElement | null>(null);
+  const labelInputRef = useRef<HTMLTextAreaElement | null>(null);
   const diagramRef = useRef(diagram);
   const clipboardRef = useRef<DiagramClipboard | null>(null);
   const layoutRef = useRef(layoutDiagram(diagram));
@@ -638,6 +640,22 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
   // space typed between two words would be swallowed as it is entered.
   const edgeLabelSource = (edgeId: string) => liveDiagram.edges.find((edge) => edge.id === edgeId)?.label ?? "";
 
+  /** Same contract in the inspector, where blur is what usually commits. */
+  const commitOnPlainEnter = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      event.currentTarget.blur();
+    }
+  };
+
+  /** Enter commits, Shift+Enter breaks the line — the textarea inserts it itself. */
+  const handleLabelKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Escape" || (event.key === "Enter" && !event.shiftKey)) {
+      event.preventDefault();
+      stopInlineLabelEdit();
+    }
+  };
+
   const setEdgeLabel = (edgeId: string, label: string) => {
     patchDiagram(
       (current) => ({
@@ -1008,36 +1026,42 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
                 markerEnd={edge.markerEnd ? edge.markerEnd.replace("#diagram-arrow-", "#diagram-editor-arrow-") : undefined}
               />
               {editingId === edge.id ? (
-                <foreignObject x={edge.labelX - inlineEdgeLabelWidth / 2} y={edge.labelY - 13} width={inlineEdgeLabelWidth} height="26">
-                  <input
+                <foreignObject
+                  x={edge.labelX - inlineEdgeLabelWidth / 2}
+                  y={edge.labelY - inlineLabelHeight(edgeLabelSource(edge.id)) / 2}
+                  width={inlineEdgeLabelWidth}
+                  height={inlineLabelHeight(edgeLabelSource(edge.id))}
+                >
+                  <textarea
                     ref={labelInputRef}
                     className="diagram-inline-label-input"
                     placeholder="Label"
+                    rows={labelRowCount(edgeLabelSource(edge.id))}
                     value={edgeLabelSource(edge.id)}
                     onChange={(event) => setEdgeLabel(edge.id, event.target.value)}
                     onBlur={stopInlineLabelEdit}
                     onPointerDown={(event) => {
                       event.stopPropagation();
                     }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === "Escape") {
-                        event.preventDefault();
-                        stopInlineLabelEdit();
-                      }
-                    }}
+                    onKeyDown={handleLabelKeyDown}
                   />
                 </foreignObject>
               ) : edge.label ? (
-                <text
+                <>
+                  <EdgeLabelPlate label={edge.label} x={edge.labelX} y={edge.labelY} />
+                  <text
                   className="diagram-edge-label"
-                  x={edge.labelX}
-                  y={edge.labelY}
                   textAnchor="middle"
                   dominantBaseline="central"
                   strokeWidth={edgeLabelHalo(edge.width)}
                 >
-                  {edge.label}
-                </text>
+                    {labelLines(edge.label, edge.labelX, edge.labelY, 13, true).map((line, index) => (
+                      <tspan key={index} x={line.x} y={line.y}>
+                        {line.text}
+                      </tspan>
+                    ))}
+                  </text>
+                </>
               ) : null}
             </g>
           ))}
@@ -1069,26 +1093,23 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
               ) : null}
               {node.icon ? <DiagramNodeIcon node={node} mode={liveDiagram.mode} /> : null}
               {editingId === node.id ? (
-                <foreignObject x={node.cx - inlineLabelWidth(node.hw) / 2} y={node.labelY - 16} width={inlineLabelWidth(node.hw)} height="26">
-                  <input
+                <foreignObject
+                  x={node.cx - inlineLabelWidth(node.hw) / 2}
+                  y={node.labelY - 16}
+                  width={inlineLabelWidth(node.hw)}
+                  height={inlineLabelHeight(node.label)}
+                >
+                  <textarea
                     ref={labelInputRef}
                     className="diagram-inline-label-input"
+                    rows={labelRowCount(node.label)}
                     value={node.label}
                     onChange={(event) => setNodeLabel(node.id, event.target.value)}
                     onBlur={stopInlineLabelEdit}
                     onPointerDown={(event) => {
                       event.stopPropagation();
                     }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        stopInlineLabelEdit();
-                      }
-                      if (event.key === "Escape") {
-                        event.preventDefault();
-                        stopInlineLabelEdit();
-                      }
-                    }}
+                    onKeyDown={handleLabelKeyDown}
                   />
                 </foreignObject>
               ) : (
@@ -1277,11 +1298,14 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
           <aside className="diagram-inspector">
             <strong>Selected</strong>
             <div className="diagram-inspector-meta">{diagramKinds[selectedNode.kind].label}</div>
-            <input
+            <textarea
+              className="diagram-inspector-label"
               value={selectedNode.label}
               aria-label="Node label"
+              rows={labelRowCount(selectedNode.label)}
               onChange={(event) => setNodeLabel(selectedNode.id, event.target.value)}
               onBlur={commitDiagram}
+              onKeyDown={commitOnPlainEnter}
             />
             <div className="diagram-inspector-style">
               <span>Color</span>
@@ -1402,12 +1426,15 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
           <aside className="diagram-inspector">
             <strong>Selected</strong>
             <div className="diagram-inspector-meta">Connection</div>
-            <input
+            <textarea
+              className="diagram-inspector-label"
               value={selectedEdge.label ?? ""}
               aria-label="Connection label"
               placeholder="Label"
+              rows={labelRowCount(selectedEdge.label ?? "")}
               onChange={(event) => patchSelectedEdge({ label: event.target.value })}
               onBlur={commitDiagram}
+              onKeyDown={commitOnPlainEnter}
             />
             <div className="diagram-inspector-style">
               <span>Color</span>
@@ -1641,7 +1668,22 @@ function boundsForLayoutNodes(nodes: Array<{ hx: number; hy: number; hw: number;
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
+/** Mirrors what the rendered preview paints, so the canvas and the note agree. */
+function EdgeLabelPlate({ label, x, y }: { label: string; x: number; y: number }) {
+  const plate = edgeLabelPlate(label, x, y);
+  return plate ? <rect className="diagram-edge-label-plate" {...plate} /> : null;
+}
+
 const inlineEdgeLabelWidth = 132;
+
+function labelRowCount(label: string) {
+  return Math.min(6, Math.max(1, label.split("\n").length));
+}
+
+/** The editor grows with the text so a wrapped label is never typed into a slit. */
+function inlineLabelHeight(label: string) {
+  return 8 + labelRowCount(label) * 18;
+}
 
 function inlineLabelWidth(nodeWidth: number) {
   return Math.max(56, Math.min(140, nodeWidth - 28));

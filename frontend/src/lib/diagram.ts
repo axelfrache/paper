@@ -358,7 +358,8 @@ export function diagramToSvgMarkup(diagram: Diagram, maxHeight = 340) {
       const labelSize = node.bare ? "11.5" : "13";
       const labelWeight = node.bare ? "500" : "530";
       const labelFill = node.bare ? "var(--muted-strong)" : "var(--text)";
-      return `${faces}${cap}${icon}<text x="${node.cx}" y="${node.labelY}" text-anchor="middle" font-size="${labelSize}" font-weight="${labelWeight}" fill="${labelFill}">${escapeHtml(node.label)}</text>`;
+      const labelBody = labelTspans(node.label, node.cx, node.labelY, Number(labelSize) * 1.25);
+      return `${faces}${cap}${icon}<text text-anchor="middle" font-size="${labelSize}" font-weight="${labelWeight}" fill="${labelFill}">${labelBody}</text>`;
     }),
   ].join("");
 
@@ -370,6 +371,50 @@ export function diagramToSvgMarkup(diagram: Diagram, maxHeight = 340) {
  * is still cut cleanly; the colours live in CSS, since the backdrop differs between the
  * editor canvas and a rendered diagram card.
  */
+/**
+ * Splits a label into the lines an SVG <text> must draw as separate <tspan>s, since SVG
+ * ignores newlines. Each line repeats `x` so it stays centred under `text-anchor`.
+ * `centred` balances the block around `y` instead of growing downward from it.
+ */
+export function labelLines(text: string, x: number, y: number, lineHeight: number, centred = false) {
+  const lines = text.split("\n");
+  const offset = centred ? -((lines.length - 1) * lineHeight) / 2 : 0;
+  return lines.map((line, index) => ({
+    text: line,
+    x,
+    y: Math.round((y + offset + index * lineHeight) * 10) / 10,
+  }));
+}
+
+function labelTspans(text: string, x: number, y: number, lineHeight: number, centred = false) {
+  return labelLines(text, x, y, lineHeight, centred)
+    .map((line) => `<tspan x="${line.x}" y="${line.y}">${escapeHtml(line.text)}</tspan>`)
+    .join("");
+}
+
+/**
+ * The plate to paint behind an edge label.
+ *
+ * The halo alone is stroked around each glyph, so it follows the letter outlines: on a
+ * thick edge it leaves ragged stubs poking into the text, and on several lines it misses
+ * the gap between them entirely. A plain rectangle cuts the line once, cleanly.
+ * Width is estimated from the character count, as node labels already do.
+ */
+export function edgeLabelPlate(label: string, x: number, y: number, fontSize = 11, lineHeight = 13) {
+  const lines = label.split("\n");
+  if (!label.trim()) {
+    return null;
+  }
+  const width = Math.max(...lines.map((line) => line.length)) * fontSize * 0.52 + 10;
+  const height = (lines.length - 1) * lineHeight + fontSize + 6;
+  return {
+    x: Math.round((x - width / 2) * 10) / 10,
+    y: Math.round((y - height / 2) * 10) / 10,
+    width: Math.round(width * 10) / 10,
+    height: Math.round(height * 10) / 10,
+  };
+}
+
 export function edgeLabelHalo(strokeWidth: number) {
   return Math.round((strokeWidth + 4.5) * 10) / 10;
 }
@@ -384,7 +429,12 @@ function edgeLabelSvg(edge: DiagramLayoutEdge) {
   if (!edge.label) {
     return "";
   }
-  return `<text class="diagram-edge-label" x="${edge.labelX}" y="${edge.labelY}" text-anchor="middle" dominant-baseline="central" stroke-width="${edgeLabelHalo(edge.width)}">${escapeHtml(edge.label)}</text>`;
+  const body = labelTspans(edge.label, edge.labelX, edge.labelY, 13, true);
+  const plate = edgeLabelPlate(edge.label, edge.labelX, edge.labelY);
+  const backing = plate
+    ? `<rect class="diagram-edge-label-plate" x="${plate.x}" y="${plate.y}" width="${plate.width}" height="${plate.height}"/>`
+    : "";
+  return `${backing}<text class="diagram-edge-label" text-anchor="middle" dominant-baseline="central" stroke-width="${edgeLabelHalo(edge.width)}">${body}</text>`;
 }
 
 function contentBounds(layout: DiagramLayout) {
