@@ -128,6 +128,7 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
   const [elementMenuRendered, setElementMenuRendered] = useState(false);
   const [pendingFromId, setPendingFromId] = useState<string | null>(null);
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
+  const [contextPanning, setContextPanning] = useState(false);
   const [color, setColor] = useState<DiagramColor>("blue");
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
@@ -236,6 +237,11 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
   };
 
   const handleCanvasPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (event.button === 2 && event.target === event.currentTarget) {
+      event.preventDefault();
+      startCanvasPan(event.nativeEvent, true);
+      return;
+    }
     if (event.button !== 0 || event.target !== event.currentTarget) {
       return;
     }
@@ -544,6 +550,12 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
     commitDiagram();
   };
 
+  const handleEditorPointerDownCapture = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (editingId && event.target !== labelInputRef.current && !labelInputRef.current?.contains(event.target as Node)) {
+      stopInlineLabelEdit();
+    }
+  };
+
   const applyColor = (nextColor: DiagramColor) => {
     setColor(nextColor);
     if (selectedEdgeId) {
@@ -619,10 +631,14 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
     }));
   };
 
-  const startCanvasPan = (event: PointerEvent) => {
+  const startCanvasPan = (event: PointerEvent, temporary = false) => {
     const svg = svgRef.current;
     if (!svg) {
       return;
+    }
+
+    if (temporary) {
+      setContextPanning(true);
     }
 
     const start = { x: event.clientX, y: event.clientY, viewport: viewportRef.current };
@@ -641,6 +657,9 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      if (temporary) {
+        setContextPanning(false);
+      }
     };
 
     window.addEventListener("pointermove", move);
@@ -754,7 +773,7 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
   });
 
   return (
-    <div className="diagram-editor" role="dialog" aria-modal="true" aria-label="Diagram editor">
+    <div className="diagram-editor" role="dialog" aria-modal="true" aria-label="Diagram editor" onPointerDownCapture={handleEditorPointerDownCapture}>
       <header className="diagram-editor-topbar">
         <strong>Diagram</strong>
         <div>
@@ -820,9 +839,14 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
       <div className="diagram-editor-body">
         <svg
           ref={svgRef}
-          className={tool === "pan" ? "diagram-canvas is-panning" : "diagram-canvas"}
+          className={tool === "pan" || contextPanning ? "diagram-canvas is-panning" : "diagram-canvas"}
           viewBox={`${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}`}
           onPointerDown={handleCanvasPointerDown}
+          onContextMenu={(event) => {
+            if (event.target === event.currentTarget) {
+              event.preventDefault();
+            }
+          }}
         >
           <defs>
             {colors.map((name) => (
