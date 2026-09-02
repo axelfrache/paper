@@ -937,4 +937,50 @@ describe("MarkdownEditor integration", () => {
 
     expect(valueFrom(host)).toBe("**first line**\n**second** line");
   });
+
+  it("inserts a divider without pushing a blank line between paragraphs", () => {
+    const host = mount("Before\n/divider\nAfter");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 1, col: 8 });
+      editor.dispatchEvent(new KeyboardEvent("keyup", { key: "r", bubbles: true }));
+    });
+
+    const command = Array.from(host.querySelectorAll<HTMLButtonElement>(".slash-menu-row")).find((button) => button.textContent?.includes("Divider"));
+    act(() => {
+      command?.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe("Before\n---\nAfter");
+    expect(getSelectionRange(editorFrom(host))).toEqual({ start: { line: 2, col: 0 }, end: { line: 2, col: 0 } });
+  });
+
+  it("leaves no line after a divider that ends the note", () => {
+    const host = mount("Before\n/divider");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 1, col: 8 });
+      editor.dispatchEvent(new KeyboardEvent("keyup", { key: "r", bubbles: true }));
+    });
+
+    const command = Array.from(host.querySelectorAll<HTMLButtonElement>(".slash-menu-row")).find((button) => button.textContent?.includes("Divider"));
+    act(() => {
+      command?.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe("Before\n---");
+    expect(editorFrom(host).querySelectorAll("[data-line]")).toHaveLength(2);
+    // The caret rests at the end of the divider; Enter is what opens a line below it.
+    expect(getSelectionRange(editorFrom(host))).toEqual({ start: { line: 1, col: 3 }, end: { line: 1, col: 3 } });
+
+    act(() => {
+      editorFrom(host).dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe("Before\n---\n");
+  });
 });

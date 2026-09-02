@@ -57,6 +57,12 @@ describe("editable markdown renderer", () => {
     expect(host.querySelector("strong")?.textContent).toBe("now");
   });
 
+  it("adds no extra line after a divider, wherever it sits", () => {
+    // Unlike a resource, a divider line can hold the caret, so it needs no trailing line.
+    expect(render(renderEditableMarkdown("---", -1)).querySelectorAll("[data-line]")).toHaveLength(1);
+    expect(render(renderEditableMarkdown("---\nAfter", -1)).querySelectorAll("[data-line]")).toHaveLength(2);
+  });
+
   it("renders the divider rule as a direct flex child of its line", () => {
     const host = render(renderEditableLine("---", false, 2));
 

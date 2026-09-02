@@ -1098,12 +1098,15 @@ export function MarkdownEditor({
     }
 
     if (item.block) {
-      lines.splice(caret.line, 1, stem + after, item.block, "");
-      const keepLine = stem.trim() || after.trim();
-      if (!keepLine) {
-        lines.splice(caret.line, 1);
-      }
-      setSource(lines.join("\n"), { line: keepLine ? caret.line + 2 : caret.line + 1, col: 0 });
+      const keepLine = Boolean(stem.trim() || after.trim());
+      lines.splice(caret.line, 1, ...(keepLine ? [stem + after, item.block] : [item.block]));
+      // No blank line is written: between paragraphs the next one already exists, and a
+      // block ending the note keeps the caret on itself rather than opening an empty line.
+      const blockLine = caret.line + (keepLine ? 1 : 0);
+      const landing = blockLine + 1 < lines.length
+        ? { line: blockLine + 1, col: 0 }
+        : { line: blockLine, col: item.block.length };
+      setSource(lines.join("\n"), landing);
       return;
     }
 

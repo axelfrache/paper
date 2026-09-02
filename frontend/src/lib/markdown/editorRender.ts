@@ -1,6 +1,7 @@
 import { diagramSummary, diagramToSvgMarkup, parseDiagramMarker } from "../diagram";
 import { parseInline } from "./inline";
 import type { MarkdownInline } from "./inline";
+import { isDivider } from "./render";
 import { isResourceLine, standaloneImage } from "./resource";
 
 const syntaxColor = "#a7acb2";
@@ -10,6 +11,8 @@ export function renderEditableMarkdown(value: string, activeLine: number, select
   const html = lines
     .map((line, index) => renderEditableLine(line, index === activeLine, index, index === selectedResourceLine))
     .join("");
+  // Only a resource needs an extra line: the caret cannot sit inside an image or a
+  // diagram, whereas a divider line holds it fine. The extra line is not part of the source.
   const lastLine = lines[lines.length - 1] ?? "";
   return isResourceLine(lastLine) ? `${html}${renderEditableLine("", false, lines.length)}` : html;
 }
@@ -36,9 +39,11 @@ export function renderEditableLine(raw: string, active: boolean, index: number, 
     return `<div data-line="${index}" style="${base}display:flex;align-items:baseline;">${check}<span style="${done ? "color:#a2a8ae;text-decoration:line-through;" : ""}">${inlineMarkdown(match[4], active)}</span></div>`;
   }
 
-  if (/^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(raw)) {
-    // The rule has to be a direct flex child for `flex: 1` to stretch it.
-    return `<div data-line="${index}" class="markdown-editor-divider" style="${base}display:flex;align-items:center;gap:10px;margin:10px 0;">${syn(raw)}<span data-deco="1" class="markdown-editor-divider-rule"></span></div>`;
+  if (isDivider(raw)) {
+    // Styled like any other line (`base`, no margin or padding) so the divider always
+    // occupies exactly one line and does not grow when the caret lands on it and
+    // reveals the `---`. The rule must be a direct flex child for `flex: 1` to stretch it.
+    return `<div data-line="${index}" class="markdown-editor-divider" style="${base}display:flex;align-items:center;gap:10px;">${syn(raw)}<span data-deco="1" class="markdown-editor-divider-rule"></span></div>`;
   }
 
   match = /^(-|\*)(\s+)(.*)$/.exec(raw);
