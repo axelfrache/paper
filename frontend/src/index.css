@@ -1015,11 +1015,25 @@ kbd,
 
 .markdown-editor-image-card {
   width: max-content;
-  max-width: 100%;
+  /* The card shrink-wraps the image, so it must carry the size cap itself: a
+     percentage inside min() is ignored while resolving max-content, so the cap on
+     the image alone left the card sized from the image's intrinsic width.
+     728px = the image's 720px cap + its border and the card's padding. */
+  max-width: min(100%, 728px);
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
   padding: 3px;
+}
+
+/* Inside the editor the card is the one capped, so the image just fills it. */
+.markdown-editor-image img {
+  max-width: 100%;
+}
+
+/* An explicitly resized image sets its own width and must not hit the cap. */
+.markdown-editor-image-card:has(.is-resized) {
+  max-width: 100%;
 }
 
 .markdown-editor-image.is-resized,
