@@ -11,6 +11,11 @@ export type ResourceEdit = { value: string; caret: Caret };
  * the caret can only sit before it (col 0 of its own line) or after it
  * (col 0 of the next line), and any edit replaces or removes the whole line.
  */
+/** A horizontal rule: a line that is a block of its own, like a resource. */
+export function isDivider(line: string) {
+  return /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line);
+}
+
 export function isDiagramLine(line: string) {
   return Boolean(parseDiagramMarker(line));
 }

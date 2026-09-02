@@ -1,11 +1,15 @@
+import { defaultTextAlign, readAlign } from "./align";
+import { isDivider } from "./resource";
 import { parseDiagramMarker } from "../diagram";
 export { parseInline, safeHref } from "./inline";
+export { isDivider } from "./resource";
 export type { MarkdownInline } from "./inline";
 import type { Diagram } from "../diagram";
+import type { TextAlign } from "./align";
 
 export type MarkdownBlock =
   | { type: "heading"; level: number; text: string }
-  | { type: "paragraph"; text: string }
+  | { type: "paragraph"; text: string; align?: TextAlign }
   | { type: "quote"; text: string }
   | { type: "ul"; items: string[] }
   | { type: "tasks"; items: Array<{ text: string; done: boolean }> }
@@ -18,12 +22,21 @@ export function parseBlocks(raw: string): MarkdownBlock[] {
   const lines = normalizeMarkdown(raw).split("\n");
   const blocks: MarkdownBlock[] = [];
   let paragraph: string[] = [];
+  let paragraphAlign: TextAlign | null = null;
   let code: string[] | null = null;
 
   const flushParagraph = () => {
     if (paragraph.length > 0) {
-      blocks.push({ type: "paragraph", text: paragraph.join(" ") });
+      // Lines merge into one paragraph here, so its first line decides the alignment.
+      // The default stays implicit, exactly as it is in the source.
+      const text = paragraph.join(" ");
+      blocks.push(
+        paragraphAlign && paragraphAlign !== defaultTextAlign
+          ? { type: "paragraph", text, align: paragraphAlign }
+          : { type: "paragraph", text },
+      );
       paragraph = [];
+      paragraphAlign = null;
     }
   };
 
@@ -127,7 +140,11 @@ export function parseBlocks(raw: string): MarkdownBlock[] {
       continue;
     }
 
-    paragraph.push(trimmed);
+    const aligned = readAlign(trimmed);
+    if (paragraphAlign === null) {
+      paragraphAlign = aligned.align;
+    }
+    paragraph.push(aligned.text);
   }
 
   flushParagraph();
@@ -141,8 +158,4 @@ export function normalizeMarkdown(raw: string) {
   return raw
     .replace(/\r\n?/g, "\n")
     .replace(/([^\n])\s+-\s+(?=(\*\*|[A-Za-zÀ-ÿ]))/g, "$1\n- ");
-}
-
-export function isDivider(line: string) {
-  return /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line);
 }

@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { Bold, BrainCircuit, Boxes, CalendarDays, Code2, FileText, GitBranch, Heading1, Heading2, Heading3, Image, Italic, Link, List, ListChecks, ListTodo, Minus, Quote, Sparkles, Strikethrough, TextCursorInput, Underline, Wand2, X } from "lucide-react";
+import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, BrainCircuit, Boxes, CalendarDays, Code2, FileText, GitBranch, Heading1, Heading2, Heading3, Image, Italic, Link, List, ListChecks, ListTodo, Minus, Quote, Sparkles, Strikethrough, TextCursorInput, Underline, Wand2, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
   createDefaultDiagram,
@@ -28,6 +28,15 @@ import {
   wrapLinkWithHref,
   wrapSelection,
 } from "../lib/markdown/edit";
+import {
+  alignOfRange,
+  alignRange,
+  deleteBackwardAligned,
+  deleteForwardAligned,
+  insertLineBreakAligned,
+  textAligns,
+} from "../lib/markdown/align";
+import type { TextAlign } from "../lib/markdown/align";
 import { renderEditableMarkdown } from "../lib/markdown/editorRender";
 import {
   insertLineBeforeResource,
@@ -108,6 +117,20 @@ type SelectionToolbarAction = "bold" | "italic" | "code" | "strike" | "underline
 
 type DiagramDescribeTarget = {
   line: number;
+};
+
+const alignIcons: Record<TextAlign, LucideIcon> = {
+  left: AlignLeft,
+  center: AlignCenter,
+  right: AlignRight,
+  justify: AlignJustify,
+};
+
+const alignLabels: Record<TextAlign, string> = {
+  left: "Align left",
+  center: "Align center",
+  right: "Align right",
+  justify: "Justify",
 };
 
 const selectionToolbarGap = 8;
@@ -566,7 +589,7 @@ export function MarkdownEditor({
       event.preventDefault();
       const next = selectionRange && !isCollapsedRange(selectionRange)
         ? insertText(value, selectionRange, "\n")
-        : insertLineBreak(value, caret);
+        : insertLineBreakAligned(value, caret);
       setSelectionToolbar(null);
       setSource(next.value, next.caret);
       return;
@@ -582,7 +605,7 @@ export function MarkdownEditor({
         ? deleteRange(value, selectionRange)
         : event.ctrlKey || event.altKey
           ? deleteBackwardWord(value, caret)
-          : deleteBackward(value, caret);
+          : deleteBackwardAligned(value, caret);
       setSelectionToolbar(null);
       setSource(next.value, next.caret);
       return;
@@ -598,7 +621,7 @@ export function MarkdownEditor({
         ? deleteRange(value, selectionRange)
         : event.ctrlKey || event.altKey
           ? deleteForwardWord(value, caret)
-          : deleteForward(value, caret);
+          : deleteForwardAligned(value, caret);
       setSelectionToolbar(null);
       setSource(next.value, next.caret);
     }
@@ -788,6 +811,8 @@ export function MarkdownEditor({
   };
 
   const filteredItems = filteredSlashItems(slash?.query ?? "");
+  // Null when the selection spans lines that disagree, so no button claims to be active.
+  const selectionAlign = selectionToolbar ? alignOfRange(value, selectionToolbar.range) : null;
 
   return (
     <div ref={wrapRef} className="markdown-editor-wrap">
@@ -896,6 +921,22 @@ export function MarkdownEditor({
           <button type="button" aria-label="Link" title="Link" onMouseDown={(event) => runSelectionToolbarAction(event, "link")}>
             <Link size={15} strokeWidth={2.1} />
           </button>
+          <span />
+          {textAligns.map((align) => {
+            const Icon = alignIcons[align];
+            return (
+              <button
+                key={align}
+                type="button"
+                className={selectionAlign === align ? "active" : ""}
+                aria-label={alignLabels[align]}
+                title={alignLabels[align]}
+                onMouseDown={(event) => runAlign(event, align)}
+              >
+                <Icon size={15} strokeWidth={2.1} />
+              </button>
+            );
+          })}
         </div>
       ) : null}
       <dialog
@@ -954,6 +995,18 @@ export function MarkdownEditor({
       </dialog>
     </div>
   );
+
+  function runAlign(event: React.MouseEvent<HTMLButtonElement>, align: TextAlign) {
+    event.preventDefault();
+    const range = selectionToolbar?.range ?? getSelectionRange(editorRef.current);
+    if (!range) {
+      return;
+    }
+    focusedRef.current = true;
+    const next = alignRange(value, range, align);
+    setSource(next.value, next.caret);
+    window.requestAnimationFrame(() => editorRef.current?.focus());
+  }
 
   function runSelectionToolbarAction(event: React.MouseEvent<HTMLButtonElement>, action: SelectionToolbarAction) {
     event.preventDefault();

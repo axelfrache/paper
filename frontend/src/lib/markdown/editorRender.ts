@@ -1,6 +1,7 @@
 import { diagramSummary, diagramToSvgMarkup, parseDiagramMarker } from "../diagram";
 import { parseInline } from "./inline";
 import type { MarkdownInline } from "./inline";
+import { defaultTextAlign, readAlign } from "./align";
 import { isDivider } from "./render";
 import { isResourceLine, standaloneImage } from "./resource";
 
@@ -17,8 +18,14 @@ export function renderEditableMarkdown(value: string, activeLine: number, select
   return isResourceLine(lastLine) ? `${html}${renderEditableLine("", false, lines.length)}` : html;
 }
 
-export function renderEditableLine(raw: string, active: boolean, index: number, selectedResource = false) {
-  const base = "min-height:1.75em;";
+export function renderEditableLine(rawLine: string, active: boolean, index: number, selectedResource = false) {
+  // The alignment marker is stripped from what is drawn and handed back to the DOM as a
+  // decoration, so `readSource` still reconstructs the line exactly as it is stored.
+  const { text: raw, align } = readAlign(rawLine);
+  const alignStyle = align === defaultTextAlign ? "" : `text-align:${align};`;
+  const alignMark =
+    align === defaultTextAlign ? "" : `<span data-deco="1" data-source="{align=${align}}"></span>`;
+  const base = `min-height:1.75em;${alignStyle}`;
   const syn = (text: string) =>
     `<span style="color:${syntaxColor};${active ? "" : "display:none;"}">${escapeHtml(text)}</span>`;
   const deco = (html: string) => `<span data-deco="1" style="color:#b0b5bb;">${html}</span>`;
@@ -81,7 +88,7 @@ export function renderEditableLine(raw: string, active: boolean, index: number, 
   if (!raw.length) {
     return `<div data-line="${index}" style="${base}"><br /></div>`;
   }
-  return `<div data-line="${index}" style="${base}">${inlineMarkdown(raw, active)}</div>`;
+  return `<div data-line="${index}" style="${base}">${inlineMarkdown(raw, active)}${alignMark}</div>`;
 }
 
 function resourceBlock(

@@ -1333,6 +1333,14 @@ kbd,
   margin: 0 3px;
 }
 
+/* Body text is justified unless a line carries its own {align=…} marker. */
+.markdown-editor,
+.markdown-view p {
+  text-align: justify;
+  text-justify: inter-word;
+  hyphens: auto;
+}
+
 .markdown-view {
   color: var(--body);
   font-size: 14px;

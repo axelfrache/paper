@@ -27,7 +27,11 @@ function renderBlock(block: MarkdownBlock, index: number) {
     return <Heading key={index}>{renderInline(block.text)}</Heading>;
   }
   if (block.type === "paragraph") {
-    return <p key={index}>{renderInline(block.text)}</p>;
+    return (
+      <p key={index} style={block.align ? { textAlign: block.align } : undefined}>
+        {renderInline(block.text)}
+      </p>
+    );
   }
   if (block.type === "quote") {
     return <blockquote key={index}>{renderInline(block.text)}</blockquote>;

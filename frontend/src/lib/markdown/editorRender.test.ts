@@ -63,6 +63,23 @@ describe("editable markdown renderer", () => {
     expect(render(renderEditableMarkdown("---\nAfter", -1)).querySelectorAll("[data-line]")).toHaveLength(2);
   });
 
+  it("aligns a line and hands the marker back through readSource", () => {
+    const host = render(renderEditableLine("Hello{align=center}", false, 0));
+
+    const line = host.querySelector<HTMLElement>("[data-line='0']");
+    expect(line?.style.textAlign).toBe("center");
+    // Drawn without the marker, but the source round-trips it.
+    expect(line?.textContent).toBe("Hello");
+    expect(readSource(host as HTMLDivElement)).toBe("Hello{align=center}");
+  });
+
+  it("leaves a default-aligned line free of any marker", () => {
+    const host = render(renderEditableLine("Hello", false, 0));
+
+    expect(host.querySelector<HTMLElement>("[data-line='0']")?.style.textAlign).toBe("");
+    expect(readSource(host as HTMLDivElement)).toBe("Hello");
+  });
+
   it("renders the divider rule as a direct flex child of its line", () => {
     const host = render(renderEditableLine("---", false, 2));
 

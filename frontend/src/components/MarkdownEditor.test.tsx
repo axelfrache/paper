@@ -983,4 +983,67 @@ describe("MarkdownEditor integration", () => {
 
     expect(valueFrom(host)).toBe("Before\n---\n");
   });
+
+  it("aligns the selected lines from the toolbar and keeps the marker out of the text", () => {
+    const host = mount("first line\nsecond line");
+    const editor = editorFrom(host);
+
+    act(() => {
+      showSelectionToolbar(editor, 0, 5);
+    });
+
+    const button = host.querySelector<HTMLButtonElement>(".selection-toolbar button[aria-label='Align center']");
+    act(() => {
+      button?.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe("first line{align=center}\nsecond line");
+    const line = editorFrom(host).querySelector<HTMLElement>("[data-line='0']");
+    expect(line?.style.textAlign).toBe("center");
+    // The marker is stored, never shown.
+    expect(line?.textContent).toBe("first line");
+  });
+
+  it("drops the marker when the selection goes back to the default", () => {
+    const host = mount("first line{align=center}");
+    const editor = editorFrom(host);
+
+    act(() => {
+      showSelectionToolbar(editor, 0, 5);
+    });
+
+    const button = host.querySelector<HTMLButtonElement>(".selection-toolbar button[aria-label='Justify']");
+    act(() => {
+      button?.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe("first line");
+  });
+
+  it("keeps the alignment on the line when Enter splits it", () => {
+    const host = mount("hello world{align=right}");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 0, col: 5 });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe("hello{align=right}\n world{align=right}");
+    expect(editorFrom(host).querySelector<HTMLElement>("[data-line='0']")?.style.textAlign).toBe("right");
+  });
+
+  it("keeps typing on an aligned line free of the marker", () => {
+    const host = mount("hello{align=right}");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 0, col: 5 });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "!", bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe("hello!{align=right}");
+  });
 });
