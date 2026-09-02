@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultDiagram, serializeDiagramMarker } from "../diagram";
+import { readSource } from "./dom";
 import { renderEditableLine, renderEditableMarkdown } from "./editorRender";
 
 function render(html: string) {
@@ -54,6 +55,17 @@ describe("editable markdown renderer", () => {
     expect(host.querySelector("[data-check='3']")?.textContent).toBe("☑");
     expect(host.querySelector("[data-deco='1']")).not.toBeNull();
     expect(host.querySelector("strong")?.textContent).toBe("now");
+  });
+
+  it("renders the divider rule as a direct flex child of its line", () => {
+    const host = render(renderEditableLine("---", false, 2));
+
+    const line = host.querySelector("[data-line='2']");
+    const rule = host.querySelector(".markdown-editor-divider-rule");
+    // `flex: 1` only stretches the rule if it is a flex item of the line itself.
+    expect(rule?.parentElement).toBe(line);
+    expect(rule?.getAttribute("data-deco")).toBe("1");
+    expect(readSource(host as HTMLDivElement)).toBe("---");
   });
 
   it("renders diagram markers as atomic resource blocks", () => {

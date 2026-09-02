@@ -37,7 +37,8 @@ export function renderEditableLine(raw: string, active: boolean, index: number, 
   }
 
   if (/^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(raw)) {
-    return `<div data-line="${index}" class="markdown-editor-divider" style="${base}display:flex;align-items:center;gap:10px;margin:10px 0;">${syn(raw)}${deco('<span class="markdown-editor-divider-rule"></span>')}</div>`;
+    // The rule has to be a direct flex child for `flex: 1` to stretch it.
+    return `<div data-line="${index}" class="markdown-editor-divider" style="${base}display:flex;align-items:center;gap:10px;margin:10px 0;">${syn(raw)}<span data-deco="1" class="markdown-editor-divider-rule"></span></div>`;
   }
 
   match = /^(-|\*)(\s+)(.*)$/.exec(raw);
