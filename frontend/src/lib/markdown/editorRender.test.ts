@@ -62,7 +62,6 @@ describe("editable markdown renderer", () => {
 
     expect(host.querySelector("[data-diagram-line='0']")).not.toBeNull();
     expect(host.querySelector("[data-diagram-edit-line='0']")).not.toBeNull();
-    expect(host.querySelector("[data-resource-drag-line='0']")).not.toBeNull();
     expect(host.querySelector("[data-resource-delete-line='0']")).not.toBeNull();
   });
 

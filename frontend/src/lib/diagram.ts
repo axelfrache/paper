@@ -328,7 +328,10 @@ export function layoutDiagram(diagram: Diagram): DiagramLayout {
 
 export function diagramToSvgMarkup(diagram: Diagram, maxHeight = 340) {
   const layout = layoutDiagram(diagram);
-  const preview = previewForDiagram(diagram, maxHeight);
+  const bounds = contentBounds(layout);
+  const viewBoxWidth = Math.max(160, bounds.width);
+  const viewBoxHeight = Math.max(90, bounds.height);
+  const displayHeight = Math.max(120, Math.min(640, diagram.preview?.height ?? Math.min(maxHeight, viewBoxHeight)));
   const body = [
     ...layout.edges.map((edge) => {
       const lineCap = edge.markerStart || edge.markerEnd ? "butt" : "round";
@@ -349,7 +352,7 @@ export function diagramToSvgMarkup(diagram: Diagram, maxHeight = 340) {
     }),
   ].join("");
 
-  return `<svg class="diagram-preview-svg" viewBox="${preview.x} ${preview.y} ${preview.width} ${preview.height}" width="100%" style="display:block;height:${preview.height}px;font-family:inherit;overflow:hidden;"><defs>${arrowDefs()}</defs>${body}</svg>`;
+  return `<svg class="diagram-preview-svg" viewBox="${bounds.x} ${bounds.y} ${viewBoxWidth} ${viewBoxHeight}" preserveAspectRatio="xMidYMid meet" width="100%" style="display:block;height:${displayHeight}px;font-family:inherit;overflow:hidden;"><defs>${arrowDefs()}</defs>${body}</svg>`;
 }
 
 function contentBounds(layout: DiagramLayout) {

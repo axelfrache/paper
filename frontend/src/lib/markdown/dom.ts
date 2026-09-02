@@ -82,6 +82,10 @@ export function pointToCaret(el: HTMLDivElement, node: Node, offset: number): Ca
   if (!host || !el.contains(host)) {
     return null;
   }
+  const resourceCaret = host.closest("[data-resource-caret-line]");
+  if (resourceCaret) {
+    return { line: Number(resourceCaret.getAttribute("data-resource-caret-line")), col: 0 };
+  }
   const lineEl = host.closest("[data-line]");
   if (!lineEl) {
     return null;
@@ -172,11 +176,11 @@ export function caretOffsetInNode(nodes: Text[], node: Text, offset: number) {
   return offset;
 }
 
-export function placeCaret(el: HTMLDivElement | null, caret: Caret) {
-  if (!el) {
+export function placeCaret(el: HTMLDivElement | null, caret: Caret | null) {
+  if (!el || !caret) {
     return;
   }
-  const point = domPointForCaret(el, caret);
+  const point = domPointForCaret(el, caret, true);
   if (!point) {
     return;
   }
@@ -206,7 +210,16 @@ export function placeSelection(el: HTMLDivElement | null, range: TextRange) {
   selection?.addRange(domRange);
 }
 
-export function domPointForCaret(el: HTMLDivElement, caret: Caret) {
+export function domPointForCaret(el: HTMLDivElement, caret: Caret | null, preferResourceCaret = false) {
+  if (!caret) {
+    return null;
+  }
+  if (preferResourceCaret) {
+    const resourceCaret = el.querySelector(`[data-resource-caret-line="${caret.line}"]`);
+    if (resourceCaret) {
+      return { node: resourceCaret, offset: 0 };
+    }
+  }
   const lineEl = el.querySelector(`[data-line="${caret.line}"]`);
   if (!lineEl) {
     return null;

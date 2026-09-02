@@ -1,6 +1,7 @@
 import { diagramSummary, diagramToSvgMarkup, parseDiagramMarker } from "../diagram";
 import { parseInline } from "./inline";
 import type { MarkdownInline } from "./inline";
+import { isResourceLine, standaloneImage } from "./resource";
 
 const syntaxColor = "#a7acb2";
 
@@ -56,8 +57,9 @@ export function renderEditableLine(raw: string, active: boolean, index: number, 
       `<span class="markdown-editor-diagram-preview">${diagramToSvgMarkup(diagram, 320)}</span>`,
       `<span class="markdown-editor-diagram-meta"><span>${escapeHtml(diagramSummary(diagram))}</span><em data-diagram-edit-line="${index}">Edit diagram</em></span>`,
       `<span data-diagram-resize-line="${index}" class="markdown-editor-diagram-resize" aria-hidden="true"></span>`,
+      `<span data-diagram-width-resize-line="${index}" class="markdown-editor-diagram-width-resize" aria-hidden="true"></span>`,
     ].join("");
-    return resourceBlock(raw, index, "diagram", preview, selectedResource);
+    return resourceBlock(raw, index, "diagram", preview, selectedResource, diagram.preview?.width);
   }
 
   const image = standaloneImage(raw);
@@ -89,19 +91,10 @@ function resourceBlock(
   const surfaceStyle = width ? ` style="width:min(100%, ${width}px);"` : "";
   return [
     `<div data-line="${index}" data-resource-line="${index}" data-resource-kind="${kind}" data-source="${escapeAttribute(raw)}" contenteditable="false" class="markdown-editor-resource-line${selection}">`,
-    `<span data-deco="1" class="markdown-editor-resource-controls"><button type="button" data-resource-drag-line="${index}" class="markdown-editor-resource-drag" aria-label="Move ${kind}" title="Move"><span></span><span></span><span></span><span></span><span></span><span></span></button></span>`,
     `<span data-deco="1" data-resource-surface="${index}"${kind === "diagram" ? ` data-diagram-line="${index}"` : ""} class="markdown-editor-resource-surface${surfaceClass}"${surfaceStyle}>${preview}<button type="button" data-resource-delete-line="${index}" class="markdown-editor-resource-delete" aria-label="Delete ${kind}" title="Delete">×</button></span>`,
+    `<span data-resource-caret-line="${index}" contenteditable="true" class="markdown-editor-resource-caret"><br /></span>`,
     `</div>`,
   ].join("");
-}
-
-function standaloneImage(raw: string) {
-  const nodes = parseInline(raw);
-  return nodes.length === 1 && nodes[0].type === "image" ? nodes[0] : null;
-}
-
-function isResourceLine(raw: string) {
-  return Boolean(parseDiagramMarker(raw) || standaloneImage(raw)?.safe);
 }
 
 function inlineMarkdown(raw: string, active: boolean) {

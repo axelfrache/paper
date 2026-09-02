@@ -1,4 +1,5 @@
 import { act, useState } from "react";
+import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
@@ -13,15 +14,17 @@ function ControlledEditor({
   initial,
   focusRequest = null,
   onUploadImage,
+  extra,
 }: {
   initial: string;
   focusRequest?: { key: string; placement: "start" | "end" | "last" } | null;
   onUploadImage?: (file: File) => Promise<NoteImage>;
+  extra?: Partial<ComponentProps<typeof MarkdownEditor>>;
 }) {
   const [value, setValue] = useState(initial);
   return (
     <>
-      <MarkdownEditor value={value} onChange={setValue} focusRequest={focusRequest} onUploadImage={onUploadImage} />
+      <MarkdownEditor value={value} onChange={setValue} focusRequest={focusRequest} onUploadImage={onUploadImage} {...extra} />
       <output data-value>{value}</output>
     </>
   );
@@ -31,12 +34,13 @@ function mount(
   initial: string,
   focusRequest: { key: string; placement: "start" | "end" | "last" } | null = null,
   onUploadImage?: (file: File) => Promise<NoteImage>,
+  extra?: Partial<ComponentProps<typeof MarkdownEditor>>,
 ) {
   const host = document.createElement("div");
   document.body.replaceChildren(host);
   root = createRoot(host);
   act(() => {
-    root?.render(<ControlledEditor initial={initial} focusRequest={focusRequest} onUploadImage={onUploadImage} />);
+    root?.render(<ControlledEditor initial={initial} focusRequest={focusRequest} onUploadImage={onUploadImage} extra={extra} />);
   });
   return host;
 }
@@ -51,6 +55,20 @@ function editorFrom(host: Element) {
 
 function valueFrom(host: Element) {
   return host.querySelector("[data-value]")?.textContent ?? "";
+}
+
+/** Presses and releases on a resource block, the way a click selects it. */
+function selectResourceBlock(editor: Element, line: number) {
+  editor
+    .querySelector(`[data-resource-surface='${line}']`)
+    ?.dispatchEvent(new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true }));
+  window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+}
+
+/** The resource line currently selected as a whole, if any. */
+function selectedResourceLine(editor: Element) {
+  const selected = editor.querySelector(".markdown-editor-resource-line.is-selected");
+  return selected ? Number(selected.getAttribute("data-resource-line")) : null;
 }
 
 beforeEach(() => {
@@ -372,7 +390,7 @@ describe("MarkdownEditor integration", () => {
     const editor = editorFrom(host);
 
     act(() => {
-      editor.querySelector("[data-resource-surface='0']")?.dispatchEvent(new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true }));
+      selectResourceBlock(editor, 0);
     });
 
     expect(editor.querySelector("[data-resource-line='0']")?.classList.contains("is-selected")).toBe(true);
@@ -399,13 +417,33 @@ describe("MarkdownEditor integration", () => {
     expect(valueFrom(host)).toBe(`${marker}\nx`);
   });
 
+  it("treats a resource as a navigable atomic line", () => {
+    const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
+    const host = mount(`${marker}\nAfter`);
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 1, col: 0 });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }));
+    });
+
+    expect(selectedResourceLine(editor)).toBe(0);
+
+    act(() => {
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe(`\n${marker}\nAfter`);
+  });
+
   it("deletes a selected diagram from its resource action", () => {
     const marker = serializeDiagramMarker(createDefaultDiagram("flat"));
     const host = mount(`${marker}\nAfter`);
     const editor = editorFrom(host);
 
     act(() => {
-      editor.querySelector("[data-resource-surface='0']")?.dispatchEvent(new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true }));
+      selectResourceBlock(editor, 0);
     });
 
     act(() => {
@@ -415,13 +453,13 @@ describe("MarkdownEditor integration", () => {
     expect(valueFrom(host)).toBe("After");
   });
 
-  it("moves an image resource from its drag handle", () => {
+  it("moves an image resource by dragging the block itself", () => {
     const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
     const host = mount(`Before\n${marker}\nAfter`);
     const editor = editorFrom(host);
 
     act(() => {
-      editor.querySelector("[data-resource-drag-line='1']")?.dispatchEvent(new MouseEvent("pointerdown", { button: 0, clientX: 10, clientY: 10, bubbles: true, cancelable: true }));
+      editor.querySelector("[data-resource-surface='1']")?.dispatchEvent(new MouseEvent("pointerdown", { button: 0, clientX: 10, clientY: 10, bubbles: true, cancelable: true }));
     });
 
     const target = editor.querySelector("[data-line='2']");
@@ -448,7 +486,7 @@ describe("MarkdownEditor integration", () => {
     const editor = editorFrom(host);
 
     act(() => {
-      editor.querySelector("[data-resource-surface='0']")?.dispatchEvent(new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true }));
+      selectResourceBlock(editor, 0);
     });
 
     const surface = editor.querySelector("[data-resource-surface='0']");
@@ -516,5 +554,252 @@ describe("MarkdownEditor integration", () => {
       start: { line: 1, col: 0 },
       end: { line: 1, col: 0 },
     });
+  });
+  it("deletes a resource with Delete from in front of it", () => {
+    const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
+    const host = mount(`${marker}\nAfter`);
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 0, col: 0 });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe("After");
+  });
+
+  it("deletes a resource with Delete from the end of the previous line", () => {
+    const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
+    const host = mount(`Before\n${marker}`);
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 0, col: 6 });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe("Before");
+  });
+
+  it("replaces a selected resource with typed text", () => {
+    const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
+    const host = mount(`${marker}\nAfter`);
+    const editor = editorFrom(host);
+
+    act(() => {
+      selectResourceBlock(editor, 0);
+    });
+
+    act(() => {
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "x", bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe("x\nAfter");
+  });
+
+  it("leaves a selected resource with the arrow keys", () => {
+    const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
+    const host = mount(`${marker}\nAfter`);
+    const editor = editorFrom(host);
+
+    act(() => {
+      selectResourceBlock(editor, 0);
+    });
+
+    act(() => {
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+    });
+
+    expect(editor.querySelector("[data-resource-line='0']")?.classList.contains("is-selected")).toBe(false);
+    expect(getSelectionRange(editor)).toEqual({ start: { line: 1, col: 0 }, end: { line: 1, col: 0 } });
+  });
+
+  it("selects the resource when an arrow key reaches it", () => {
+    const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
+    const host = mount(`Before\n${marker}\nAfter`);
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 0, col: 6 });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+    });
+    expect(selectedResourceLine(editor)).toBe(1);
+
+    act(() => {
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+    });
+    expect(selectedResourceLine(editor)).toBeNull();
+    expect(getSelectionRange(editor)).toEqual({ start: { line: 2, col: 0 }, end: { line: 2, col: 0 } });
+
+    act(() => {
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }));
+    });
+    expect(selectedResourceLine(editor)).toBe(1);
+
+    act(() => {
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }));
+    });
+    expect(selectedResourceLine(editor)).toBeNull();
+    expect(getSelectionRange(editor)).toEqual({ start: { line: 0, col: 6 }, end: { line: 0, col: 6 } });
+  });
+
+  it("selects the next resource after deleting one that sits right above it", () => {
+    const image = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
+    const diagram = serializeDiagramMarker(createDefaultDiagram("flat"));
+    const host = mount(`${image}\n${diagram}\nAfter`);
+    const editor = editorFrom(host);
+
+    act(() => {
+      selectResourceBlock(editor, 0);
+    });
+
+    act(() => {
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe(`${diagram}\nAfter`);
+    expect(selectedResourceLine(editorFrom(host))).toBe(0);
+  });
+
+  it("selects the resource when arrowing down from the line above", () => {
+    const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
+    const host = mount(`Before\n${marker}\nAfter`);
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 0, col: 0 });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+    });
+
+    expect(selectedResourceLine(editor)).toBe(1);
+  });
+
+  it("stays inside the note while a resource is the first line", () => {
+    const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
+    const onFocusPrevious = vi.fn();
+    const host = mount(`${marker}\nAfter`, null, undefined, { onFocusPrevious });
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 1, col: 0 });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }));
+    });
+
+    expect(selectedResourceLine(editor)).toBe(0);
+    expect(onFocusPrevious).not.toHaveBeenCalled();
+  });
+
+  it("pushes the resource down with Enter and keeps it selected", () => {
+    const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
+    const host = mount(`${marker}\nAfter`);
+    const editor = editorFrom(host);
+
+    act(() => {
+      selectResourceBlock(editor, 0);
+    });
+
+    act(() => {
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe(`\n${marker}\nAfter`);
+    expect(selectedResourceLine(editorFrom(host))).toBe(1);
+  });
+
+  it("deletes a selected resource with a word-wise delete instead of splitting its markup", () => {
+    const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
+    const host = mount(`Before\n${marker}\nAfter`);
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 0, col: 6 });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+    });
+
+    act(() => {
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", ctrlKey: true, bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe("Before\nAfter");
+  });
+
+  it("moves a selected resource with alt and the arrow keys", () => {
+    const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
+    const host = mount(`Before\n${marker}\nAfter`);
+    const editor = editorFrom(host);
+
+    act(() => {
+      selectResourceBlock(editor, 1);
+    });
+
+    act(() => {
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", altKey: true, bubbles: true, cancelable: true }));
+    });
+    expect(valueFrom(host)).toBe(`${marker}\nBefore\nAfter`);
+    expect(selectedResourceLine(editorFrom(host))).toBe(0);
+
+    act(() => {
+      editorFrom(host).dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", altKey: true, bubbles: true, cancelable: true }));
+    });
+    expect(valueFrom(host)).toBe(`Before\n${marker}\nAfter`);
+    expect(selectedResourceLine(editorFrom(host))).toBe(1);
+  });
+
+  it("stops moving a resource at the edges of the note", () => {
+    const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
+    const host = mount(`${marker}\nAfter`);
+    const editor = editorFrom(host);
+
+    act(() => {
+      selectResourceBlock(editor, 0);
+    });
+
+    act(() => {
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", altKey: true, bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe(`${marker}\nAfter`);
+    expect(selectedResourceLine(editorFrom(host))).toBe(0);
+  });
+
+  it("shows an insertion bar while dragging and keeps the block selected after the drop", () => {
+    const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
+    const host = mount(`Before\n${marker}\nAfter`);
+    const editor = editorFrom(host);
+
+    const target = editor.querySelector("[data-line='2']");
+    if (!target) {
+      throw new Error("Missing drop target");
+    }
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: vi.fn(() => target),
+    });
+    vi.spyOn(target, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 100, 200, 40));
+
+    act(() => {
+      editor.querySelector("[data-resource-surface='1']")?.dispatchEvent(new MouseEvent("pointerdown", { button: 0, clientX: 10, clientY: 10, bubbles: true, cancelable: true }));
+    });
+
+    act(() => {
+      window.dispatchEvent(new MouseEvent("pointermove", { clientX: 10, clientY: 130, bubbles: true }));
+    });
+
+    expect(host.querySelector(".markdown-editor-drop-indicator")).not.toBeNull();
+    expect(editor.querySelector("[data-resource-line='1']")?.classList.contains("is-dragging")).toBe(true);
+
+    act(() => {
+      window.dispatchEvent(new MouseEvent("pointerup", { clientX: 10, clientY: 130, bubbles: true }));
+    });
+
+    expect(host.querySelector(".markdown-editor-drop-indicator")).toBeNull();
+    expect(valueFrom(host)).toBe(`Before\nAfter\n${marker}`);
+    expect(selectedResourceLine(editorFrom(host))).toBe(2);
   });
 });
