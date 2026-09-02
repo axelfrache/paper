@@ -397,7 +397,7 @@ export function MarkdownEditor({
   /** Puts the caret on a line, or selects it when it holds a resource. */
   const focusLine = (line: number, col: number) => {
     if (isResourceLine(value.split("\n")[line] ?? "")) {
-      selectResource(line);
+      moveCaretTo(line, 0);
       return;
     }
     setSelectedResourceLine(null);
