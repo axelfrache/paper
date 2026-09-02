@@ -529,7 +529,7 @@ export function MarkdownEditor({
     if (meta && !event.shiftKey && event.key.toLowerCase() === "k") {
       event.preventDefault();
       const range = selectionRange ?? { start: caret, end: caret };
-      const next = applyAcrossResources(value, range, (source, lineRange) => toggleLink(source, lineRange));
+      const next = applyPerLine(value, range, (source, lineRange) => toggleLink(source, lineRange));
       setSelectionToolbar(null);
       setSource(next.value, next.caret);
       return;
@@ -538,7 +538,7 @@ export function MarkdownEditor({
     if (meta && !event.shiftKey && event.key.toLowerCase() === "u") {
       event.preventDefault();
       const range = selectionRange ?? { start: caret, end: caret };
-      const next = applyAcrossResources(value, range, (source, lineRange) => toggleSelection(source, lineRange, "<u>", "</u>"));
+      const next = applyPerLine(value, range, (source, lineRange) => toggleSelection(source, lineRange, "<u>", "</u>"));
       setSelectionToolbar(null);
       setSource(next.value, next.caret);
       return;
@@ -548,7 +548,7 @@ export function MarkdownEditor({
       event.preventDefault();
       const mark = event.key.toLowerCase() === "b" ? "**" : "*";
       const range = selectionRange ?? { start: caret, end: caret };
-      const next = applyAcrossResources(value, range, (source, lineRange) => toggleSelection(source, lineRange, mark));
+      const next = applyPerLine(value, range, (source, lineRange) => toggleSelection(source, lineRange, mark));
       setSelectionToolbar(null);
       setSource(next.value, next.caret);
       return;
@@ -963,10 +963,10 @@ export function MarkdownEditor({
       return;
     }
     const next = action === "link"
-      ? applyAcrossResources(value, range, (source, lineRange) => toggleLink(source, lineRange))
+      ? applyPerLine(value, range, (source, lineRange) => toggleLink(source, lineRange))
       : action === "underline"
-        ? applyAcrossResources(value, range, (source, lineRange) => toggleSelection(source, lineRange, "<u>", "</u>"))
-        : applyAcrossResources(value, range, (source, lineRange) => toggleSelection(source, lineRange, action === "bold" ? "**" : action === "italic" ? "*" : action === "strike" ? "~~" : "`"));
+        ? applyPerLine(value, range, (source, lineRange) => toggleSelection(source, lineRange, "<u>", "</u>"))
+        : applyPerLine(value, range, (source, lineRange) => toggleSelection(source, lineRange, action === "bold" ? "**" : action === "italic" ? "*" : action === "strike" ? "~~" : "`"));
     focusedRef.current = true;
     setSlash(null);
     setSelectionToolbar(null);
@@ -1414,28 +1414,30 @@ function focusTarget(value: string, current: Caret | null, placement: "start" | 
   return { value, caret: { line: caret.line + 1, col: 0 } };
 }
 
-function rangeIncludesResource(value: string, range: TextRange) {
-  const normalized = normalizeRange(range);
-  const lines = value.split("\n");
-  for (let line = normalized.start.line; line <= normalized.end.line; line += 1) {
-    if (isResourceLine(lines[line] ?? "")) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function applyAcrossResources(
+/**
+ * Applies an inline formatting operation one line at a time.
+ *
+ * Inline marks are parsed per line, so a mark can never span a line break: wrapping
+ * a multi-line span as one would emit `**a\nb**`, which renders as literal text and
+ * can land a closing mark on the next line — enough to break a divider or a marker.
+ * A selection that merely spills onto the next line (`end` at column 0, which is what
+ * a double or triple click produces) contributes an empty sub-range and is skipped.
+ */
+function applyPerLine(
   value: string,
   range: TextRange,
   operation: (value: string, range: TextRange) => { value: string; caret: Caret },
 ) {
-  if (!rangeIncludesResource(value, range)) {
-    return operation(value, range);
-  }
-
   const normalized = normalizeRange(range);
   const lines = value.split("\n");
+
+  // A bare caret is a single insertion point, not a span to iterate over.
+  if (isCollapsedRange(normalized)) {
+    return isResourceLine(lines[normalized.start.line] ?? "")
+      ? { value, caret: normalized.start }
+      : operation(value, normalized);
+  }
+
   let nextValue = value;
   let nextCaret: Caret | null = null;
 

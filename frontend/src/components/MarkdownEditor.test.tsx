@@ -884,4 +884,57 @@ describe("MarkdownEditor integration", () => {
 
     expect(toolbar.style.left).toBe("128px");
   });
+
+  it("leaves the next line alone when the selection spills onto it", () => {
+    const host = mount("salut la team\n---\ndadadada");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      // What a double or triple click produces: the range ends at column 0 of the next line.
+      placeSelection(editor, { start: { line: 0, col: 0 }, end: { line: 1, col: 0 } });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "b", ctrlKey: true, bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe("**salut la team**\n---\ndadadada");
+  });
+
+  it("keeps a divider intact when a spilled selection is turned into a link", () => {
+    const host = mount("salut la team\n---\ndadadada");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeSelection(editor, { start: { line: 0, col: 0 }, end: { line: 1, col: 0 } });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe("[salut la team](https://)\n---\ndadadada");
+  });
+
+  it("still opens empty marks at a bare caret with ctrl b", () => {
+    const host = mount("Make Paper bold");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 0, col: 7 });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "b", ctrlKey: true, bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe("Make Pa****per bold");
+  });
+
+  it("formats each line of a multi-line selection on its own", () => {
+    const host = mount("first line\nsecond line");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeSelection(editor, { start: { line: 0, col: 0 }, end: { line: 1, col: 6 } });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "b", ctrlKey: true, bubbles: true, cancelable: true }));
+    });
+
+    expect(valueFrom(host)).toBe("**first line**\n**second** line");
+  });
 });
