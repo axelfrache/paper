@@ -11,8 +11,14 @@ type DiagramIconDefinition = {
   visible?: boolean;
 };
 
+/**
+ * `src` names the isometric file. A handful of those are raster artwork that weighed a
+ * megabyte as an SVG and ship as WebP instead; the flat set is genuine vector used as an
+ * alpha mask, so it always keeps the .svg of the same name.
+ */
 function icon(src: string, label: string, group: string, w = 92, h = 108, visible = true): DiagramIconDefinition {
-  return { isoSrc: `${isoIconBasePath}/${src}`, flatSrc: `${flatIconBasePath}/${src}`, label, group, w, h, visible };
+  const flatSrc = src.replace(/\.webp$/, ".svg");
+  return { isoSrc: `${isoIconBasePath}/${src}`, flatSrc: `${flatIconBasePath}/${flatSrc}`, label, group, w, h, visible };
 }
 
 export const diagramIcons = {
@@ -33,14 +39,14 @@ export const diagramIcons = {
   "k8s-configmap": icon("k8s-configmap.svg", "ConfigMap", "Kubernetes", 86, 102),
   "k8s-secret": icon("k8s-secret.svg", "Secret", "Kubernetes", 86, 102),
 
-  postgresql: icon("postgresql.svg", "PostgreSQL", "Data", 92, 108),
+  postgresql: icon("postgresql.webp", "PostgreSQL", "Data", 92, 108),
   redis: icon("redis.svg", "Redis", "Data", 92, 108),
-  minio: icon("minio.svg", "MinIO", "Data", 92, 108),
-  "object-storage": icon("object-storage.svg", "Object storage", "Data", 92, 108),
+  minio: icon("minio.webp", "MinIO", "Data", 92, 108),
+  "object-storage": icon("object-storage.webp", "Object storage", "Data", 92, 108),
   nats: icon("nats.svg", "NATS", "Data", 92, 108),
 
-  "load-balancer": icon("load-balancer.svg", "Load balancer", "Network", 96, 112),
-  dns: icon("dns.svg", "DNS", "Network", 92, 108),
+  "load-balancer": icon("load-balancer.webp", "Load balancer", "Network", 96, 112),
+  dns: icon("dns.webp", "DNS", "Network", 92, 108),
   internet: icon("internet.svg", "Internet", "Network", 96, 112),
 
   kubernetes: icon("kubernetes.svg", "Kubernetes", "Cloud", 104, 114),
@@ -50,8 +56,8 @@ export const diagramIcons = {
 
   "container-registry": icon("container-registry.svg", "Container registry", "Delivery", 92, 108),
   "code-repository": icon("code-repository.svg", "Code repository", "Delivery", 92, 108),
-  "deployment-pipeline": icon("deployment-pipeline.svg", "Deployment pipeline", "Delivery", 96, 112),
-  terraform: icon("terraform.svg", "Terraform", "Delivery", 92, 108),
+  "deployment-pipeline": icon("deployment-pipeline.webp", "Deployment pipeline", "Delivery", 96, 112),
+  terraform: icon("terraform.webp", "Terraform", "Delivery", 92, 108),
   helm: icon("helm.svg", "Helm", "Delivery", 92, 108),
 
   prometheus: icon("prometheus.svg", "Prometheus", "Observability", 92, 108),
@@ -63,25 +69,25 @@ export const diagramIcons = {
   chip: icon("k8s-node.svg", "Compute node", "Kubernetes", 92, 108, false),
   worker: icon("container.svg", "Worker", "Core", 88, 104, false),
   fn: icon("function.svg", "Function", "Core", 88, 104, false),
-  database: icon("postgresql.svg", "Database", "Data", 92, 108, false),
+  database: icon("postgresql.webp", "Database", "Data", 92, 108, false),
   cache: icon("redis.svg", "Cache", "Data", 92, 108, false),
-  bucket: icon("object-storage.svg", "Object store", "Data", 92, 108, false),
+  bucket: icon("object-storage.webp", "Object store", "Data", 92, 108, false),
   queue: icon("nats.svg", "Queue", "Data", 92, 108, false),
   bus: icon("nats.svg", "Event bus", "Data", 92, 108, false),
-  index: icon("object-storage.svg", "Search index", "Data", 92, 108, false),
+  index: icon("object-storage.webp", "Search index", "Data", 92, 108, false),
   repo: icon("code-repository.svg", "Repository", "Delivery", 92, 108, false),
-  gateway: icon("load-balancer.svg", "API gateway", "Network", 96, 112, false),
-  balancer: icon("load-balancer.svg", "Load balancer", "Network", 96, 112, false),
+  gateway: icon("load-balancer.webp", "API gateway", "Network", 96, 112, false),
+  balancer: icon("load-balancer.webp", "Load balancer", "Network", 96, 112, false),
   cdn: icon("internet.svg", "CDN / edge", "Network", 96, 112, false),
-  router: icon("dns.svg", "Router / DNS", "Network", 92, 108, false),
+  router: icon("dns.webp", "Router / DNS", "Network", 92, 108, false),
   firewall: icon("k8s-secret.svg", "Firewall", "Network", 86, 102, false),
   vault: icon("k8s-secret.svg", "Secrets", "Network", 86, 102, false),
   dashboard: icon("grafana.svg", "Dashboard", "Observability", 92, 108, false),
   metrics: icon("prometheus.svg", "Metrics", "Observability", 92, 108, false),
   logs: icon("grafana.svg", "Logs", "Observability", 92, 108, false),
   alert: icon("alertmanager.svg", "Alerting", "Observability", 92, 108, false),
-  pipeline: icon("deployment-pipeline.svg", "Pipeline / CI", "Delivery", 96, 112, false),
-  cron: icon("deployment-pipeline.svg", "Scheduler", "Delivery", 96, 112, false),
+  pipeline: icon("deployment-pipeline.webp", "Pipeline / CI", "Delivery", 96, 112, false),
+  cron: icon("deployment-pipeline.webp", "Scheduler", "Delivery", 96, 112, false),
   browser: icon("internet.svg", "Web client", "Core", 96, 112, false),
   person: icon("internet.svg", "User", "Core", 96, 112, false),
   mobile: icon("internet.svg", "Mobile", "Core", 96, 112, false),

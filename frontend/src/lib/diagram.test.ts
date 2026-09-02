@@ -11,6 +11,7 @@ import {
   serializeDiagramMarker,
 } from "./diagram";
 import type { Diagram, DiagramEdgeRoute } from "./diagram";
+import { diagramIconHref } from "./diagramIcons";
 
 describe("diagram system icons", () => {
   it("registers system icon kinds as diagram node kinds", () => {
@@ -235,7 +236,9 @@ describe("diagram system icons", () => {
     });
 
     expect(html).toContain("diagram-node-icon");
-    expect(html).toContain('href="/diagram-icons/flat/load-balancer.svg"');
+    // Derived rather than hardcoded: the file format of an icon is free to change.
+    expect(html).toContain(`href="${diagramIconHref("load-balancer", "flat")}"`);
+    expect(diagramIconHref("load-balancer", "flat")).toContain("/diagram-icons/flat/");
   });
 
   it("renders isometric icons in isometric diagram previews", () => {
@@ -246,7 +249,8 @@ describe("diagram system icons", () => {
       edges: [],
     });
 
-    expect(html).toContain('href="/diagram-icons/cloud-native/load-balancer.svg"');
+    expect(html).toContain(`href="${diagramIconHref("load-balancer", "iso")}"`);
+    expect(diagramIconHref("load-balancer", "iso")).toContain("/diagram-icons/cloud-native/");
   });
 
   it("creates flat and isometric default diagrams independently", () => {
