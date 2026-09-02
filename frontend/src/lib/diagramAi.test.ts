@@ -111,3 +111,28 @@ describe("diagram AI generation", () => {
     expect(diagram.edges[0]?.color).toBe("slate");
   });
 });
+
+describe("generated edge labels", () => {
+  const answer = (label: unknown) =>
+    JSON.stringify({
+      nodes: [
+        { id: "n1", kind: "client", label: "Client", color: "slate" },
+        { id: "n2", kind: "server", label: "API", color: "slate" },
+      ],
+      edges: [{ from: "n1", to: "n2", color: "slate", label }],
+    });
+
+  it("keeps a short label and normalizes its spacing", () => {
+    expect(parseGeneratedDiagram(answer("  pulls   from "), "flat")?.edges[0].label).toBe("pulls from");
+  });
+
+  it("drops a label that would crowd the line or is not text", () => {
+    expect(parseGeneratedDiagram(answer("x".repeat(33)), "flat")?.edges[0].label).toBeUndefined();
+    expect(parseGeneratedDiagram(answer(""), "flat")?.edges[0].label).toBeUndefined();
+    expect(parseGeneratedDiagram(answer(42), "flat")?.edges[0].label).toBeUndefined();
+  });
+
+  it("asks the model for a label only when the relationship needs naming", () => {
+    expect(buildDiagramGenerationPrompt("draw it", "flat")).toContain("Edge label is optional");
+  });
+});

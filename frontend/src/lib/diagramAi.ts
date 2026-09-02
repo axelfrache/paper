@@ -34,7 +34,7 @@ export function buildDiagramGenerationPrompt(prompt: string, mode: DiagramMode, 
     "Order the nodes array by visual flow from left to right, then top to bottom.",
     "",
     "Schema:",
-    `{"nodes":[{"id":"n1","kind":"client","label":"Client","color":"slate"}],"edges":[{"from":"n1","to":"n2","color":"slate","dashed":false}]}`,
+    `{"nodes":[{"id":"n1","kind":"client","label":"Client","color":"slate"}],"edges":[{"from":"n1","to":"n2","color":"slate","dashed":false,"label":"pulls"}]}`,
     "",
     `Diagram mode: ${mode}`,
     `Allowed node kinds: ${allowedDiagramKinds}`,
@@ -43,6 +43,7 @@ export function buildDiagramGenerationPrompt(prompt: string, mode: DiagramMode, 
     "Generated edges must use color slate. Keep visual emphasis on nodes, not relationships.",
     edgeRouteInstruction(mode),
     "Allowed edge ends: none, arrow",
+    "Edge label is optional: add one only when the relationship needs naming, at most three words (for example \"pulls\", \"deploys\"). Omit it when the arrow speaks for itself.",
     "",
     current ? "Existing diagram, for context only. Replace it with the generated result:" : "No existing diagram.",
     current ? describeDiagram(current) : "",
@@ -50,6 +51,15 @@ export function buildDiagramGenerationPrompt(prompt: string, mode: DiagramMode, 
     "User request:",
     prompt,
   ].join("\n");
+}
+
+/** Edge labels name the relationship; anything long enough to crowd the line is dropped. */
+function toGeneratedEdgeLabel(value: unknown) {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const label = value.trim().replace(/\s+/g, " ");
+  return label && label.length <= 32 ? label : undefined;
 }
 
 export function buildDiagramAdditionPrompt(prompt: string, current: Diagram) {
@@ -64,7 +74,7 @@ export function buildDiagramAdditionPrompt(prompt: string, current: Diagram) {
       : "Keep added nodes close to the existing nodes they connect to. Avoid layouts that make arrows cross.",
     "",
     "Schema:",
-    `{"nodes":[{"id":"new_database","kind":"postgresql","label":"Database","color":"green"}],"edges":[{"from":"new_database","to":"existing_cluster_id","color":"green","dashed":false}]}`,
+    `{"nodes":[{"id":"new_database","kind":"postgresql","label":"Database","color":"green"}],"edges":[{"from":"new_database","to":"existing_cluster_id","color":"green","dashed":false,"label":"reads"}]}`,
     "",
     `Diagram mode: ${current.mode}`,
     `Allowed node kinds: ${allowedDiagramKinds}`,
@@ -73,6 +83,7 @@ export function buildDiagramAdditionPrompt(prompt: string, current: Diagram) {
     "Generated edges must use color slate. Keep visual emphasis on nodes, not relationships.",
     edgeRouteInstruction(current.mode),
     "Allowed edge ends: none, arrow",
+    "Edge label is optional: add one only when the relationship needs naming, at most three words (for example \"pulls\", \"deploys\"). Omit it when the arrow speaks for itself.",
     "",
     "Existing diagram:",
     describeDiagram(current),
@@ -123,6 +134,7 @@ export function parseGeneratedDiagram(answer: string, mode: DiagramMode): Diagra
         start: toDiagramEdgeEnd(item.start),
         end: toDiagramEdgeEnd(item.end),
         width: toDiagramEdgeWidth(item.width),
+        label: toGeneratedEdgeLabel(item.label),
       },
     ];
   });

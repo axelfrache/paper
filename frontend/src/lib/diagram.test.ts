@@ -5,10 +5,12 @@ import {
   diagramIconForKind,
   diagramKinds,
   diagramToSvgMarkup,
+  edgeLabelHalo,
   layoutDiagram,
   parseDiagramMarker,
   serializeDiagramMarker,
 } from "./diagram";
+import type { Diagram, DiagramEdgeRoute } from "./diagram";
 
 describe("diagram system icons", () => {
   it("registers system icon kinds as diagram node kinds", () => {
@@ -255,5 +257,63 @@ describe("diagram system icons", () => {
     expect(iso.mode).toBe("iso");
     expect(iso.nodes.map((node) => node.kind)).toEqual(["client", "server", "database"]);
     expect(iso.nodes[0]).toMatchObject({ x: 0, y: 0 });
+  });
+});
+
+describe("edge labels", () => {
+  const nodes = [
+    { id: "a", kind: "client" as const, label: "A", color: "slate" as const, x: 40, y: 40, w: 120, h: 80 },
+    { id: "b", kind: "client" as const, label: "B", color: "slate" as const, x: 320, y: 40, w: 120, h: 80 },
+  ];
+  const build = (route: DiagramEdgeRoute, label?: string): Diagram => ({
+    version: 1,
+    mode: "flat",
+    nodes,
+    edges: [{ id: "e1", from: "a", to: "b", color: "slate", route, label }],
+  });
+
+  it("anchors the label between the two nodes, whatever the route", () => {
+    for (const route of ["straight", "orthogonal", "curved"] as DiagramEdgeRoute[]) {
+      const [edge] = layoutDiagram(build(route, "pulls")).edges;
+      expect(edge.label).toBe("pulls");
+      expect(edge.labelX).toBeGreaterThan(nodes[0].x + nodes[0].w);
+      expect(edge.labelX).toBeLessThan(nodes[1].x);
+    }
+  });
+
+  it("puts the label on the line for straight and orthogonal routes", () => {
+    const centre = layoutDiagram(build("straight")).nodes[0].cy;
+    for (const route of ["straight", "orthogonal"] as DiagramEdgeRoute[]) {
+      expect(layoutDiagram(build(route, "pulls")).edges[0].labelY).toBeCloseTo(centre, 0);
+    }
+  });
+
+  it("follows the bend of a curved route rather than its chord", () => {
+    const centre = layoutDiagram(build("straight")).nodes[0].cy;
+    // A label at the chord midpoint would float off a curve that arcs away from it.
+    expect(Math.abs(layoutDiagram(build("curved", "pulls")).edges[0].labelY - centre)).toBeGreaterThan(8);
+  });
+
+  it("renders the label with a halo sized on the stroke so it cuts the line", () => {
+    const svg = diagramToSvgMarkup(build("straight", "pulls"));
+    expect(svg).toContain(">pulls</text>");
+    // The halo colours live in CSS; only its width depends on the edge.
+    expect(svg).toContain('class="diagram-edge-label"');
+    expect(svg).toContain(`stroke-width="${edgeLabelHalo(layoutDiagram(build("straight", "pulls")).edges[0].width)}"`);
+  });
+
+  it("renders nothing for a blank label", () => {
+    expect(layoutDiagram(build("straight", "   ")).edges[0].label).toBe("");
+    expect(diagramToSvgMarkup(build("straight"))).not.toContain("diagram-edge-label");
+  });
+
+  it("escapes a label instead of letting it inject markup", () => {
+    expect(diagramToSvgMarkup(build("straight", "a <b> & c"))).toContain("a &lt;b&gt; &amp; c");
+  });
+
+  it("keeps a label through a serialization round trip and drops a blank one", () => {
+    const diagram = build("straight", "pulls");
+    expect(parseDiagramMarker(serializeDiagramMarker(diagram))?.edges[0].label).toBe("pulls");
+    expect(parseDiagramMarker(serializeDiagramMarker(build("straight", "  ")))?.edges[0].label).toBeUndefined();
   });
 });

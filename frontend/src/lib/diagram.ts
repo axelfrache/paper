@@ -38,6 +38,7 @@ export type DiagramEdge = {
   start?: DiagramEdgeEnd;
   end?: DiagramEdgeEnd;
   width?: DiagramEdgeWidth;
+  label?: string;
 };
 
 export type DiagramPreview = {
@@ -85,6 +86,11 @@ export type DiagramLayoutEdge = {
   markerEnd: string;
   dashed: boolean;
   width: number;
+  label: string;
+  // Anchor on the path itself, so the label reads as part of the edge rather than
+  // floating beside it.
+  labelX: number;
+  labelY: number;
 };
 
 export type DiagramLayout = {
@@ -295,7 +301,7 @@ export function layoutDiagram(diagram: Diagram): DiagramLayout {
     const strokeWidth = edgeStrokeWidth(edge.width);
     const trimStart = edge.start === "arrow" ? arrowMarkerLength(strokeWidth) : 0;
     const trimEnd = edge.end === "none" ? 0 : arrowMarkerLength(strokeWidth);
-    const d =
+    const path =
       route === "curved"
         ? curvedEdgePath(from, to, fromSource, toSource, trimStart, trimEnd)
         : route === "straight"
@@ -305,12 +311,15 @@ export function layoutDiagram(diagram: Diagram): DiagramLayout {
     return [
       {
         id: edge.id,
-        d,
+        d: path.d,
         color: color.stroke,
         markerStart: edge.start === "arrow" ? marker : "",
         markerEnd: edge.end === "none" ? "" : marker,
         dashed: edge.dashed === true,
         width: strokeWidth,
+        label: (edge.label ?? "").trim(),
+        labelX: Math.round(path.mid.x * 10) / 10,
+        labelY: Math.round(path.mid.y * 10) / 10,
       },
     ];
   });
@@ -337,6 +346,7 @@ export function diagramToSvgMarkup(diagram: Diagram, maxHeight = 340) {
       const lineCap = edge.markerStart || edge.markerEnd ? "butt" : "round";
       return `<path d="${edge.d}" fill="none" stroke="${edge.color}" stroke-width="${edge.width}" stroke-linecap="${lineCap}" stroke-linejoin="round"${edge.markerStart ? ` marker-start="${edge.markerStart}"` : ""}${edge.markerEnd ? ` marker-end="${edge.markerEnd}"` : ""}${edge.dashed ? ' stroke-dasharray="7 6"' : ""}/>`;
     }),
+    ...layout.edges.map((edge) => edgeLabelSvg(edge)),
     ...layout.nodes.map((node) => {
       const faces = node.faces
         .map((face) => `<path d="${face.d}" fill="${face.fill}" stroke="${face.stroke}" stroke-width="1.4"/>`)
@@ -353,6 +363,28 @@ export function diagramToSvgMarkup(diagram: Diagram, maxHeight = 340) {
   ].join("");
 
   return `<svg class="diagram-preview-svg" viewBox="${bounds.x} ${bounds.y} ${viewBoxWidth} ${viewBoxHeight}" preserveAspectRatio="xMidYMid meet" width="100%" style="display:block;height:${displayHeight}px;font-family:inherit;overflow:hidden;"><defs>${arrowDefs()}</defs>${body}</svg>`;
+}
+
+/**
+ * Width of the halo painted under an edge label. It follows the stroke so a thick edge
+ * is still cut cleanly; the colours live in CSS, since the backdrop differs between the
+ * editor canvas and a rendered diagram card.
+ */
+export function edgeLabelHalo(strokeWidth: number) {
+  return Math.round((strokeWidth + 4.5) * 10) / 10;
+}
+
+/**
+ * Edge labels stay upright in both modes — an isometric diagram skews its shapes, not
+ * its text. The halo is painted under the glyphs in the card colour so the label reads
+ * as a break in the line rather than as text lying on top of it, and it scales with the
+ * stroke so a thick edge is still cut cleanly.
+ */
+function edgeLabelSvg(edge: DiagramLayoutEdge) {
+  if (!edge.label) {
+    return "";
+  }
+  return `<text class="diagram-edge-label" x="${edge.labelX}" y="${edge.labelY}" text-anchor="middle" dominant-baseline="central" stroke-width="${edgeLabelHalo(edge.width)}">${escapeHtml(edge.label)}</text>`;
 }
 
 function contentBounds(layout: DiagramLayout) {
@@ -794,7 +826,10 @@ function straightEdgePath(
   const uy = dy / len;
   const start = offsetPoint(edgePoint(from.cx, from.cy, fromSize, ux, uy), ux, uy, trimStart);
   const end = offsetPoint(edgePoint(to.cx, to.cy, toSize, -ux, -uy), -ux, -uy, trimEnd);
-  return `M${start.x} ${start.y}L${end.x} ${end.y}`;
+  return {
+    d: `M${start.x} ${start.y}L${end.x} ${end.y}`,
+    mid: { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 },
+  };
 }
 
 function curvedEdgePath(
@@ -815,9 +850,13 @@ function curvedEdgePath(
   const start = offsetPoint(edgePoint(from.cx, from.cy, fromSize, ux, uy), ux, uy, trimStart);
   const end = offsetPoint(edgePoint(to.cx, to.cy, toSize, -ux, -uy), -ux, -uy, trimEnd);
   const bend = Math.min(72, Math.max(28, len * 0.22));
-  const mx = (start.x + end.x) / 2 - uy * bend;
-  const my = (start.y + end.y) / 2 + ux * bend;
-  return `M${start.x} ${start.y}Q${Math.round(mx * 10) / 10} ${Math.round(my * 10) / 10} ${end.x} ${end.y}`;
+  const mx = Math.round(((start.x + end.x) / 2 - uy * bend) * 10) / 10;
+  const my = Math.round(((start.y + end.y) / 2 + ux * bend) * 10) / 10;
+  return {
+    d: `M${start.x} ${start.y}Q${mx} ${my} ${end.x} ${end.y}`,
+    // A quadratic curve at t=0.5, so the label sits on the curve and not on its chord.
+    mid: { x: 0.25 * start.x + 0.5 * mx + 0.25 * end.x, y: 0.25 * start.y + 0.5 * my + 0.25 * end.y },
+  };
 }
 
 function orthogonalEdgePath(
@@ -844,7 +883,11 @@ function orthogonalEdgePath(
       { x: tx, y: to.cy },
     ];
     const trimmed = trimPolylineEndpoints(points, trimStart, trimEnd);
-    return corner === "rounded" ? roundedPolylinePath(trimmed, 10) : polylinePath(trimmed);
+    return {
+      d: corner === "rounded" ? roundedPolylinePath(trimmed, 10) : polylinePath(trimmed),
+      // Middle of the connecting segment, which the elbow always leaves on the path.
+      mid: { x: mx, y: (from.cy + to.cy) / 2 },
+    };
   }
   const sy = from.cy + (dy > 0 ? fromSize.h / 2 : -fromSize.h / 2);
   const ty = to.cy + (dy > 0 ? -toSize.h / 2 : toSize.h / 2);
@@ -856,7 +899,10 @@ function orthogonalEdgePath(
     { x: to.cx, y: ty },
   ];
   const trimmed = trimPolylineEndpoints(points, trimStart, trimEnd);
-  return corner === "rounded" ? roundedPolylinePath(trimmed, 10) : polylinePath(trimmed);
+  return {
+    d: corner === "rounded" ? roundedPolylinePath(trimmed, 10) : polylinePath(trimmed),
+    mid: { x: (from.cx + to.cx) / 2, y: my },
+  };
 }
 
 function edgePoint(cx: number, cy: number, size: { w: number; h: number }, ux: number, uy: number) {
@@ -1067,6 +1113,7 @@ function normalizeEdge(value: unknown): DiagramEdge {
     start: isDiagramEdgeEnd(edge.start) ? edge.start : undefined,
     end: isDiagramEdgeEnd(edge.end) ? edge.end : undefined,
     width: isDiagramEdgeWidth(edge.width) ? edge.width : undefined,
+    label: typeof edge.label === "string" && edge.label.trim() ? edge.label.trim() : undefined,
   };
 }
 

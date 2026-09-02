@@ -1529,6 +1529,21 @@ kbd,
   overscroll-behavior: none;
 }
 
+/* Halo under an edge label, so the label reads as a break in the line. The stroke has to
+   match whatever the diagram is drawn on, which differs between the two surfaces. */
+.diagram-edge-label {
+  paint-order: stroke;
+  stroke: var(--surface-soft);
+  stroke-linejoin: round;
+  fill: var(--muted-strong);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.diagram-canvas .diagram-edge-label {
+  stroke: var(--bg);
+}
+
 .diagram-canvas {
   position: absolute;
   inset: 0;

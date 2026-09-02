@@ -8,6 +8,7 @@ import {
   diagramKinds,
   diagramPalette,
   duplicateDiagramNode,
+  edgeLabelHalo,
   layoutDiagram,
   screenToDiagramPoint,
 } from "../lib/diagram";
@@ -536,6 +537,31 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
     );
   };
 
+  // The laid-out label is trimmed for rendering; the input must show the raw value or a
+  // space typed between two words would be swallowed as it is entered.
+  const edgeLabelSource = (edgeId: string) => liveDiagram.edges.find((edge) => edge.id === edgeId)?.label ?? "";
+
+  const setEdgeLabel = (edgeId: string, label: string) => {
+    patchDiagram(
+      (current) => ({
+        ...current,
+        edges: current.edges.map((edge) => (edge.id === edgeId ? { ...edge, label } : edge)),
+      }),
+      { commit: false },
+    );
+  };
+
+  // Shares editingId with node renaming: only one thing is ever renamed inline, so the
+  // focus effect, the outside-click dismissal and Escape all keep working unchanged.
+  const startInlineEdgeLabelEdit = (event: React.MouseEvent<SVGGElement>, edgeId: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setSelectedIds([]);
+    setSelectedEdgeId(edgeId);
+    setEditingId(edgeId);
+    setTool("select");
+  };
+
   const startInlineLabelEdit = (event: React.MouseEvent<SVGGElement>, nodeId: string) => {
     event.preventDefault();
     event.stopPropagation();
@@ -870,6 +896,7 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
               key={edge.id}
               className={tool === "select" ? "diagram-edge-hit" : undefined}
               onPointerDown={(event) => handleEdgePointerDown(event, edge.id)}
+              onDoubleClick={(event) => startInlineEdgeLabelEdit(event, edge.id)}
             >
               <path d={edge.d} fill="none" stroke="transparent" strokeWidth="14" />
               <path
@@ -883,6 +910,38 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
                 markerStart={edge.markerStart ? edge.markerStart.replace("#diagram-arrow-", "#diagram-editor-arrow-") : undefined}
                 markerEnd={edge.markerEnd ? edge.markerEnd.replace("#diagram-arrow-", "#diagram-editor-arrow-") : undefined}
               />
+              {editingId === edge.id ? (
+                <foreignObject x={edge.labelX - inlineEdgeLabelWidth / 2} y={edge.labelY - 13} width={inlineEdgeLabelWidth} height="26">
+                  <input
+                    ref={labelInputRef}
+                    className="diagram-inline-label-input"
+                    placeholder="Label"
+                    value={edgeLabelSource(edge.id)}
+                    onChange={(event) => setEdgeLabel(edge.id, event.target.value)}
+                    onBlur={stopInlineLabelEdit}
+                    onPointerDown={(event) => {
+                      event.stopPropagation();
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === "Escape") {
+                        event.preventDefault();
+                        stopInlineLabelEdit();
+                      }
+                    }}
+                  />
+                </foreignObject>
+              ) : edge.label ? (
+                <text
+                  className="diagram-edge-label"
+                  x={edge.labelX}
+                  y={edge.labelY}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  strokeWidth={edgeLabelHalo(edge.width)}
+                >
+                  {edge.label}
+                </text>
+              ) : null}
             </g>
           ))}
 
@@ -1200,6 +1259,13 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
           <aside className="diagram-inspector">
             <strong>Selected</strong>
             <div className="diagram-inspector-meta">Connection</div>
+            <input
+              value={selectedEdge.label ?? ""}
+              aria-label="Connection label"
+              placeholder="Label"
+              onChange={(event) => patchSelectedEdge({ label: event.target.value })}
+              onBlur={commitDiagram}
+            />
             <div className="diagram-inspector-style">
               <span>Color</span>
               <div className="diagram-inspector-swatches">
@@ -1431,6 +1497,8 @@ function boundsForLayoutNodes(nodes: Array<{ hx: number; hy: number; hw: number;
   const maxY = Math.max(...nodes.map((node) => node.hy + node.hh)) + pad;
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
+
+const inlineEdgeLabelWidth = 132;
 
 function inlineLabelWidth(nodeWidth: number) {
   return Math.max(56, Math.min(140, nodeWidth - 28));
