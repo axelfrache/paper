@@ -196,3 +196,62 @@ describe("stepWithMagnet", () => {
     expect(stepWithMagnet(2.6, 0.4)).toBe(0.4);
   });
 });
+
+describe("matching the rhythm of a row", () => {
+  // Five boxes 100 wide, spaced 60 apart: 0, 160, 320, 480, 640.
+  const settled = [0, 160, 320, 480].map((x, index) => box(`n${index}`, x, 0, 100, 60));
+
+  it("joins the end of an evenly spaced row at the same distance", () => {
+    // Dropped near 645: four short of the rhythm.
+    const { dx, spacing } = snapToGuides([box("moving", 0, 0, 100, 60)], settled, 645, 0, 8);
+
+    expect(dx).toBe(640);
+    expect(spacing[0].gap).toBe(60);
+  });
+
+  it("measures every gap of the row, not only the one it joined", () => {
+    const { spacing } = snapToGuides([box("moving", 0, 0, 100, 60)], settled, 645, 0, 8);
+
+    // Four gaps: the three already there plus the one just created.
+    expect(spacing[0].segments.map((segment) => segment.start)).toEqual([100, 260, 420, 580]);
+    expect(spacing[0].segments.every((segment) => segment.end - segment.start === 60)).toBe(true);
+  });
+
+  it("catches a block joining the right end of a row of unequal widths", () => {
+    // The shape of a real note: three cards ~267 wide, 200 apart, and a fourth dragged in.
+    const cards = [box("client", 0, 0, 268, 165), box("api", 468, 0, 267, 165), box("store", 935, 0, 267, 165)];
+    const dragged = [box("moving", 0, 0, 240, 165)];
+
+    // Released five short of the rhythm: near enough for the magnet to close the gap.
+    const { dx, spacing } = snapToGuides(dragged, cards, 1397, 0, 8);
+
+    expect(dx).toBe(1402);
+    expect(spacing[0].gap).toBe(200);
+    expect(spacing[0].segments).toHaveLength(3);
+  });
+
+  it("stays out of the way when the row keeps no rhythm", () => {
+    const uneven = [box("a", 0, 0, 100, 60), box("b", 200, 0, 100, 60), box("c", 480, 0, 100, 60)];
+    const { dx, spacing } = snapToGuides([box("moving", 0, 0, 100, 60)], uneven, 645, 0, 8);
+
+    expect(dx).toBe(645);
+    expect(spacing).toEqual([]);
+  });
+
+  it("lets an edge alignment win over the rhythm", () => {
+    // Landing on top of a row member: matching its edge is the clearer intent.
+    const { dx, spacing } = snapToGuides([box("moving", 0, 0, 100, 60)], settled, 163, 0, 8);
+
+    expect(dx).toBe(160);
+    expect(spacing).toEqual([]);
+  });
+
+  it("fills a hole in the row at the rhythm of its neighbours", () => {
+    const withHole = [box("a", 0, 0, 100, 60), box("b", 160, 0, 100, 60), box("d", 480, 0, 100, 60)];
+    const { dx, spacing } = snapToGuides([box("moving", 0, 0, 100, 60)], withHole, 323, 0, 8);
+
+    expect(dx).toBe(320);
+    expect(spacing[0].gap).toBe(60);
+    expect(spacing[0].segments).toHaveLength(3);
+  });
+});

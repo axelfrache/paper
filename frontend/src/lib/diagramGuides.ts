@@ -133,7 +133,12 @@ function snapAxis(bounds: Box, statics: GuideBox[], delta: number, axis: Axis, t
   return best === null ? { delta, snapped: false, spacing: null } : { delta: delta + best, snapped: true, spacing: null };
 }
 
-/** Centres the box between its two nearest neighbours on this axis, gaps made equal. */
+/**
+ * Matches the spacing of the row the box is dragged into: equal gaps on either side when
+ * it lands between two neighbours, or the rhythm the rest of the row already keeps when it
+ * joins at one end. Every gap that ends up on that rhythm is reported, so an evenly spaced
+ * row can be read at a glance rather than inferred from two numbers.
+ */
 function spaceAxis(
   bounds: Box,
   statics: GuideBox[],
@@ -148,53 +153,66 @@ function spaceAxis(
   const movedCross = extentOf(moved, cross);
 
   // Only boxes sharing the same row (or column) are neighbours worth measuring against.
-  const neighbours = statics.filter((box) => {
-    const span = extentOf(box, cross);
-    return span.start < movedCross.end && span.end > movedCross.start;
-  });
-
-  let before: { start: number; end: number } | null = null;
-  let after: { start: number; end: number } | null = null;
-  for (const box of neighbours) {
-    const span = extentOf(box, axis);
-    if (span.end <= movedSpan.start && (!before || span.end > before.end)) {
-      before = span;
-    }
-    if (span.start >= movedSpan.end && (!after || span.start < after.start)) {
-      after = span;
-    }
-  }
-
-  if (!before || !after) {
+  const row = statics
+    .filter((box) => {
+      const span = extentOf(box, cross);
+      return span.start < movedCross.end && span.end > movedCross.start;
+    })
+    .map((box) => extentOf(box, axis))
+    .sort((a, b) => a.start - b.start);
+  if (!row.length) {
     return { delta, snapped: false, spacing: null };
   }
 
-  const gapBefore = movedSpan.start - before.end;
-  const gapAfter = after.start - movedSpan.end;
-  const adjust = (gapAfter - gapBefore) / 2;
-  if (Math.abs(adjust) > threshold) {
+  const before = [...row].reverse().find((span) => span.end <= movedSpan.start) ?? null;
+  const after = row.find((span) => span.start >= movedSpan.end) ?? null;
+  const rhythm = rhythmOf(row, movedSpan);
+
+  let adjust: number | null = null;
+  let gap: number | null = null;
+  if (before && after) {
+    // Between two neighbours only one spacing satisfies both sides: the middle.
+    adjust = (after.start - movedSpan.end - (movedSpan.start - before.end)) / 2;
+    gap = (movedSpan.start - before.end + (after.start - movedSpan.end)) / 2;
+  } else if (rhythm !== null && after) {
+    adjust = after.start - movedSpan.end - rhythm;
+    gap = rhythm;
+  } else if (rhythm !== null && before) {
+    adjust = rhythm - (movedSpan.start - before.end);
+    gap = rhythm;
+  }
+
+  if (adjust === null || gap === null || gap <= 0 || Math.abs(adjust) > threshold) {
     return { delta, snapped: false, spacing: null };
   }
 
-  const gap = (gapBefore + gapAfter) / 2;
-  if (gap <= 0) {
-    return { delta, snapped: false, spacing: null };
-  }
+  const settled = extentOf(alongAxis(moved, axis, adjust), axis);
+  const segments = gapsAcross([...row, settled].sort((a, b) => a.start - b.start))
+    .filter((segment) => Math.abs(segment.end - segment.start - gap) <= epsilon)
+    .map((segment) => ({ ...segment, at: (movedCross.start + movedCross.end) / 2 }));
 
-  const centred = extentOf(alongAxis(moved, axis, adjust), axis);
-  const at = (movedCross.start + movedCross.end) / 2;
-  return {
-    delta: delta + adjust,
-    snapped: true,
-    spacing: {
-      axis,
-      gap,
-      segments: [
-        { start: before.end, end: centred.start, at },
-        { start: centred.end, end: after.start, at },
-      ],
-    },
-  };
+  return { delta: delta + adjust, snapped: true, spacing: { axis, gap, segments } };
+}
+
+/** The gap this row already repeats, or null when it keeps no single rhythm. */
+function rhythmOf(row: Array<{ start: number; end: number }>, moving: { start: number; end: number }) {
+  // A pair straddling the dragged box measures across it, which is not a rhythm of the row.
+  const gaps = gapsAcross(row)
+    .filter((gap) => !(gap.start < moving.end && gap.end > moving.start))
+    .map((gap) => gap.end - gap.start);
+  if (!gaps.length || gaps.some((gap) => gap <= 0 || Math.abs(gap - gaps[0]) > epsilon)) {
+    return null;
+  }
+  return gaps[0];
+}
+
+/** The empty space between each consecutive pair of an ordered row. */
+function gapsAcross(row: Array<{ start: number; end: number }>) {
+  const gaps: Array<{ start: number; end: number }> = [];
+  for (let index = 0; index < row.length - 1; index += 1) {
+    gaps.push({ start: row[index].end, end: row[index + 1].start });
+  }
+  return gaps;
 }
 
 function guidesForAxis(moved: Box, statics: GuideBox[], axis: Axis) {
