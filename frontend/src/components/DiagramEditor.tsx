@@ -504,6 +504,85 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
     setPendingFromId(null);
   };
 
+  const handleEdgeLabelPointerDown = (event: React.PointerEvent<SVGElement>, edgeId: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (editingId) return;
+    if (tool === "pan") {
+      startCanvasPan(event.nativeEvent);
+      return;
+    }
+
+    setSelectedEdgeId(edgeId);
+    setSelectedIds([]);
+
+    const svg = svgRef.current;
+    const edge = diagramRef.current.edges.find((e) => e.id === edgeId);
+    if (!svg || !edge) return;
+
+    const currentLayout = layoutDiagram(diagramRef.current);
+    const fromNode = currentLayout.nodes.find(n => n.id === edge.from);
+    const toNode = currentLayout.nodes.find(n => n.id === edge.to);
+    if (!fromNode || !toNode) return;
+
+    const move = (moveEvent: PointerEvent) => {
+      const currentSvg = svgRef.current;
+      if (!currentSvg) return;
+
+      const point = screenToDiagramPoint(moveEvent, currentSvg, diagramRef.current);
+      const raw = diagramToLayoutPoint(diagramRef.current.mode, point.x, point.y);
+
+      let t = 0.5;
+      const pathEl = currentSvg.querySelector(`path[data-edge-id="${edge.id}"]`) as SVGPathElement | null;
+      if (pathEl) {
+        const trackLength = pathEl.getTotalLength();
+        let bestT = 0.5;
+        let minDist = Infinity;
+        const samples = 40;
+        for (let i = 0; i <= samples; i++) {
+          const sampleT = i / samples;
+          const p = pathEl.getPointAtLength(sampleT * trackLength);
+          const distSq = (p.x - raw.x) ** 2 + (p.y - raw.y) ** 2;
+          if (distSq < minDist) {
+            minDist = distSq;
+            bestT = sampleT;
+          }
+        }
+        t = bestT;
+      } else {
+        const A = { x: fromNode.cx, y: fromNode.cy };
+        const B = { x: toNode.cx, y: toNode.cy };
+        const dx = B.x - A.x;
+        const dy = B.y - A.y;
+        const lenSq = dx * dx + dy * dy;
+        if (lenSq > 0) {
+          const dot = (raw.x - A.x) * dx + (raw.y - A.y) * dy;
+          t = Math.max(0, Math.min(1, dot / lenSq));
+        }
+      }
+
+      patchDiagram(
+        (current) => ({
+          ...current,
+          edges: current.edges.map((e) =>
+            e.id === edgeId ? { ...e, labelPosition: t } : e
+          ),
+        }),
+        { commit: false }
+      );
+    };
+
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      commitDiagram();
+    };
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
   const startSelectionBox = (event: PointerEvent) => {
     const svg = svgRef.current;
     if (!svg) {
@@ -1013,8 +1092,9 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
               onPointerDown={(event) => handleEdgePointerDown(event, edge.id)}
               onDoubleClick={(event) => startInlineEdgeLabelEdit(event, edge.id)}
             >
-              <path d={edge.d} fill="none" stroke="transparent" strokeWidth="14" />
+              <path data-edge-id={edge.id} d={edge.d} fill="none" stroke="transparent" strokeWidth="14" />
               <path
+                data-edge-id={`visible-${edge.id}`}
                 d={edge.d}
                 fill="none"
                 stroke={selectedEdgeId === edge.id ? "var(--accent)" : edge.color}
@@ -1047,21 +1127,24 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
                   />
                 </foreignObject>
               ) : edge.label ? (
-                <>
+                <g 
+                  onPointerDown={(event) => handleEdgeLabelPointerDown(event, edge.id)}
+                  style={{ cursor: "move" }}
+                >
                   <EdgeLabelPlate label={edge.label} x={edge.labelX} y={edge.labelY} />
                   <text
-                  className="diagram-edge-label"
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  strokeWidth={edgeLabelHalo(edge.width)}
-                >
+                    className="diagram-edge-label"
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    strokeWidth={edgeLabelHalo(edge.width)}
+                  >
                     {labelLines(edge.label, edge.labelX, edge.labelY, 13, true).map((line, index) => (
                       <tspan key={index} x={line.x} y={line.y}>
                         {line.text}
                       </tspan>
                     ))}
                   </text>
-                </>
+                </g>
               ) : null}
             </g>
           ))}

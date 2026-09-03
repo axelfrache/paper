@@ -39,6 +39,7 @@ export type DiagramEdge = {
   end?: DiagramEdgeEnd;
   width?: DiagramEdgeWidth;
   label?: string;
+  labelPosition?: number;
 };
 
 export type DiagramPreview = {
@@ -303,10 +304,10 @@ export function layoutDiagram(diagram: Diagram): DiagramLayout {
     const trimEnd = edge.end === "none" ? 0 : arrowMarkerLength(strokeWidth);
     const path =
       route === "curved"
-        ? curvedEdgePath(from, to, fromSource, toSource, trimStart, trimEnd)
+        ? curvedEdgePath(from, to, fromSource, toSource, trimStart, trimEnd, edge.labelPosition ?? 0.5)
         : route === "straight"
-        ? straightEdgePath(from, to, fromSource, toSource, trimStart, trimEnd)
-        : orthogonalEdgePath(from, to, fromSource, toSource, edge.corner ?? "square", trimStart, trimEnd);
+        ? straightEdgePath(from, to, fromSource, toSource, trimStart, trimEnd, edge.labelPosition ?? 0.5)
+        : orthogonalEdgePath(from, to, fromSource, toSource, edge.corner ?? "square", trimStart, trimEnd, edge.labelPosition ?? 0.5);
     const marker = `url(#diagram-arrow-${edge.color})`;
     return [
       {
@@ -887,6 +888,7 @@ function straightEdgePath(
   toSource: DiagramNode,
   trimStart: number,
   trimEnd: number,
+  labelPosition: number,
 ) {
   const fromSize = connectionSize(from, fromSource);
   const toSize = connectionSize(to, toSource);
@@ -899,7 +901,10 @@ function straightEdgePath(
   const end = offsetPoint(edgePoint(to.cx, to.cy, toSize, -ux, -uy), -ux, -uy, trimEnd);
   return {
     d: `M${start.x} ${start.y}L${end.x} ${end.y}`,
-    mid: { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 },
+    mid: {
+      x: start.x + (end.x - start.x) * labelPosition,
+      y: start.y + (end.y - start.y) * labelPosition,
+    },
   };
 }
 
@@ -910,6 +915,7 @@ function curvedEdgePath(
   toSource: DiagramNode,
   trimStart: number,
   trimEnd: number,
+  labelPosition: number,
 ) {
   const fromSize = connectionSize(from, fromSource);
   const toSize = connectionSize(to, toSource);
@@ -923,11 +929,41 @@ function curvedEdgePath(
   const bend = Math.min(72, Math.max(28, len * 0.22));
   const mx = Math.round(((start.x + end.x) / 2 - uy * bend) * 10) / 10;
   const my = Math.round(((start.y + end.y) / 2 + ux * bend) * 10) / 10;
+  
+  const u = 1 - labelPosition;
   return {
     d: `M${start.x} ${start.y}Q${mx} ${my} ${end.x} ${end.y}`,
-    // A quadratic curve at t=0.5, so the label sits on the curve and not on its chord.
-    mid: { x: 0.25 * start.x + 0.5 * mx + 0.25 * end.x, y: 0.25 * start.y + 0.5 * my + 0.25 * end.y },
+    mid: {
+      x: u * u * start.x + 2 * u * labelPosition * mx + labelPosition * labelPosition * end.x,
+      y: u * u * start.y + 2 * u * labelPosition * my + labelPosition * labelPosition * end.y,
+    },
   };
+}
+
+function pointOnPolyline(points: {x:number, y:number}[], t: number) {
+  if (points.length === 0) return {x: 0, y: 0};
+  if (points.length === 1) return points[0];
+  let totalLen = 0;
+  const lengths = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const l = Math.hypot(points[i+1].x - points[i].x, points[i+1].y - points[i].y);
+    lengths.push(l);
+    totalLen += l;
+  }
+  const target = totalLen * Math.max(0, Math.min(1, t));
+  let current = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    if (current + lengths[i] >= target || i === points.length - 2) {
+      const remaining = target - current;
+      const segmentT = lengths[i] > 0 ? remaining / lengths[i] : 0;
+      return {
+        x: points[i].x + (points[i+1].x - points[i].x) * segmentT,
+        y: points[i].y + (points[i+1].y - points[i].y) * segmentT,
+      };
+    }
+    current += lengths[i];
+  }
+  return points[points.length - 1];
 }
 
 function orthogonalEdgePath(
@@ -938,6 +974,7 @@ function orthogonalEdgePath(
   corner: DiagramEdgeCorner,
   trimStart: number,
   trimEnd: number,
+  labelPosition: number,
 ) {
   const fromSize = connectionSize(from, fromSource);
   const toSize = connectionSize(to, toSource);
@@ -956,8 +993,7 @@ function orthogonalEdgePath(
     const trimmed = trimPolylineEndpoints(points, trimStart, trimEnd);
     return {
       d: corner === "rounded" ? roundedPolylinePath(trimmed, 10) : polylinePath(trimmed),
-      // Middle of the connecting segment, which the elbow always leaves on the path.
-      mid: { x: mx, y: (from.cy + to.cy) / 2 },
+      mid: pointOnPolyline(trimmed, labelPosition),
     };
   }
   const sy = from.cy + (dy > 0 ? fromSize.h / 2 : -fromSize.h / 2);
@@ -972,7 +1008,7 @@ function orthogonalEdgePath(
   const trimmed = trimPolylineEndpoints(points, trimStart, trimEnd);
   return {
     d: corner === "rounded" ? roundedPolylinePath(trimmed, 10) : polylinePath(trimmed),
-    mid: { x: (from.cx + to.cx) / 2, y: my },
+    mid: pointOnPolyline(trimmed, labelPosition),
   };
 }
 
