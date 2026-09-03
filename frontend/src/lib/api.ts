@@ -1,8 +1,20 @@
 import type { AIAction, AICompletion, AISuggestion, AskAnswer, Note, NoteDraft, NoteImage } from "../types/note";
+import type { AuthConfig, AuthUser } from "../types/auth";
+
+export class APIError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "APIError";
+    this.status = status;
+  }
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
+    credentials: "same-origin",
     headers: {
       "Content-Type": "application/json",
       ...init?.headers,
@@ -11,7 +23,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(payload?.error ?? "Request failed");
+    throw new APIError(payload?.error ?? "Request failed", response.status);
   }
 
   if (response.status === 204) {
@@ -19,6 +31,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return response.json() as Promise<T>;
+}
+
+export function getAuthConfig() {
+  return request<AuthConfig>("/api/auth/config");
+}
+
+export function getCurrentUser() {
+  return request<AuthUser>("/api/auth/me");
+}
+
+export function logout() {
+  return request<{ redirectTo: string }>("/api/auth/logout", { method: "POST" });
+}
+
+export function claimLegacyNotes() {
+  return request<{ claimed: number }>("/api/admin/notes/claim-legacy", { method: "POST" });
 }
 
 export function listNotes() {
@@ -79,6 +107,7 @@ export async function uploadNoteImage(noteId: string, file: File) {
   const response = await fetch(`/api/notes/${encodeURIComponent(noteId)}/images`, {
     method: "POST",
     body,
+    credentials: "same-origin",
   });
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as { error?: string } | null;

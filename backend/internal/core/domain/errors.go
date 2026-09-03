@@ -10,6 +10,8 @@ const (
 	KindTooLarge         ErrorKind = "too_large"
 	KindUnsupportedMedia ErrorKind = "unsupported_media"
 	KindAIUnavailable    ErrorKind = "ai_unavailable"
+	KindUnauthorized     ErrorKind = "unauthorized"
+	KindForbidden        ErrorKind = "forbidden"
 )
 
 type AppError struct {
@@ -28,6 +30,14 @@ func NewInvalidError(format string, args ...any) error {
 
 func NewNotFoundError(format string, args ...any) error {
 	return &AppError{Kind: KindNotFound, Message: fmt.Sprintf(format, args...)}
+}
+
+func NewUnauthorizedError(format string, args ...any) error {
+	return &AppError{Kind: KindUnauthorized, Message: fmt.Sprintf(format, args...)}
+}
+
+func NewForbiddenError(format string, args ...any) error {
+	return &AppError{Kind: KindForbidden, Message: fmt.Sprintf(format, args...)}
 }
 
 func NewAIError(status int, format string, args ...any) error {

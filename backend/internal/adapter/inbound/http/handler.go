@@ -208,6 +208,15 @@ func (h *Handler) DeleteNoteImage(w stdhttp.ResponseWriter, r *stdhttp.Request) 
 	w.WriteHeader(stdhttp.StatusNoContent)
 }
 
+func (h *Handler) ClaimLegacyNotes(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	count, err := h.service.ClaimLegacyNotes(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, stdhttp.StatusOK, map[string]int64{"claimed": count})
+}
+
 func (h *Handler) Health(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
 	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": "ok"})
 }

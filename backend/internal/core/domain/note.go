@@ -7,6 +7,7 @@ import (
 
 type Note struct {
 	ID        string
+	OwnerID   string
 	Title     string
 	Content   string
 	Tags      []string
@@ -66,6 +67,16 @@ type NoteImage struct {
 	ContentType string
 	Size        int64
 	URL         string
+}
+
+type NoteImageRecord struct {
+	ID          string
+	NoteID      string
+	OwnerID     string
+	StorageKey  string
+	Name        string
+	ContentType string
+	Size        int64
 }
 
 type ImageUpload struct {

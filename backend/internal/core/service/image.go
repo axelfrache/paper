@@ -29,15 +29,20 @@ var allowedImageTypes = map[string]string{
 
 type Image struct {
 	repo    port.NoteRepository
+	images  port.NoteImageRepository
 	storage port.ImageStorage
 }
 
-func NewImage(repo port.NoteRepository, storage port.ImageStorage) *Image {
-	return &Image{repo: repo, storage: storage}
+func NewImage(repo port.NoteRepository, images port.NoteImageRepository, storage port.ImageStorage) *Image {
+	return &Image{repo: repo, images: images, storage: storage}
 }
 
 func (s *Image) Upload(ctx context.Context, noteID string, upload domain.ImageUpload) (domain.NoteImage, error) {
-	if _, err := s.repo.GetByID(ctx, noteID); err != nil {
+	user, err := domain.RequireUser(ctx)
+	if err != nil {
+		return domain.NoteImage{}, err
+	}
+	if _, err := s.repo.GetByID(ctx, user.ID, noteID); err != nil {
 		return domain.NoteImage{}, err
 	}
 	if len(upload.Data) == 0 {
@@ -60,8 +65,16 @@ func (s *Image) Upload(ctx context.Context, noteID string, upload domain.ImageUp
 	name := cleanImageName(upload.Name, extension)
 	upload.Name = name
 	upload.ContentType = contentType
-	if err := s.storage.Put(ctx, imageKey(id), upload); err != nil {
+	key := imageKey(id)
+	if err := s.storage.Put(ctx, key, upload); err != nil {
 		return domain.NoteImage{}, fmt.Errorf("store image: %w", err)
+	}
+	if err := s.images.SaveImage(ctx, domain.NoteImageRecord{
+		ID: id, NoteID: noteID, OwnerID: user.ID, StorageKey: key,
+		Name: name, ContentType: contentType, Size: int64(len(upload.Data)),
+	}); err != nil {
+		_ = s.storage.Delete(ctx, key)
+		return domain.NoteImage{}, fmt.Errorf("save image metadata: %w", err)
 	}
 
 	return domain.NoteImage{
@@ -74,17 +87,36 @@ func (s *Image) Upload(ctx context.Context, noteID string, upload domain.ImageUp
 }
 
 func (s *Image) Open(ctx context.Context, imageID string) (port.StoredImage, error) {
+	user, err := domain.RequireUser(ctx)
+	if err != nil {
+		return port.StoredImage{}, err
+	}
 	if !imageIDPattern.MatchString(imageID) {
 		return port.StoredImage{}, domain.NewNotFoundError("Image was not found.")
 	}
-	return s.storage.Open(ctx, imageKey(imageID))
+	image, err := s.images.GetImage(ctx, user.ID, imageID)
+	if err != nil {
+		return port.StoredImage{}, err
+	}
+	return s.storage.Open(ctx, image.StorageKey)
 }
 
 func (s *Image) Delete(ctx context.Context, imageID string) error {
+	user, err := domain.RequireUser(ctx)
+	if err != nil {
+		return err
+	}
 	if !imageIDPattern.MatchString(imageID) {
 		return domain.NewNotFoundError("Image was not found.")
 	}
-	return s.storage.Delete(ctx, imageKey(imageID))
+	image, err := s.images.GetImage(ctx, user.ID, imageID)
+	if err != nil {
+		return err
+	}
+	if err := s.storage.Delete(ctx, image.StorageKey); err != nil {
+		return err
+	}
+	return s.images.DeleteImage(ctx, user.ID, imageID)
 }
 
 func normalizeImageContentType(claimed string, data []byte) string {

@@ -33,15 +33,16 @@ func (s *imageStorageStub) Open(_ context.Context, _ string) (port.StoredImage, 
 
 func TestImageUploadStoresImageForExistingNote(t *testing.T) {
 	repo := memory.NewNoteRepository()
-	note, err := repo.Create(context.Background(), domain.NoteDraft{Title: "Architecture"})
+	ctx := domain.ContextWithUser(context.Background(), domain.User{ID: "user-1"})
+	note, err := repo.Create(ctx, "user-1", domain.NoteDraft{Title: "Architecture"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	storage := &imageStorageStub{}
-	service := NewImage(repo, storage)
+	service := NewImage(repo, repo, storage)
 	png := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52}
 
-	image, err := service.Upload(context.Background(), note.ID, domain.ImageUpload{Name: "diagram.png", ContentType: "image/png", Data: png})
+	image, err := service.Upload(ctx, note.ID, domain.ImageUpload{Name: "diagram.png", ContentType: "image/png", Data: png})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,14 +59,37 @@ func TestImageUploadStoresImageForExistingNote(t *testing.T) {
 
 func TestImageUploadRejectsUnsupportedContent(t *testing.T) {
 	repo := memory.NewNoteRepository()
-	note, err := repo.Create(context.Background(), domain.NoteDraft{})
+	ctx := domain.ContextWithUser(context.Background(), domain.User{ID: "user-1"})
+	note, err := repo.Create(ctx, "user-1", domain.NoteDraft{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := NewImage(repo, &imageStorageStub{})
+	service := NewImage(repo, repo, &imageStorageStub{})
 
-	_, err = service.Upload(context.Background(), note.ID, domain.ImageUpload{Name: "payload.txt", ContentType: "text/plain", Data: []byte("not an image")})
+	_, err = service.Upload(ctx, note.ID, domain.ImageUpload{Name: "payload.txt", ContentType: "text/plain", Data: []byte("not an image")})
 	if err == nil {
 		t.Fatal("expected unsupported image to be rejected")
+	}
+}
+
+func TestImageAccessIsScopedToItsOwner(t *testing.T) {
+	repo := memory.NewNoteRepository()
+	owner := domain.ContextWithUser(context.Background(), domain.User{ID: "user-1"})
+	other := domain.ContextWithUser(context.Background(), domain.User{ID: "user-2"})
+	note, err := repo.Create(owner, "user-1", domain.NoteDraft{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewImage(repo, repo, &imageStorageStub{})
+	png := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52}
+	image, err := service.Upload(owner, note.ID, domain.ImageUpload{Name: "private.png", ContentType: "image/png", Data: png})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Open(other, image.ID); err == nil {
+		t.Fatal("another user can open the image")
+	}
+	if err := service.Delete(other, image.ID); err == nil {
+		t.Fatal("another user can delete the image")
 	}
 }

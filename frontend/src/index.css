@@ -117,6 +117,166 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+.auth-loading {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.auth-unavailable {
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--bg);
+}
+
+.auth-unavailable strong {
+  font-size: 14px;
+}
+
+.auth-unavailable button {
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: var(--muted-strong);
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.login-page {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.login-header {
+  display: flex;
+  height: 56px;
+  flex: none;
+  align-items: center;
+  padding: 0 22px;
+}
+
+.login-header img {
+  width: 92px;
+  height: 24px;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.login-header button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  margin-left: auto;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+}
+
+.login-header button:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.login-main {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  padding: 8px 22px 72px;
+}
+
+.login-panel {
+  display: flex;
+  width: min(100%, 372px);
+  flex-direction: column;
+  gap: 22px;
+  animation: fade-in 0.2s ease both;
+}
+
+.login-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.login-copy h1 {
+  margin: 0;
+  font-size: 23px;
+  font-weight: 640;
+}
+
+.login-copy p,
+.login-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.login-card {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(16, 18, 22, 0.04), 0 8px 30px rgba(16, 18, 22, 0.06);
+}
+
+.login-primary {
+  display: flex;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  color: var(--text);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 550;
+  text-decoration: none;
+}
+
+.login-primary:hover {
+  border-color: var(--line-hover-strong);
+  color: var(--text);
+  background: var(--surface-sunken);
+}
+
+.login-card p {
+  text-align: center;
+  font-size: 11.5px;
+}
+
+.login-switch {
+  display: flex;
+  justify-content: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.login-switch a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.login-error {
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--line));
+  border-radius: 7px;
+  padding: 9px 11px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 6%, var(--surface));
+  font-size: 12px;
+}
+
 button,
 input,
 textarea {
@@ -417,6 +577,160 @@ kbd,
 .shortcut-hints em {
   font-style: normal;
   font-variant-numeric: tabular-nums;
+}
+
+.account-trigger {
+  display: flex;
+  width: 100%;
+  flex: none;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  padding: 10px 12px;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+}
+
+.account-trigger:hover {
+  background: var(--hover);
+}
+
+.account-trigger > span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--muted-strong);
+  background: var(--surface);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.account-trigger div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.account-trigger strong,
+.account-trigger small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-trigger strong {
+  font-size: 11.5px;
+  font-weight: 570;
+}
+
+.account-trigger small {
+  color: var(--soft);
+  font-size: 10px;
+}
+
+.account-dialog {
+  width: min(360px, calc(100vw - 32px));
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 0;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.account-dialog::backdrop {
+  background: var(--scrim);
+}
+
+.account-dialog header,
+.account-dialog footer,
+.account-dialog section,
+.account-admin-actions {
+  display: flex;
+  padding: 14px 16px;
+}
+
+.account-dialog header {
+  align-items: center;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.account-dialog-icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--accent);
+  background: var(--surface-sunken);
+}
+
+.account-dialog header button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  margin-left: auto;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+}
+
+.account-dialog section {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.account-dialog section strong {
+  font-size: 14px;
+}
+
+.account-dialog section span,
+.account-dialog section em,
+.account-admin-actions span {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-style: normal;
+}
+
+.account-dialog section em {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  color: var(--accent);
+}
+
+.account-admin-actions {
+  align-items: center;
+  gap: 9px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.account-admin-actions button,
+.account-dialog footer button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 6px 9px;
+  color: var(--muted-strong);
+  background: var(--surface);
+  font-size: 11.5px;
+}
+
+.account-dialog footer {
+  justify-content: flex-end;
+  border-top: 1px solid var(--line-soft);
 }
 
 .notes-column {

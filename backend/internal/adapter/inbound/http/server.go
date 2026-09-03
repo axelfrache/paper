@@ -8,23 +8,30 @@ import (
 	"github.com/axelfrache/paper/backend/internal/core/port"
 )
 
-func NewRouter(notes port.NoteService, images port.NoteImageService, allowedOrigins []string) stdhttp.Handler {
+func NewRouter(notes port.NoteService, images port.NoteImageService, auth port.AuthService, authConfig AuthHTTPConfig, allowedOrigins []string) stdhttp.Handler {
 	handler := NewHandler(notes, images)
+	authHandler := NewAuthHandler(auth, authConfig)
 
 	mux := stdhttp.NewServeMux()
 	mux.HandleFunc("GET /api/health", handler.Health)
-	mux.HandleFunc("GET /api/notes", handler.ListNotes)
-	mux.HandleFunc("POST /api/notes", handler.CreateNote)
-	mux.HandleFunc("GET /api/notes/{id}", handler.GetNote)
-	mux.HandleFunc("PATCH /api/notes/{id}", handler.UpdateNote)
-	mux.HandleFunc("DELETE /api/notes/{id}", handler.DeleteNote)
-	mux.HandleFunc("POST /api/notes/{id}/assist", handler.AssistNote)
-	mux.HandleFunc("POST /api/notes/{id}/images", handler.UploadNoteImage)
-	mux.HandleFunc("GET /api/images/{imageID}", handler.GetNoteImage)
-	mux.HandleFunc("DELETE /api/images/{imageID}", handler.DeleteNoteImage)
-	mux.HandleFunc("POST /api/notes/ask", handler.AskNotes)
-	mux.HandleFunc("POST /api/ai/generate", handler.GenerateAI)
-	mux.HandleFunc("POST /api/search", handler.SearchNotes)
+	mux.HandleFunc("GET /api/auth/config", authHandler.Config)
+	mux.HandleFunc("GET /api/auth/login", authHandler.Login)
+	mux.HandleFunc("GET /api/auth/callback", authHandler.Callback)
+	mux.HandleFunc("POST /api/auth/logout", authHandler.Logout)
+	mux.Handle("GET /api/auth/me", requireAuth(auth, stdhttp.HandlerFunc(authHandler.Me)))
+	mux.Handle("GET /api/notes", requireAuth(auth, stdhttp.HandlerFunc(handler.ListNotes)))
+	mux.Handle("POST /api/notes", requireAuth(auth, stdhttp.HandlerFunc(handler.CreateNote)))
+	mux.Handle("GET /api/notes/{id}", requireAuth(auth, stdhttp.HandlerFunc(handler.GetNote)))
+	mux.Handle("PATCH /api/notes/{id}", requireAuth(auth, stdhttp.HandlerFunc(handler.UpdateNote)))
+	mux.Handle("DELETE /api/notes/{id}", requireAuth(auth, stdhttp.HandlerFunc(handler.DeleteNote)))
+	mux.Handle("POST /api/notes/{id}/assist", requireAuth(auth, stdhttp.HandlerFunc(handler.AssistNote)))
+	mux.Handle("POST /api/notes/{id}/images", requireAuth(auth, stdhttp.HandlerFunc(handler.UploadNoteImage)))
+	mux.Handle("GET /api/images/{imageID}", requireAuth(auth, stdhttp.HandlerFunc(handler.GetNoteImage)))
+	mux.Handle("DELETE /api/images/{imageID}", requireAuth(auth, stdhttp.HandlerFunc(handler.DeleteNoteImage)))
+	mux.Handle("POST /api/notes/ask", requireAuth(auth, stdhttp.HandlerFunc(handler.AskNotes)))
+	mux.Handle("POST /api/ai/generate", requireAuth(auth, stdhttp.HandlerFunc(handler.GenerateAI)))
+	mux.Handle("POST /api/search", requireAuth(auth, stdhttp.HandlerFunc(handler.SearchNotes)))
+	mux.Handle("POST /api/admin/notes/claim-legacy", requireAuth(auth, stdhttp.HandlerFunc(handler.ClaimLegacyNotes)))
 
 	return cors(allowedOrigins)(mux)
 }
@@ -62,15 +69,12 @@ func cors(allowed []string) func(stdhttp.Handler) stdhttp.Handler {
 		return stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 			origin := r.Header.Get("Origin")
 			if origin != "" && (allowAll || set[origin]) {
-				if allowAll {
-					w.Header().Set("Access-Control-Allow-Origin", "*")
-				} else {
-					w.Header().Set("Access-Control-Allow-Origin", origin)
-					w.Header().Add("Vary", "Origin")
-				}
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Add("Vary", "Origin")
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 				w.Header().Set("Access-Control-Max-Age", "86400")
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
 			}
 
 			if r.Method == stdhttp.MethodOptions {

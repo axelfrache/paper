@@ -21,29 +21,49 @@ func NewNote(repo port.NoteRepository, assistant port.NoteAssistant) *Note {
 }
 
 func (s *Note) CreateNote(ctx context.Context, draft domain.NoteDraft) (domain.Note, error) {
+	user, err := domain.RequireUser(ctx)
+	if err != nil {
+		return domain.Note{}, err
+	}
 	if err := draft.Validate(); err != nil {
 		return domain.Note{}, err
 	}
-	return s.repo.Create(ctx, draft.Normalize())
+	return s.repo.Create(ctx, user.ID, draft.Normalize())
 }
 
 func (s *Note) UpdateNote(ctx context.Context, id string, draft domain.NoteDraft) (domain.Note, error) {
+	user, err := domain.RequireUser(ctx)
+	if err != nil {
+		return domain.Note{}, err
+	}
 	if err := draft.Validate(); err != nil {
 		return domain.Note{}, err
 	}
-	return s.repo.Update(ctx, id, draft.Normalize())
+	return s.repo.Update(ctx, user.ID, id, draft.Normalize())
 }
 
 func (s *Note) GetNote(ctx context.Context, id string) (domain.Note, error) {
-	return s.repo.GetByID(ctx, id)
+	user, err := domain.RequireUser(ctx)
+	if err != nil {
+		return domain.Note{}, err
+	}
+	return s.repo.GetByID(ctx, user.ID, id)
 }
 
 func (s *Note) ListNotes(ctx context.Context) ([]domain.Note, error) {
-	return s.repo.List(ctx)
+	user, err := domain.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.List(ctx, user.ID)
 }
 
 func (s *Note) SearchNotes(ctx context.Context, query domain.SearchQuery) ([]domain.Note, error) {
-	notes, err := s.repo.List(ctx)
+	user, err := domain.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	notes, err := s.repo.List(ctx, user.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -58,11 +78,19 @@ func (s *Note) SearchNotes(ctx context.Context, query domain.SearchQuery) ([]dom
 }
 
 func (s *Note) DeleteNote(ctx context.Context, id string) error {
-	return s.repo.Delete(ctx, id)
+	user, err := domain.RequireUser(ctx)
+	if err != nil {
+		return err
+	}
+	return s.repo.Delete(ctx, user.ID, id)
 }
 
 func (s *Note) AssistNote(ctx context.Context, id string, action domain.AIAction) (domain.AISuggestion, error) {
-	note, err := s.repo.GetByID(ctx, id)
+	user, err := domain.RequireUser(ctx)
+	if err != nil {
+		return domain.AISuggestion{}, err
+	}
+	note, err := s.repo.GetByID(ctx, user.ID, id)
 	if err != nil {
 		return domain.AISuggestion{}, err
 	}
@@ -122,12 +150,16 @@ func diagramPlaceholder(index int) string {
 }
 
 func (s *Note) AskNotes(ctx context.Context, req domain.AskRequest) (domain.AskAnswer, error) {
+	user, err := domain.RequireUser(ctx)
+	if err != nil {
+		return domain.AskAnswer{}, err
+	}
 	question := strings.TrimSpace(req.Question)
 	if question == "" {
 		return domain.AskAnswer{}, domain.NewInvalidError("A question is required.")
 	}
 
-	notes, err := s.repo.List(ctx)
+	notes, err := s.repo.List(ctx, user.ID)
 	if err != nil {
 		return domain.AskAnswer{}, err
 	}
@@ -147,7 +179,21 @@ func (s *Note) AskNotes(ctx context.Context, req domain.AskRequest) (domain.AskA
 	return fallbackAskAnswer(relevant), nil
 }
 
+func (s *Note) ClaimLegacyNotes(ctx context.Context) (int64, error) {
+	user, err := domain.RequireUser(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if !user.IsAdmin() {
+		return 0, domain.NewForbiddenError("Administrator access is required.")
+	}
+	return s.repo.ClaimOwner(ctx, "legacy", user.ID)
+}
+
 func (s *Note) GenerateAI(ctx context.Context, req domain.AICompletionRequest) (domain.AICompletion, error) {
+	if _, err := domain.RequireUser(ctx); err != nil {
+		return domain.AICompletion{}, err
+	}
 	prompt := strings.TrimSpace(req.Prompt)
 	if prompt == "" {
 		return domain.AICompletion{}, domain.NewInvalidError("A prompt is required.")

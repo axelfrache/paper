@@ -39,6 +39,10 @@ func writeError(w stdhttp.ResponseWriter, err error) {
 			if appErr.Status >= 400 && appErr.Status < 500 {
 				status = stdhttp.StatusBadRequest
 			}
+		case domain.KindUnauthorized:
+			status = stdhttp.StatusUnauthorized
+		case domain.KindForbidden:
+			status = stdhttp.StatusForbidden
 		}
 	}
 

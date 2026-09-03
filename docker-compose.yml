@@ -59,6 +59,20 @@ services:
       S3_SECRET_KEY: ${GARAGE_SECRET_ACCESS_KEY:-7d37e5a2f7c18b4e9d5f6a2c3b4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e}
       S3_BUCKET: ${S3_BUCKET:-paper-images}
       S3_REGION: ${S3_REGION:-garage}
+      AUTH_PROVIDER: ${AUTH_PROVIDER:-dev}
+      AUTH_SESSION_SECRET: ${AUTH_SESSION_SECRET:-paper-local-session-secret}
+      AUTH_PUBLIC_URL: ${AUTH_PUBLIC_URL:-http://localhost:5173}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+      AUTH_REGISTRATION_ENABLED: ${AUTH_REGISTRATION_ENABLED:-true}
+      AUTH_DEV_USER_ID: ${AUTH_DEV_USER_ID:-dev-user}
+      AUTH_DEV_EMAIL: ${AUTH_DEV_EMAIL:-developer@paper.local}
+      AUTH_DEV_NAME: ${AUTH_DEV_NAME:-Local developer}
+      AUTH_DEV_ROLES: ${AUTH_DEV_ROLES:-paper-admin}
+      AUTH_LEGACY_OWNER_ID: ${AUTH_LEGACY_OWNER_ID:-dev-user}
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-https://auth.getquestify.com/realms/paper}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-paper}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_REDIRECT_URL: ${OIDC_REDIRECT_URL:-http://localhost:5173/api/auth/callback}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

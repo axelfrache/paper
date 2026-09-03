@@ -5,9 +5,10 @@ import { NotesColumn } from "../components/NotesColumn";
 import { Sidebar, type ViewKey } from "../components/Sidebar";
 import { Toast } from "../components/Toast";
 import { NoteEditor, type AIResult } from "../features/NoteEditor";
-import { askNotes, assistNote, createNote, deleteNote, listNotes, updateNote, uploadNoteImage } from "../lib/api";
+import { askNotes, assistNote, claimLegacyNotes, createNote, deleteNote, listNotes, updateNote, uploadNoteImage } from "../lib/api";
 import { useShortcuts } from "../lib/useShortcuts";
 import type { AIAction, AskAnswer, Note, NoteDraft } from "../types/note";
+import type { AuthUser } from "../types/auth";
 
 type Theme = "light" | "dark";
 
@@ -40,7 +41,7 @@ const emptyDraft: NoteDraft = {
   favorite: false,
 };
 
-export function NotesPage() {
+export function NotesPage({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -605,6 +606,14 @@ export function NotesPage() {
         }}
         onNew={() => void handleNew()}
         onToggleCollapse={() => setSidebarHidden((hidden) => !hidden)}
+        user={user}
+        onLogout={onLogout}
+        onClaimLegacyNotes={async () => {
+          const result = await claimLegacyNotes();
+          const nextNotes = await listNotes();
+          setNotes(nextNotes);
+          return result.claimed;
+        }}
       />
 
       <NotesColumn

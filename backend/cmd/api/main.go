@@ -12,9 +12,12 @@ import (
 
 	httpadapter "github.com/axelfrache/paper/backend/internal/adapter/inbound/http"
 	"github.com/axelfrache/paper/backend/internal/adapter/outbound/ai"
+	authadapter "github.com/axelfrache/paper/backend/internal/adapter/outbound/auth"
 	"github.com/axelfrache/paper/backend/internal/adapter/outbound/postgres"
 	s3adapter "github.com/axelfrache/paper/backend/internal/adapter/outbound/s3"
 	"github.com/axelfrache/paper/backend/internal/config"
+	"github.com/axelfrache/paper/backend/internal/core/domain"
+	"github.com/axelfrache/paper/backend/internal/core/port"
 	"github.com/axelfrache/paper/backend/internal/core/service"
 )
 
@@ -28,11 +31,44 @@ func main() {
 	startupCtx, cancelStartup := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancelStartup()
 
-	notes, err := postgres.NewNoteRepository(startupCtx, cfg.DatabaseURL)
+	notes, err := postgres.NewNoteRepository(startupCtx, cfg.DatabaseURL, cfg.AuthLegacyOwner)
 	if err != nil {
 		log.Fatalf("database connection failed: %v", err)
 	}
 	defer notes.Close()
+	sessions, err := postgres.NewSessionRepository(startupCtx, cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("session database connection failed: %v", err)
+	}
+	defer sessions.Close()
+
+	var identityProvider port.IdentityProvider
+	switch cfg.AuthProvider {
+	case "dev":
+		identityProvider = authadapter.NewDev(domain.User{
+			ID: cfg.AuthDevUserID, Email: cfg.AuthDevEmail, Name: cfg.AuthDevName, Roles: cfg.AuthDevRoles,
+		})
+	case "oidc":
+		if cfg.AuthClientSecret == "" {
+			log.Fatal("OIDC_CLIENT_SECRET is required when AUTH_PROVIDER=oidc")
+		}
+		identityProvider, err = authadapter.NewOIDC(startupCtx, authadapter.OIDCConfig{
+			IssuerURL: cfg.AuthIssuerURL, ClientID: cfg.AuthClientID,
+			ClientSecret: cfg.AuthClientSecret, RedirectURL: cfg.AuthRedirectURL,
+		})
+		if err != nil {
+			log.Fatalf("oidc configuration failed: %v", err)
+		}
+	default:
+		log.Fatalf("unsupported AUTH_PROVIDER %q", cfg.AuthProvider)
+	}
+	authService, err := service.NewAuth(identityProvider, sessions, service.AuthConfig{
+		Secret: cfg.AuthSecret, RegistrationEnabled: cfg.AuthRegistration,
+		PostLogoutRedirectURL: cfg.AuthPublicURL,
+	})
+	if err != nil {
+		log.Fatalf("auth configuration failed: %v", err)
+	}
 
 	assistant := ai.New(ai.Config{
 		Provider: cfg.AIProvider,
@@ -52,9 +88,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("image storage configuration failed: %v", err)
 	}
-	imageService := service.NewImage(notes, imageStorage)
+	imageService := service.NewImage(notes, notes, imageStorage)
 
-	router := httpadapter.NewRouter(noteService, imageService, cfg.AllowedOrigins)
+	router := httpadapter.NewRouter(noteService, imageService, authService, httpadapter.AuthHTTPConfig{
+		CookieSecure: cfg.AuthCookieSecure,
+	}, cfg.AllowedOrigins)
 	server := httpadapter.NewServer(cfg.Addr(), router, cfg.AITimeout+30*time.Second)
 
 	go func() {

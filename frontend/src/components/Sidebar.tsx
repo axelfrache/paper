@@ -1,6 +1,8 @@
 import { Clock3, Files, Hash, ListTodo, PanelLeftClose, Plus, Star } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { Note } from "../types/note";
+import type { AuthUser } from "../types/auth";
+import { AccountMenu } from "./AccountMenu";
 
 export type ViewKey = "all" | "recent" | "favorites" | "tasks";
 
@@ -13,6 +15,9 @@ type SidebarProps = {
   onTagChange: (tag: string | null) => void;
   onNew: () => void;
   onToggleCollapse: () => void;
+  user: AuthUser;
+  onLogout: () => Promise<void>;
+  onClaimLegacyNotes: () => Promise<number>;
 };
 
 const viewDefs: Array<{ key: ViewKey; label: string; icon: LucideIcon }> = [
@@ -22,7 +27,7 @@ const viewDefs: Array<{ key: ViewKey; label: string; icon: LucideIcon }> = [
   { key: "tasks", label: "Tasks", icon: ListTodo },
 ];
 
-export function Sidebar({ notes, view, activeTag, hidden, onViewChange, onTagChange, onNew, onToggleCollapse }: SidebarProps) {
+export function Sidebar({ notes, view, activeTag, hidden, onViewChange, onTagChange, onNew, onToggleCollapse, user, onLogout, onClaimLegacyNotes }: SidebarProps) {
   const tagCounts = tagCountsFor(notes);
 
   return (
@@ -102,6 +107,7 @@ export function Sidebar({ notes, view, activeTag, hidden, onViewChange, onTagCha
           <em>⌘⌥B</em>
         </div>
       </div>
+      <AccountMenu user={user} onLogout={onLogout} onClaimLegacyNotes={onClaimLegacyNotes} />
     </aside>
   );
 }
