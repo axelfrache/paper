@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { AlignLeft, ListTodo, MessageCircleQuestion, Plus, Star } from "lucide-react";
 import { CommandPalette, type PaletteAction, type PaletteMode } from "../components/CommandPalette";
 import { NotesColumn } from "../components/NotesColumn";
@@ -11,6 +12,8 @@ import type { AIAction, AskAnswer, Note, NoteDraft } from "../types/note";
 import type { AuthUser } from "../types/auth";
 
 type Theme = "light" | "dark";
+type MobilePane = "notes" | "editor";
+type ResizableColumn = "navigation" | "notes";
 
 type NoteHistory = {
   undo: NoteDraft[];
@@ -52,7 +55,10 @@ export function NotesPage({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteMode, setPaletteMode] = useState<PaletteMode>("search");
   const [theme, setTheme] = useState<Theme>(() => initialTheme());
-  const [sidebarHidden, setSidebarHidden] = useState(false);
+  const [sidebarHidden, setSidebarHidden] = useState(() => matchesCompactNavigation());
+  const [mobilePane, setMobilePane] = useState<MobilePane>("notes");
+  const [navigationWidth, setNavigationWidth] = useState(() => initialColumnWidth("navigation"));
+  const [notesWidth, setNotesWidth] = useState(() => initialColumnWidth("notes"));
   const [aiResult, setAIResult] = useState<AIResult | null>(null);
   const [titleFocusRequest, setTitleFocusRequest] = useState<TitleFocusRequest | null>(null);
   const [contentFocusRequest, setContentFocusRequest] = useState<ContentFocusRequest | null>(null);
@@ -81,6 +87,20 @@ export function NotesPage({ user, onLogout }: { user: AuthUser; onLogout: () => 
   }, [theme]);
 
   useEffect(() => {
+    const query = window.matchMedia?.("(max-width: 1100px)");
+    if (!query) {
+      return;
+    }
+    const handleChange = (event: MediaQueryListEvent) => {
+      if (event.matches) {
+        setSidebarHidden(true);
+      }
+    };
+    query.addEventListener("change", handleChange);
+    return () => query.removeEventListener("change", handleChange);
+  }, []);
+
+  useEffect(() => {
     const load = async () => {
       const nextNotes = await listNotes();
       setNotes(nextNotes);
@@ -89,7 +109,7 @@ export function NotesPage({ user, onLogout }: { user: AuthUser; onLogout: () => 
       setActiveId(initial?.id ?? null);
       setSelectedIds(initial ? [initial.id] : []);
       lastSelectedIdRef.current = initial?.id ?? null;
-      if (initial) {
+      if (initial && !matchesMobileLayout()) {
         setContentFocusRequest({ noteId: initial.id, token: 1 });
       }
     };
@@ -155,6 +175,54 @@ export function NotesPage({ user, onLogout }: { user: AuthUser; onLogout: () => 
       window.clearTimeout(toastTimer.current);
     }
     toastTimer.current = window.setTimeout(() => setToast(""), 1900);
+  }, []);
+
+  const setColumnWidth = useCallback((column: ResizableColumn, width: number) => {
+    const next = clampColumnWidth(column, width);
+    if (column === "navigation") {
+      setNavigationWidth(next);
+    } else {
+      setNotesWidth(next);
+    }
+    try {
+      localStorage.setItem(`paper.${column}Width`, String(next));
+    } catch {}
+  }, []);
+
+  const startColumnResize = useCallback(
+    (column: ResizableColumn, event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0 || matchesCompactNavigation()) {
+        return;
+      }
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = event.currentTarget.parentElement?.getBoundingClientRect().width ?? 0;
+      const previousCursor = document.body.style.cursor;
+      const previousSelection = document.body.style.userSelect;
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+
+      const move = (moveEvent: PointerEvent) => {
+        setColumnWidth(column, startWidth + moveEvent.clientX - startX);
+      };
+      const stop = () => {
+        document.body.style.cursor = previousCursor;
+        document.body.style.userSelect = previousSelection;
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", stop);
+        window.removeEventListener("pointercancel", stop);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", stop, { once: true });
+      window.addEventListener("pointercancel", stop, { once: true });
+    },
+    [setColumnWidth],
+  );
+
+  const closeCompactSidebar = useCallback(() => {
+    if (matchesCompactNavigation()) {
+      setSidebarHidden(true);
+    }
   }, []);
 
   const persist = useCallback((note: Note) => {
@@ -317,15 +385,18 @@ export function NotesPage({ user, onLogout }: { user: AuthUser; onLogout: () => 
       setAIResult(null);
       setNoteCardFocusRequest((request) => request + 1);
       setPaletteOpen(false);
+      setMobilePane("editor");
+      closeCompactSidebar();
       flash("New note");
     } catch {
       flash("Could not create note");
     }
-  }, [flash]);
+  }, [closeCompactSidebar, flash]);
 
   const selectNote = useCallback(
     (note: Note, extend = false) => {
       setActiveId(note.id);
+      setMobilePane("editor");
       setTagDraft("");
       setAIResult(null);
       editorLineRef.current = null;
@@ -409,6 +480,7 @@ export function NotesPage({ user, onLogout }: { user: AuthUser; onLogout: () => 
       setNotes(rest);
       setActiveId(nextActive?.id ?? null);
       setSelectedIds(nextActive ? [nextActive.id] : []);
+      setMobilePane(nextActive ? "editor" : "notes");
       lastSelectedIdRef.current = nextActive?.id ?? null;
       deletedHistoryRef.current.undo.push({ notes: deletedNotes, index: deleteIndex });
       deletedHistoryRef.current.redo = [];
@@ -589,8 +661,13 @@ export function NotesPage({ user, onLogout }: { user: AuthUser; onLogout: () => 
     onEscape: () => setPaletteOpen(false),
   });
 
+  const shellStyle = {
+    "--sidebar-width": `${navigationWidth}px`,
+    "--notes-width": `${notesWidth}px`,
+  } as CSSProperties;
+
   return (
-    <div className="app-shell">
+    <div className={`app-shell mobile-${mobilePane}`} style={shellStyle}>
       <Sidebar
         notes={notes}
         view={view}
@@ -599,10 +676,14 @@ export function NotesPage({ user, onLogout }: { user: AuthUser; onLogout: () => 
         onViewChange={(nextView) => {
           setView(nextView);
           setActiveTag(null);
+          setMobilePane("notes");
+          closeCompactSidebar();
         }}
         onTagChange={(tag) => {
           setActiveTag(tag);
           setView("all");
+          setMobilePane("notes");
+          closeCompactSidebar();
         }}
         onNew={() => void handleNew()}
         onToggleCollapse={() => setSidebarHidden((hidden) => !hidden)}
@@ -614,7 +695,13 @@ export function NotesPage({ user, onLogout }: { user: AuthUser; onLogout: () => 
           setNotes(nextNotes);
           return result.claimed;
         }}
+        onResizeStart={(event) => startColumnResize("navigation", event)}
+        onResizeBy={(delta) => setColumnWidth("navigation", navigationWidth + delta)}
       />
+
+      {!sidebarHidden ? (
+        <button className="sidebar-scrim" type="button" onClick={() => setSidebarHidden(true)} aria-label="Close navigation" />
+      ) : null}
 
       <NotesColumn
         title={activeTag ? `#${activeTag}` : titleForView(view)}
@@ -631,6 +718,8 @@ export function NotesPage({ user, onLogout }: { user: AuthUser; onLogout: () => 
         onFocusTitle={focusActiveTitle}
         onFocusContent={focusActiveContent}
         onToggleSidebar={() => setSidebarHidden(false)}
+        onResizeStart={(event) => startColumnResize("notes", event)}
+        onResizeBy={(delta) => setColumnWidth("notes", notesWidth + delta)}
       />
 
       <NoteEditor
@@ -660,6 +749,7 @@ export function NotesPage({ user, onLogout }: { user: AuthUser; onLogout: () => 
         onSearch={() => openPalette("search")}
         onToggleTheme={toggleTheme}
         onFocusNoteList={focusActiveNoteCard}
+        onBackToNotes={() => setMobilePane("notes")}
         onAssist={(action) => void runAI(action)}
         onCaretLineChange={(line) => {
           editorLineRef.current = line;
@@ -746,6 +836,31 @@ function readLastActiveNoteId(): string | null {
   } catch {
     return null;
   }
+}
+
+function matchesCompactNavigation() {
+  return window.matchMedia?.("(max-width: 1100px)").matches ?? window.innerWidth <= 1100;
+}
+
+function matchesMobileLayout() {
+  return window.matchMedia?.("(max-width: 720px)").matches ?? window.innerWidth <= 720;
+}
+
+function initialColumnWidth(column: ResizableColumn) {
+  const fallback =
+    column === "navigation"
+      ? Math.round(Math.min(240, Math.max(200, window.innerWidth * 0.14)))
+      : Math.round(Math.min(340, Math.max(270, window.innerWidth * 0.2)));
+  try {
+    const stored = Number(localStorage.getItem(`paper.${column}Width`));
+    return Number.isFinite(stored) && stored > 0 ? clampColumnWidth(column, stored) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function clampColumnWidth(column: ResizableColumn, width: number) {
+  return Math.round(Math.min(column === "navigation" ? 280 : 420, Math.max(column === "navigation" ? 180 : 240, width)));
 }
 
 function initialTheme(): Theme {

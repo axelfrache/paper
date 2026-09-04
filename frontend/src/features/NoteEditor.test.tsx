@@ -81,12 +81,30 @@ describe("NoteEditor AI integration", () => {
     expect(prompt).toContain("Tags: architecture");
     expect(prompt).toContain(note.content);
   });
+
+  it("supports compact navigation and AI actions", () => {
+    const { host, onBackToNotes } = mount(null);
+
+    act(() => host.querySelector<HTMLButtonElement>(".editor-back-button")?.click());
+    expect(onBackToNotes).toHaveBeenCalledOnce();
+
+    const menu = host.querySelector<HTMLDetailsElement>(".ai-bar-menu");
+    const summarize = Array.from(menu?.querySelectorAll<HTMLButtonElement>("button") ?? []).find(
+      (button) => button.textContent === "Summarize",
+    );
+    act(() => {
+      menu?.setAttribute("open", "");
+      summarize?.click();
+    });
+    expect(menu?.hasAttribute("open")).toBe(false);
+  });
 });
 
 function mount(aiResult: AIResult | null) {
   const host = document.createElement("div");
   const onApplyResult = vi.fn();
   const onDismissResult = vi.fn();
+  const onBackToNotes = vi.fn();
   document.body.replaceChildren(host);
   root = createRoot(host);
   act(() => {
@@ -108,6 +126,7 @@ function mount(aiResult: AIResult | null) {
         onSearch={vi.fn()}
         onToggleTheme={vi.fn()}
         onFocusNoteList={vi.fn()}
+        onBackToNotes={onBackToNotes}
         onAssist={vi.fn()}
         onCaretLineChange={vi.fn()}
         onApplyResult={onApplyResult}
@@ -116,5 +135,5 @@ function mount(aiResult: AIResult | null) {
       />,
     );
   });
-  return { host, onApplyResult, onDismissResult };
+  return { host, onApplyResult, onDismissResult, onBackToNotes };
 }

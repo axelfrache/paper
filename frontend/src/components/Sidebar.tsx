@@ -1,5 +1,6 @@
 import { Clock3, Files, Hash, ListTodo, PanelLeftClose, Plus, Star } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import type { PointerEvent } from "react";
 import type { Note } from "../types/note";
 import type { AuthUser } from "../types/auth";
 import { AccountMenu } from "./AccountMenu";
@@ -18,6 +19,8 @@ type SidebarProps = {
   user: AuthUser;
   onLogout: () => Promise<void>;
   onClaimLegacyNotes: () => Promise<number>;
+  onResizeStart: (event: PointerEvent<HTMLDivElement>) => void;
+  onResizeBy: (delta: number) => void;
 };
 
 const viewDefs: Array<{ key: ViewKey; label: string; icon: LucideIcon }> = [
@@ -27,7 +30,7 @@ const viewDefs: Array<{ key: ViewKey; label: string; icon: LucideIcon }> = [
   { key: "tasks", label: "Tasks", icon: ListTodo },
 ];
 
-export function Sidebar({ notes, view, activeTag, hidden, onViewChange, onTagChange, onNew, onToggleCollapse, user, onLogout, onClaimLegacyNotes }: SidebarProps) {
+export function Sidebar({ notes, view, activeTag, hidden, onViewChange, onTagChange, onNew, onToggleCollapse, user, onLogout, onClaimLegacyNotes, onResizeStart, onResizeBy }: SidebarProps) {
   const tagCounts = tagCountsFor(notes);
 
   return (
@@ -108,6 +111,20 @@ export function Sidebar({ notes, view, activeTag, hidden, onViewChange, onTagCha
         </div>
       </div>
       <AccountMenu user={user} onLogout={onLogout} onClaimLegacyNotes={onClaimLegacyNotes} />
+      <div
+        className="column-resize-handle"
+        role="separator"
+        aria-label="Resize navigation"
+        aria-orientation="vertical"
+        tabIndex={0}
+        onPointerDown={onResizeStart}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+            event.preventDefault();
+            onResizeBy(event.key === "ArrowLeft" ? -10 : 10);
+          }
+        }}
+      />
     </aside>
   );
 }

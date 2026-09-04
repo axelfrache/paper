@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import type { PointerEvent } from "react";
 import { PanelLeftOpen, Plus, Search, Star } from "lucide-react";
 import { stripDiagramMarkers } from "../lib/diagram";
 import type { Note } from "../types/note";
@@ -20,6 +21,8 @@ type NotesColumnProps = {
   onFocusTitle: () => void;
   onFocusContent: () => void;
   onToggleSidebar: () => void;
+  onResizeStart: (event: PointerEvent<HTMLDivElement>) => void;
+  onResizeBy: (delta: number) => void;
 };
 
 export function NotesColumn({
@@ -37,6 +40,8 @@ export function NotesColumn({
   onFocusTitle,
   onFocusContent,
   onToggleSidebar,
+  onResizeStart,
+  onResizeBy,
 }: NotesColumnProps) {
   const selected = new Set(selectedIds);
   const cardRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -136,6 +141,20 @@ export function NotesColumn({
           </div>
         ) : null}
       </div>
+      <div
+        className="column-resize-handle"
+        role="separator"
+        aria-label="Resize note list"
+        aria-orientation="vertical"
+        tabIndex={0}
+        onPointerDown={onResizeStart}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+            event.preventDefault();
+            onResizeBy(event.key === "ArrowLeft" ? -10 : 10);
+          }
+        }}
+      />
     </section>
   );
 }

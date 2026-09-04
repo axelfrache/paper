@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Moon, Search, Star, Sun, Trash2, X } from "lucide-react";
+import { ArrowLeft, Moon, Search, Sparkles, Star, Sun, Trash2, X } from "lucide-react";
 import { DiagramEditor } from "../components/DiagramEditor";
 import { MarkdownEditor } from "../components/MarkdownEditor";
 import { MarkdownView } from "../components/MarkdownView";
@@ -30,6 +30,7 @@ type NoteEditorProps = {
   onSearch: () => void;
   onToggleTheme: () => void;
   onFocusNoteList: () => void;
+  onBackToNotes: () => void;
   onAssist: (action: AIAction) => void;
   onCaretLineChange: (line: number) => void;
   onApplyResult: () => void;
@@ -75,6 +76,7 @@ export function NoteEditor({
   onSearch,
   onToggleTheme,
   onFocusNoteList,
+  onBackToNotes,
   onAssist,
   onCaretLineChange,
   onApplyResult,
@@ -213,6 +215,7 @@ export function NoteEditor({
           onSearch={onSearch}
           onDelete={onDelete}
           theme={theme}
+          onBackToNotes={onBackToNotes}
         />
         <div className="empty-editor">Select or create a note.</div>
       </main>
@@ -229,6 +232,7 @@ export function NoteEditor({
         onSearch={onSearch}
         onDelete={onDelete}
         theme={theme}
+        onBackToNotes={onBackToNotes}
       />
 
       <div className="editor-scroll">
@@ -319,23 +323,51 @@ export function NoteEditor({
 
       <footer className="ai-bar">
         <strong>AI</strong>
-        {aiActions.map((action) => (
-          <button key={action.action} title={action.hint} onClick={() => onAssist(action.action)} disabled={aiResult?.status === "loading"}>
-            {action.label}
+        <div className="ai-bar-actions">
+          {aiActions.map((action) => (
+            <button key={action.action} title={action.hint} onClick={() => onAssist(action.action)} disabled={aiResult?.status === "loading"}>
+              {action.label}
+            </button>
+          ))}
+          <button
+            title={diagramAction.hint}
+            disabled={aiResult?.status === "loading"}
+            onClick={() => openDiagramDescribe(note, setDiagramDescribeRequest)}
+          >
+            {diagramAction.label}
           </button>
-        ))}
-        <button
-          title={diagramAction.hint}
-          disabled={aiResult?.status === "loading"}
-          onClick={() => {
-            setDiagramDescribeRequest({
-              key: `${note.id}-${Date.now()}`,
-              prompt: diagramPromptForNote(note),
-            });
-          }}
-        >
-          {diagramAction.label}
-        </button>
+        </div>
+        <details className="ai-bar-menu">
+          <summary aria-label="AI actions" title="AI actions">
+            <Sparkles size={15} strokeWidth={1.9} />
+            <span>AI actions</span>
+          </summary>
+          <div>
+            {aiActions.map((action) => (
+              <button
+                key={action.action}
+                type="button"
+                disabled={aiResult?.status === "loading"}
+                onClick={(event) => {
+                  event.currentTarget.closest("details")?.removeAttribute("open");
+                  onAssist(action.action);
+                }}
+              >
+                {action.label}
+              </button>
+            ))}
+            <button
+              type="button"
+              disabled={aiResult?.status === "loading"}
+              onClick={(event) => {
+                event.currentTarget.closest("details")?.removeAttribute("open");
+                openDiagramDescribe(note, setDiagramDescribeRequest);
+              }}
+            >
+              {diagramAction.label}
+            </button>
+          </div>
+        </details>
         <span>{wordCount(note.content)}</span>
       </footer>
 
@@ -359,6 +391,7 @@ function EditorTopbar({
   onSearch,
   onDelete,
   theme,
+  onBackToNotes,
 }: {
   label: string;
   favorite: boolean;
@@ -368,18 +401,24 @@ function EditorTopbar({
   onSearch: () => void;
   onDelete: () => void;
   theme: "light" | "dark";
+  onBackToNotes: () => void;
 }) {
   return (
     <header className="editor-topbar">
+      <button className="editor-back-button" type="button" onClick={onBackToNotes} aria-label="Back to notes">
+        <ArrowLeft size={16} strokeWidth={1.9} />
+      </button>
       <span>{label}</span>
       <div>
         <button
           className={favorite ? "topbar-button favorite" : "topbar-button"}
           onClick={onToggleFavorite}
           disabled={disabledNoteActions}
+          aria-label="Favorite"
+          title="Favorite"
         >
           <Star size={14} fill={favorite ? "currentColor" : "none"} strokeWidth={1.9} />
-          Favorite
+          <span>Favorite</span>
         </button>
         <button
           className="topbar-icon-button"
@@ -389,13 +428,13 @@ function EditorTopbar({
         >
           {theme === "dark" ? <Sun size={14} strokeWidth={1.9} /> : <Moon size={14} strokeWidth={1.9} />}
         </button>
-        <button className="topbar-button" onClick={onSearch}>
+        <button className="topbar-button" onClick={onSearch} aria-label="Search" title="Search">
           <Search size={14} strokeWidth={1.9} />
-          Search <kbd>⌘K</kbd>
+          <span>Search</span> <kbd>⌘K</kbd>
         </button>
-        <button className="topbar-button danger" onClick={onDelete} disabled={disabledNoteActions}>
+        <button className="topbar-button danger" onClick={onDelete} disabled={disabledNoteActions} aria-label="Delete" title="Delete">
           <Trash2 size={14} strokeWidth={1.9} />
-          Delete
+          <span>Delete</span>
         </button>
       </div>
     </header>
@@ -467,6 +506,13 @@ function resultItemCount(result: AIResult, tags: string[]) {
     return 0;
   }
   return result.text.split("\n").filter((line) => /^\s*(?:[-*•]|\d+[.)]|\[[ xX]\])\s+/.test(line)).length;
+}
+
+function openDiagramDescribe(note: Note, setRequest: (request: { key: string; prompt: string }) => void) {
+  setRequest({
+    key: `${note.id}-${Date.now()}`,
+    prompt: diagramPromptForNote(note),
+  });
 }
 
 function diagramPromptForNote(note: Note) {
