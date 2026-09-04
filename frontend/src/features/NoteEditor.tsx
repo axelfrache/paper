@@ -296,6 +296,7 @@ export function NoteEditor({
           </div>
 
           <MarkdownEditor
+            key={note.id}
             value={note.content}
             onChange={onContentChange}
             onUploadImage={onUploadImage}

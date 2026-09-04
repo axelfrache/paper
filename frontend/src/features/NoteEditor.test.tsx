@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Note } from "../types/note";
+import { createDefaultDiagram, serializeDiagramMarker } from "../lib/diagram";
+import { getSelectionRange, placeCaret } from "../lib/markdown/dom";
 import { NoteEditor, type AIResult } from "./NoteEditor";
 
 let root: Root | null = null;
@@ -82,6 +84,29 @@ describe("NoteEditor AI integration", () => {
     expect(prompt).toContain(note.content);
   });
 
+  it("does not leave a stale caret stuck in front of a leading resource when switching notes", () => {
+    const host = document.createElement("div");
+    document.body.replaceChildren(host);
+    root = createRoot(host);
+    // Note A: plain text, caret placed deep in it.
+    act(() => render({ ...note, id: "a", content: "one\ntwo\nthree" }, null));
+    const editorA = host.querySelector<HTMLDivElement>(".markdown-editor")!;
+    act(() => {
+      editorA.focus();
+      placeCaret(editorA, { line: 2, col: 3 });
+      editorA.dispatchEvent(new KeyboardEvent("keyup", { key: "e", bubbles: true }));
+    });
+
+    // Note B: starts with a diagram. Switching must not carry A's caret onto B's first line.
+    const marker = serializeDiagramMarker(createDefaultDiagram("iso"));
+    act(() => render({ ...note, id: "b", content: `${marker}\nAfter` }, null));
+
+    const editorB = host.querySelector<HTMLDivElement>(".markdown-editor")!;
+    // The editor remounts fresh: no caret parked in front of the diagram.
+    expect(getSelectionRange(editorB)).toBeNull();
+    expect(document.activeElement).not.toBe(editorB);
+  });
+
   it("supports compact navigation and AI actions", () => {
     const { host, onBackToNotes } = mount(null);
 
@@ -99,6 +124,35 @@ describe("NoteEditor AI integration", () => {
     expect(menu?.hasAttribute("open")).toBe(false);
   });
 });
+
+function render(target: Note, aiResult: AIResult | null, onApplyResult = vi.fn(), onDismissResult = vi.fn(), onBackToNotes = vi.fn()) {
+  root?.render(
+    <NoteEditor
+      note={target}
+      tagDraft=""
+      aiResult={aiResult}
+      titleFocusRequest={null}
+      contentFocusRequest={null}
+      onTitleChange={vi.fn()}
+      onContentChange={vi.fn()}
+      onUploadImage={vi.fn()}
+      onTagDraftChange={vi.fn()}
+      onAddTag={vi.fn()}
+      onRemoveTag={vi.fn()}
+      onToggleFavorite={vi.fn()}
+      onDelete={vi.fn()}
+      onSearch={vi.fn()}
+      onToggleTheme={vi.fn()}
+      onFocusNoteList={vi.fn()}
+      onBackToNotes={onBackToNotes}
+      onAssist={vi.fn()}
+      onCaretLineChange={vi.fn()}
+      onApplyResult={onApplyResult}
+      onDismissResult={onDismissResult}
+      theme="light"
+    />,
+  );
+}
 
 function mount(aiResult: AIResult | null) {
   const host = document.createElement("div");

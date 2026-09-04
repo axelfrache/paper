@@ -334,6 +334,11 @@ export function MarkdownEditor({
       renderMarkdown(editorRef.current, value, caret.line);
       activeLineRef.current = caret.line;
       placeCaret(editorRef.current, caret);
+    } else {
+      const selection = window.getSelection();
+      if (selection?.focusNode === editorRef.current) {
+        placeCaret(editorRef.current, caret);
+      }
     }
     probeSlash(value, caret);
   };
