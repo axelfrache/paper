@@ -32,14 +32,12 @@ describe("standalone diagram SVG", () => {
     const clear = await buildStandaloneSvg(withIcons("flat"), { background: "transparent", padding: 24, scale: 2 }, fakeIcon);
 
     expect(white).toContain('fill="#ffffff"');
-    // A transparent export draws no background rect at the canvas bounds.
     expect(clear).not.toMatch(/<rect[^>]*fill="#ffffff"[^>]*\/>\s*<path/);
   });
 
   it("resolves label colours to concrete dark values for a light surface", async () => {
     const svg = await buildStandaloneSvg(withIcons("iso"), undefined, fakeIcon);
 
-    // Icon nodes render as bare labels (muted-strong); either way, concrete not var().
     expect(svg).toMatch(/#16181b|#4c5259/);
     expect(svg).not.toContain("var(--");
     expect(svg).toContain(">reads</tspan>");
@@ -58,7 +56,6 @@ describe("standalone diagram SVG", () => {
       throw new Error("offline");
     });
 
-    // The diagram still exports; the missing icon is simply omitted.
     expect(svg).toContain('xmlns="http://www.w3.org/2000/svg"');
     expect(svg).not.toContain("<image");
   });

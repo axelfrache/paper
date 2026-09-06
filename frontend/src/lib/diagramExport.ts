@@ -14,14 +14,11 @@ export type DiagramExportBackground = "white" | "transparent";
 export type DiagramExportOptions = {
   background: DiagramExportBackground;
   padding: number;
-  // Device-pixel multiplier for PNG. SVG ignores it (vectors stay crisp).
   scale: number;
 };
 
 export const defaultExportOptions: DiagramExportOptions = { background: "white", padding: 24, scale: 2 };
 
-// The export always reads on a light surface, whatever theme the app is in, so it uses
-// the light palette's concrete colours rather than the app's CSS variables.
 const exportColors = {
   label: "#16181b",
   labelBare: "#4c5259",
@@ -30,14 +27,12 @@ const exportColors = {
   fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
 };
 
-// Longest PNG side, so a huge diagram cannot ask the browser for a gigapixel canvas.
 const maxPngSide = 4096;
 
 type IconResolver = (url: string) => Promise<string>;
 
 const iconCache = new Map<string, string>();
 
-/** Fetches an icon and returns it as a data URI so the exported file is self-contained. */
 export async function fetchIconAsDataUri(url: string): Promise<string> {
   const cached = iconCache.get(url);
   if (cached) {
@@ -58,11 +53,6 @@ export async function fetchIconAsDataUri(url: string): Promise<string> {
   return dataUri;
 }
 
-/**
- * Builds a standalone SVG string: external icons inlined as data URIs, colours resolved
- * to concrete values, label styles inlined, an xmlns and real pixel size — everything the
- * in-app preview omits because it lives inside the app's stylesheet and origin.
- */
 export async function buildStandaloneSvg(
   diagram: Diagram,
   options: DiagramExportOptions = defaultExportOptions,
@@ -73,7 +63,6 @@ export async function buildStandaloneSvg(
   const pad = Math.max(0, options.padding);
   const vb = { x: minX - pad, y: minY - pad, w: width + pad * 2, h: height + pad * 2 };
 
-  // Resolve every distinct icon up front, so emission stays synchronous and cache-friendly.
   const icons = new Map<string, string>();
   await Promise.all(
     layout.nodes
@@ -176,7 +165,6 @@ function backgroundColor(background: DiagramExportBackground) {
   return background === "white" ? exportColors.white : "none";
 }
 
-/** Rasterises the standalone SVG through a canvas. Only works once icons are inlined. */
 export async function svgToPngBlob(svg: string, pixelScale = defaultExportOptions.scale): Promise<Blob> {
   const dimensions = svgPixelSize(svg);
   const scale = clampScale(pixelScale, dimensions);
@@ -210,7 +198,6 @@ function loadSvgImage(svg: string): Promise<HTMLImageElement> {
   });
 }
 
-/** Keeps the longest side under maxPngSide so the canvas request stays sane. */
 export function clampScale(scale: number, size: { width: number; height: number }) {
   const longest = Math.max(size.width, size.height) * scale;
   return longest > maxPngSide ? maxPngSide / Math.max(size.width, size.height) : scale;
@@ -222,7 +209,6 @@ export function svgPixelSize(svg: string) {
   return { width: Number.isFinite(width) ? width : 0, height: Number.isFinite(height) ? height : 0 };
 }
 
-/** Turns a note title (and mode) into a safe, descriptive file name. */
 export function exportFileName(title: string, mode: DiagramMode, format: DiagramExportFormat) {
   const base = title.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "diagram";
   return `${base}-${mode}.${format}`;
