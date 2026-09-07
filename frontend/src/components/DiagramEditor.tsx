@@ -1036,12 +1036,12 @@ export function DiagramEditor({ diagram, onChange, onClose, title }: DiagramEdit
         <div className="diagram-editor-actions">
           <button className="topbar-button" onClick={openAiDialog}>
             <Sparkles size={14} strokeWidth={1.9} />
-            Describe
+            <span>Describe</span>
           </button>
           <div className="diagram-export">
             <button className="topbar-button" onClick={() => setExportOpen((open) => !open)} aria-haspopup="menu" aria-expanded={exportOpen} style={{ marginLeft: "4px" }}>
               <Download size={14} strokeWidth={1.9} />
-              Export
+              <span>Export</span>
             </button>
             {exportOpen ? (
               <div className="diagram-export-menu" role="menu">
