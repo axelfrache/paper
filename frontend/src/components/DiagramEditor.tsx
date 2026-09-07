@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Box, ChevronDown, Copy, Hand, Maximize, Minus, MousePointer2, Plus, Square, Trash2, Type, X, Sparkles, Wand2 } from "lucide-react";
+import { ArrowRight, Box, ChevronDown, Copy, Download, Hand, Maximize, Minus, MousePointer2, Plus, Square, Trash2, Type, X, Sparkles, Wand2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
   createDiagramEdge,
@@ -19,6 +19,8 @@ import {
 import { guidesAt, snapToGuides, stepWithMagnet } from "../lib/diagramGuides";
 import type { AlignmentGuide, GuideBox, SpacingHint } from "../lib/diagramGuides";
 import { generateAI } from "../lib/api";
+import { downloadDiagram } from "../lib/diagramExport";
+import type { DiagramExportBackground, DiagramExportFormat } from "../lib/diagramExport";
 import { addGeneratedDiagram, buildDiagramAdditionPrompt } from "../lib/diagramAi";
 import { diagramIconCatalog, diagramIconHref } from "../lib/diagramIcons";
 import type {
@@ -41,6 +43,7 @@ type DiagramEditorProps = {
   diagram: Diagram;
   onChange: (diagram: Diagram) => void;
   onClose: () => void;
+  title?: string;
 };
 
 type DiagramClipboard = {
@@ -116,7 +119,7 @@ const minZoom = 0.25;
 const maxZoom = 3;
 const defaultViewport: EditorViewport = { x: -120, y: -120, width: 1040, height: 680 };
 
-export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps) {
+export function DiagramEditor({ diagram, onChange, onClose, title }: DiagramEditorProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const aiDialogRef = useRef<HTMLDialogElement | null>(null);
   const labelInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -128,6 +131,9 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
   const [tool, setTool] = useState<DiagramTool>("select");
   const [viewport, setViewportState] = useState(defaultViewport);
   const [liveDiagram, setLiveDiagram] = useState(diagram);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportBackground, setExportBackground] = useState<DiagramExportBackground>("white");
+  const [exportBusy, setExportBusy] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -205,6 +211,10 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
           stopInlineLabelEdit();
           return;
         }
+        if (exportOpen) {
+          setExportOpen(false);
+          return;
+        }
         onClose();
         return;
       }
@@ -234,7 +244,7 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
 
     window.addEventListener("keydown", onKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
-  }, [editingId, onClose, selectedIds, selectedEdgeId]);
+  }, [editingId, onClose, selectedIds, selectedEdgeId, exportOpen]);
 
   useEffect(() => {
     return () => {
@@ -302,6 +312,20 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
     setLiveDiagram(next);
     if (options?.commit ?? true) {
       onChange(next);
+    }
+  };
+
+  const runExport = async (format: DiagramExportFormat) => {
+    setExportBusy(true);
+    try {
+      await downloadDiagram(liveDiagram, format, title ?? "diagram", {
+        background: exportBackground,
+        padding: 24,
+        scale: 2,
+      });
+      setExportOpen(false);
+    } finally {
+      setExportBusy(false);
     }
   };
 
@@ -774,6 +798,9 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
     if (editingId && event.target !== labelInputRef.current && !labelInputRef.current?.contains(event.target as Node)) {
       stopInlineLabelEdit();
     }
+    if (exportOpen && event.target instanceof Node && !(event.target as Element).closest?.(".diagram-export")) {
+      setExportOpen(false);
+    }
   };
 
   const applyColor = (nextColor: DiagramColor) => {
@@ -1001,6 +1028,26 @@ export function DiagramEditor({ diagram, onChange, onClose }: DiagramEditorProps
             <Sparkles size={14} strokeWidth={1.9} />
             Describe
           </button>
+          <div className="diagram-export">
+            <button className="topbar-button" onClick={() => setExportOpen((open) => !open)} aria-haspopup="menu" aria-expanded={exportOpen} style={{ marginLeft: "4px" }}>
+              <Download size={14} strokeWidth={1.9} />
+              Export
+            </button>
+            {exportOpen ? (
+              <div className="diagram-export-menu" role="menu">
+                <button role="menuitem" disabled={exportBusy} onClick={() => runExport("png")}>PNG</button>
+                <button role="menuitem" disabled={exportBusy} onClick={() => runExport("svg")}>SVG</button>
+                <label className="diagram-export-toggle">
+                  <input
+                    type="checkbox"
+                    checked={exportBackground === "transparent"}
+                    onChange={(event) => setExportBackground(event.target.checked ? "transparent" : "white")}
+                  />
+                  Transparent background
+                </label>
+              </div>
+            ) : null}
+          </div>
           <button className="topbar-icon-button" style={{ marginLeft: "4px" }} onClick={onClose} aria-label="Close" title="Close">
             <X size={17} strokeWidth={2} />
           </button>

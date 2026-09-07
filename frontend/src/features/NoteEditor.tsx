@@ -306,6 +306,7 @@ export function NoteEditor({
             onFocusPrevious={focusTags}
             onFocusNoteList={onFocusNoteList}
             onOpenDiagram={openDiagram}
+            exportTitle={note.title}
             diagramDescribeRequest={diagramDescribeRequest}
             placeholder="Start writing... press / to insert a block"
           />
@@ -377,6 +378,7 @@ export function NoteEditor({
           diagram={diagramEdit.diagram}
           onChange={changeDiagram}
           onClose={closeDiagram}
+          title={note.title}
         />
       ) : null}
     </main>

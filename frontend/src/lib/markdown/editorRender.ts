@@ -68,7 +68,7 @@ export function renderEditableLine(rawLine: string, active: boolean, index: numb
   if (diagram) {
     const preview = [
       `<span class="markdown-editor-diagram-preview">${diagramToSvgMarkup(diagram, 320)}</span>`,
-      `<span class="markdown-editor-diagram-meta"><span>${escapeHtml(diagramSummary(diagram))}</span><em data-diagram-edit-line="${index}">Edit diagram</em></span>`,
+      `<span class="markdown-editor-diagram-meta"><span>${escapeHtml(diagramSummary(diagram))}</span><em data-diagram-edit-line="${index}">Edit diagram</em><button type="button" data-diagram-export-line="${index}" class="markdown-editor-diagram-export" aria-label="Download diagram" title="Download PNG"></button></span>`,
       `<span data-diagram-resize-line="${index}" class="markdown-editor-diagram-resize" aria-hidden="true"></span>`,
       `<span data-diagram-width-resize-line="${index}" class="markdown-editor-diagram-width-resize" aria-hidden="true"></span>`,
     ].join("");

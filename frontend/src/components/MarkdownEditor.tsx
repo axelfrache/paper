@@ -10,6 +10,7 @@ import {
   updateDiagramPreview,
 } from "../lib/diagram";
 import { generateAI } from "../lib/api";
+import { downloadDiagram } from "../lib/diagramExport";
 import { buildDiagramGenerationPrompt, parseGeneratedDiagram } from "../lib/diagramAi";
 import {
   deleteBackward,
@@ -70,6 +71,7 @@ type MarkdownEditorProps = {
   onFocusPrevious?: () => void;
   onFocusNoteList?: () => void;
   onOpenDiagram?: (line: number, diagram: Diagram) => void;
+  exportTitle?: string;
   diagramDescribeRequest?: { key: string; prompt: string } | null;
   placeholder?: string;
 };
@@ -169,6 +171,7 @@ export function MarkdownEditor({
   onFocusPrevious,
   onFocusNoteList,
   onOpenDiagram,
+  exportTitle,
   diagramDescribeRequest = null,
   placeholder = "Start writing...",
 }: MarkdownEditorProps) {
@@ -666,6 +669,17 @@ export function MarkdownEditor({
       const line = Number(deleteTarget.getAttribute("data-resource-delete-line"));
       if (!Number.isNaN(line)) {
         removeResource(line);
+      }
+      return;
+    }
+
+    const exportTarget = target?.closest("[data-diagram-export-line]");
+    if (exportTarget) {
+      event.preventDefault();
+      const line = Number(exportTarget.getAttribute("data-diagram-export-line"));
+      const diagram = parseDiagramMarker(value.split("\n")[line] ?? "");
+      if (!Number.isNaN(line) && diagram) {
+        void downloadDiagram(diagram, "png", exportTitle ?? "diagram");
       }
       return;
     }
