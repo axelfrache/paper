@@ -1022,8 +1022,18 @@ export function DiagramEditor({ diagram, onChange, onClose, title }: DiagramEdit
   return (
     <div className="diagram-editor" role="dialog" aria-modal="true" aria-label="Diagram editor" onPointerDownCapture={handleEditorPointerDownCapture}>
       <header className="diagram-editor-topbar">
-        <strong>Diagram</strong>
-        <div>
+        <div className="diagram-editor-crumb">
+          {title ? (
+            <span className="diagram-editor-note" title={title}>
+              {title}
+            </span>
+          ) : null}
+          <span className="diagram-editor-mode">{liveDiagram.mode === "iso" ? "Isometric" : "Flat"}</span>
+          <span className="diagram-editor-count">
+            {liveDiagram.nodes.length} {liveDiagram.nodes.length === 1 ? "node" : "nodes"}
+          </span>
+        </div>
+        <div className="diagram-editor-actions">
           <button className="topbar-button" onClick={openAiDialog}>
             <Sparkles size={14} strokeWidth={1.9} />
             Describe
@@ -1048,7 +1058,8 @@ export function DiagramEditor({ diagram, onChange, onClose, title }: DiagramEdit
               </div>
             ) : null}
           </div>
-          <button className="topbar-icon-button" style={{ marginLeft: "4px" }} onClick={onClose} aria-label="Close" title="Close">
+          <span className="diagram-editor-divider" aria-hidden="true"></span>
+          <button className="topbar-icon-button" onClick={onClose} aria-label="Close" title="Close">
             <X size={17} strokeWidth={2} />
           </button>
         </div>

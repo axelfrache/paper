@@ -1959,22 +1959,62 @@ kbd,
   padding: 0 16px;
 }
 
-.diagram-editor-topbar > strong {
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-.diagram-editor-topbar > span {
-  color: var(--subtle);
-  font-size: 11px;
-}
-
-.diagram-editor-topbar > div {
+.diagram-editor-crumb {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-left: auto;
+  gap: 10px;
+  min-width: 0;
+  flex: 0 1 auto;
 }
+
+.diagram-editor-note {
+  min-width: 0;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--subtle);
+  font-size: 12.5px;
+  font-weight: 550;
+}
+
+.diagram-editor-mode {
+  flex: none;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 5px;
+  background: var(--surface-sunken);
+  color: var(--muted-strong);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.diagram-editor-count {
+  flex: none;
+  color: var(--faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.diagram-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex: none;
+}
+
+.diagram-editor-divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 6px;
+  background: var(--line);
+}
+
 
 .diagram-editor-mode {
   display: flex;
@@ -3040,7 +3080,7 @@ kbd,
     padding: 8px 12px;
   }
 
-  .diagram-editor-topbar > div {
+  .diagram-editor-actions {
     width: 100%;
     justify-content: flex-end;
   }
