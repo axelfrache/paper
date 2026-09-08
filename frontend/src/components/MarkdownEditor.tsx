@@ -208,7 +208,11 @@ export function MarkdownEditor({
     renderMarkdown(editorRef.current, value, caret?.line ?? -1, selectedResourceLine ?? -1);
     activeLineRef.current = caret?.line ?? -1;
     if (caret && selectedResourceLine === null) {
-      placeCaret(editorRef.current, caret);
+      if (isResourceLine(value.split("\n")[caret.line] ?? "")) {
+        selectResource(caret.line);
+      } else {
+        placeCaret(editorRef.current, caret);
+      }
       probeSlash(value, caret);
       onCaretLineChange?.(caret.line);
     }
@@ -237,7 +241,11 @@ export function MarkdownEditor({
         return;
       }
       editor.focus();
-      placeCaret(editor, caret);
+      if (isResourceLine(target.value.split("\n")[caret.line] ?? "")) {
+        selectResource(caret.line);
+      } else {
+        placeCaret(editor, caret);
+      }
       editor.scrollIntoView({ block: "nearest" });
       onCaretLineChange?.(caret.line);
       probeSlash(target.value, caret);
@@ -329,6 +337,10 @@ export function MarkdownEditor({
     setSelectionToolbar(null);
     const caret = range?.end ?? getCaret(editorRef.current);
     if (!caret) {
+      return;
+    }
+    if (isResourceLine(value.split("\n")[caret.line] ?? "")) {
+      selectResource(caret.line);
       return;
     }
     caretRef.current = caret;
@@ -428,7 +440,7 @@ export function MarkdownEditor({
   /** Puts the caret on a line, or selects it when it holds a resource. */
   const focusLine = (line: number, col: number) => {
     if (isResourceLine(value.split("\n")[line] ?? "")) {
-      moveCaretTo(line, 0);
+      selectResource(line);
       return;
     }
     setSelectedResourceLine(null);
@@ -450,6 +462,11 @@ export function MarkdownEditor({
 
   const setSource = (nextValue: string, caret: Caret | null) => {
     valueRef.current = nextValue;
+    if (caret && isResourceLine(nextValue.split("\n")[caret.line] ?? "")) {
+      onChange(nextValue);
+      selectResource(caret.line);
+      return;
+    }
     caretRef.current = caret;
     if (caret) {
       onCaretLineChange?.(caret.line);
@@ -524,6 +541,26 @@ export function MarkdownEditor({
         event.preventDefault();
         setSlash(null);
         selectResource(stepsOntoPrevious ? caret.line - 1 : caret.line + 1);
+        return;
+      }
+    }
+
+    if (event.shiftKey && (event.key === "ArrowRight" || event.key === "ArrowDown")) {
+      const endCaret = selectionRange?.end ?? caret;
+      if (endCaret.col === lineText(endCaret.line).length && isResource(endCaret.line + 1)) {
+        event.preventDefault();
+        const startCaret = selectionRange?.start ?? caret;
+        placeSelection(editorRef.current, { start: startCaret, end: { line: endCaret.line + 1, col: 0 } });
+        return;
+      }
+    }
+
+    if (event.shiftKey && (event.key === "ArrowLeft" || event.key === "ArrowUp")) {
+      const startCaret = selectionRange?.start ?? caret;
+      if (startCaret.col === 0 && isResource(startCaret.line - 1)) {
+        event.preventDefault();
+        const endCaret = selectionRange?.end ?? caret;
+        placeSelection(editorRef.current, { start: { line: startCaret.line - 1, col: lineText(startCaret.line - 1).length }, end: endCaret });
         return;
       }
     }
@@ -606,8 +643,10 @@ export function MarkdownEditor({
     if (event.key === "Backspace") {
       event.preventDefault();
       if (collapsed && caret.col === 0 && isResource(caret.line - 1)) {
-        removeResource(caret.line - 1);
-        return;
+        if (lineText(caret.line).length > 0) {
+          removeResource(caret.line - 1);
+          return;
+        }
       }
       const next = selectionRange && !isCollapsedRange(selectionRange)
         ? deleteRange(value, selectionRange)
@@ -622,8 +661,10 @@ export function MarkdownEditor({
     if (event.key === "Delete") {
       event.preventDefault();
       if (collapsed && caret.col === lineText(caret.line).length && isResource(caret.line + 1)) {
-        removeResource(caret.line + 1, caret);
-        return;
+        if (lineText(caret.line).length > 0) {
+          removeResource(caret.line + 1, caret);
+          return;
+        }
       }
       const next = selectionRange && !isCollapsedRange(selectionRange)
         ? deleteRange(value, selectionRange)
@@ -641,6 +682,10 @@ export function MarkdownEditor({
       return;
     }
     const caret = getCaret(editorRef.current) ?? { line: 0, col: 0 };
+    if (isResourceLine(value.split("\n")[caret.line] ?? "")) {
+      selectResource(caret.line);
+      return;
+    }
     caretRef.current = caret;
     onCaretLineChange?.(caret.line);
     renderMarkdown(editorRef.current, value, caret.line);
