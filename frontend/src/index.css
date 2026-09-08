@@ -2580,10 +2580,14 @@ kbd,
 }
 
 .ai-result-dock {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 60px;
+  z-index: 20;
   display: flex;
-  flex: none;
   justify-content: center;
-  padding: 0 16px 10px;
+  padding: 0 16px;
   pointer-events: none;
 }
 
@@ -2740,6 +2744,20 @@ kbd,
   border-top: 1px solid var(--line-soft);
   background: var(--surface-soft);
   padding: 8px 16px;
+}
+
+.ai-bar-history {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.ai-bar-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 6px 0 2px;
+  background: var(--line);
 }
 
 .ai-bar strong {
