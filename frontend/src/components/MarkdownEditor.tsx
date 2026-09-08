@@ -200,6 +200,7 @@ export function MarkdownEditor({
   const [diagramDescribeMode, setDiagramDescribeMode] = useState<DiagramMode>("flat");
   const [diagramDescribeLoading, setDiagramDescribeLoading] = useState(false);
   const [diagramDescribeError, setDiagramDescribeError] = useState<string | null>(null);
+  const [hoveredLink, setHoveredLink] = useState<{ href: string; top: number; left: number } | null>(null);
 
   useLayoutEffect(() => {
     valueRef.current = value;
@@ -676,9 +677,11 @@ export function MarkdownEditor({
     }
   };
 
+  const pointerDownRef = useRef(false);
+
   const handleFocus = () => {
     focusedRef.current = true;
-    if (selectedResourceLine !== null) {
+    if (pointerDownRef.current || selectedResourceLine !== null) {
       return;
     }
     const caret = getCaret(editorRef.current) ?? { line: 0, col: 0 };
@@ -707,7 +710,27 @@ export function MarkdownEditor({
     if (event.button !== 0) {
       return;
     }
+    
+    pointerDownRef.current = true;
+    const clearPointerDown = () => {
+      pointerDownRef.current = false;
+      window.removeEventListener("pointerup", clearPointerDown);
+      window.removeEventListener("pointercancel", clearPointerDown);
+    };
+    window.addEventListener("pointerup", clearPointerDown);
+    window.addEventListener("pointercancel", clearPointerDown);
+
     const target = event.target instanceof Element ? event.target : null;
+
+    if (event.metaKey || event.ctrlKey) {
+      const linkTarget = linkElementFromTarget(target);
+      if (linkTarget) {
+        event.preventDefault();
+        event.stopPropagation();
+        window.open(linkTarget.href, "_blank", "noopener,noreferrer");
+        return;
+      }
+    }
     const deleteTarget = target?.closest("[data-resource-delete-line]");
     if (deleteTarget) {
       event.preventDefault();
@@ -908,6 +931,25 @@ export function MarkdownEditor({
         onBlur={handleBlur}
         onPointerDown={handlePointerDown}
         onClick={handleClick}
+        onPointerOver={(event) => {
+          const link = linkElementFromTarget(event.target);
+          if (link) {
+            const rect = link.getBoundingClientRect();
+            const wrapRect = wrapRef.current?.getBoundingClientRect();
+            if (wrapRect) {
+              setHoveredLink({
+                href: link.href,
+                top: rect.top - wrapRect.top,
+                left: rect.left - wrapRect.left,
+              });
+            }
+          }
+        }}
+        onPointerOut={(event) => {
+          if (linkElementFromTarget(event.target)) {
+            setHoveredLink(null);
+          }
+        }}
         onPaste={handlePaste}
         onDragOver={(event) => {
           if (Array.from(event.dataTransfer.items).some((item) => item.type.startsWith("image/"))) {
@@ -1001,6 +1043,17 @@ export function MarkdownEditor({
               </button>
             );
           })}
+        </div>
+      ) : null}
+      {hoveredLink ? (
+        <div
+          className="link-preview-tooltip"
+          style={{ top: hoveredLink.top, left: hoveredLink.left }}
+        >
+          <a href={hoveredLink.href} target="_blank" rel="noopener noreferrer">
+            {hoveredLink.href}
+          </a>
+          <kbd>{typeof navigator !== "undefined" && navigator.platform.toLowerCase().includes("mac") ? "Cmd" : "Ctrl"}+Click</kbd>
         </div>
       ) : null}
       <dialog

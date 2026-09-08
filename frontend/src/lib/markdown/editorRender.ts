@@ -125,44 +125,44 @@ function inlineNode(node: MarkdownInline, active: boolean): string {
     }
     const resized = node.width ? " is-resized" : "";
     const style = node.width ? ` style="width:min(100%, ${node.width}px);"` : "";
-    return `<span data-source="${escapeAttribute(marker)}" class="markdown-editor-image${resized}"${style}><img src="${escapeAttribute(node.href)}" alt="${escapeAttribute(node.alt)}" draggable="false" /></span>`;
+    return `${syntaxMark(marker, active)}<span class="markdown-editor-image${resized}"${style}><img src="${escapeAttribute(node.href)}" alt="${escapeAttribute(node.alt)}" draggable="false" /></span>`;
   }
   if (node.type === "code") {
     const content = `<code>${escapeHtml(node.text)}</code>`;
-    return active ? `${syntaxMark("`")}${content}${syntaxMark("`")}` : content;
+    return `${syntaxMark("`", active)}${content}${syntaxMark("`", active)}`;
   }
   if (node.type === "strong") {
     const content = `<strong>${node.children.map((child) => inlineNode(child, active)).join("")}</strong>`;
-    return active ? `${syntaxMark("**")}${content}${syntaxMark("**")}` : content;
+    return `${syntaxMark("**", active)}${content}${syntaxMark("**", active)}`;
   }
   if (node.type === "em") {
     const content = `<em>${node.children.map((child) => inlineNode(child, active)).join("")}</em>`;
-    return active ? `${syntaxMark("*")}${content}${syntaxMark("*")}` : content;
+    return `${syntaxMark("*", active)}${content}${syntaxMark("*", active)}`;
   }
   if (node.type === "strike") {
     const content = `<s>${node.children.map((child) => inlineNode(child, active)).join("")}</s>`;
-    return active ? `${syntaxMark("~~")}${content}${syntaxMark("~~")}` : content;
+    return `${syntaxMark("~~", active)}${content}${syntaxMark("~~", active)}`;
   }
   if (node.type === "underline") {
     const content = `<u>${node.children.map((child) => inlineNode(child, active)).join("")}</u>`;
-    return active ? `${syntaxMark("<u>")}${content}${syntaxMark("</u>")}` : content;
+    return `${syntaxMark("<u>", active)}${content}${syntaxMark("</u>", active)}`;
   }
   const children = node.text.map((child) => inlineNode(child, active)).join("");
   const content = node.safe
     ? `<a href="${escapeAttribute(node.href)}" target="_blank" rel="noreferrer"${node.title ? ` title="${escapeAttribute(node.title)}"` : ""}>${children}</a>`
     : `<span class="markdown-link-invalid">${children}</span>`;
-  if (!active) {
-    return content;
-  }
-  return `${syntaxMark("[")}${content}${syntaxMark(`](${node.source})`)}`;
+  return `${syntaxMark("[", active)}${content}${syntaxMark(`](${node.source})`, active)}`;
 }
 
 function imageMarker(node: Extract<MarkdownInline, { type: "image" }>) {
   return `![${node.alt}](${node.source})${node.width ? `{width=${node.width}}` : ""}`;
 }
 
-function syntaxMark(mark: string) {
-  return `<span style="color:${syntaxColor};">${escapeHtml(mark)}</span>`;
+function syntaxMark(mark: string, active: boolean) {
+  if (active) {
+    return `<span style="color:${syntaxColor};">${escapeHtml(mark)}</span>`;
+  }
+  return `<span style="font-size:0; color:transparent; user-select:none; pointer-events:none;">${escapeHtml(mark)}</span>`;
 }
 
 function escapeHtml(value: string) {

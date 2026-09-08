@@ -1794,6 +1794,49 @@ kbd,
   margin: 0 3px;
 }
 
+.link-preview-tooltip {
+  position: absolute;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line-control);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+  padding: 6px 12px;
+  transform: translate(0, calc(-100% - 4px));
+  animation: link-preview-in 0.13s ease both;
+  font-size: 13px;
+  pointer-events: none;
+}
+
+@keyframes link-preview-in {
+  from {
+    opacity: 0;
+    transform: translate(0, calc(-100% + 2px));
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, calc(-100% - 4px));
+  }
+}
+
+.link-preview-tooltip a {
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 300px;
+}
+
+.link-preview-tooltip kbd {
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+}
+
 /* Body text is justified unless a line carries its own {align=…} marker. */
 .markdown-editor,
 .markdown-view p {
