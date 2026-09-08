@@ -184,6 +184,7 @@ export function MarkdownEditor({
   const caretRef = useRef<Caret | null>(null);
   const pendingImageCaretRef = useRef<Caret | null>(null);
   const skipResourceCaretSyncRef = useRef(false);
+  const dismissedSlashRef = useRef<{ line: number; col: number } | null>(null);
   const dropIndicatorRef = useRef<HTMLDivElement | null>(null);
   const selectionToolbarRef = useRef<HTMLDivElement | null>(null);
   const activeLineRef = useRef(-1);
@@ -512,6 +513,11 @@ export function MarkdownEditor({
       if (event.key === "Escape") {
         event.preventDefault();
         setSlash(null);
+        const line = value.split("\n")[caret.line] ?? "";
+        const match = /(?:^|\s)\/([\w-]*)$/.exec(line.slice(0, caret.col));
+        if (match) {
+          dismissedSlashRef.current = { line: caret.line, col: caret.col - match[0].length + match[0].indexOf("/") };
+        }
         return;
       }
       if (event.key === "ArrowDown") {
@@ -1179,6 +1185,14 @@ export function MarkdownEditor({
     const match = /(?:^|\s)\/([\w-]*)$/.exec(line.slice(0, caret.col));
     const selectionRange = getSelectionRange(editorRef.current);
     if (!match || (selectionRange && !isCollapsedRange(selectionRange))) {
+      setSlash(null);
+      if (dismissedSlashRef.current) {
+        dismissedSlashRef.current = null;
+      }
+      return;
+    }
+    const slashStart = caret.col - match[0].length + match[0].indexOf("/");
+    if (dismissedSlashRef.current && dismissedSlashRef.current.line === caret.line && dismissedSlashRef.current.col === slashStart) {
       setSlash(null);
       return;
     }
