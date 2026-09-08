@@ -1046,4 +1046,63 @@ describe("MarkdownEditor integration", () => {
 
     expect(valueFrom(host)).toBe("hello!{align=right}");
   });
+
+  it("collapses a full selection to the bottom on ArrowDown", () => {
+    const host = mount("first line\nsecond line\nthird line");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "a", ctrlKey: true, bubbles: true, cancelable: true }));
+    });
+    act(() => {
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+    });
+
+    expect(getSelectionRange(editor)).toEqual({
+      start: { line: 2, col: "third line".length },
+      end: { line: 2, col: "third line".length },
+    });
+  });
+
+  it("collapses a full selection to the top on ArrowUp", () => {
+    const host = mount("first line\nsecond line\nthird line");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "a", ctrlKey: true, bubbles: true, cancelable: true }));
+    });
+    act(() => {
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }));
+    });
+
+    expect(getSelectionRange(editor)).toEqual({ start: { line: 0, col: 0 }, end: { line: 0, col: 0 } });
+  });
+
+  it("selects the whole document with Ctrl+A while a diagram is selected", async () => {
+    const marker = serializeDiagramMarker(createDefaultDiagram("iso"));
+    const host = mount(`${marker}\nsome text`);
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.querySelector("[data-resource-surface='0']")?.dispatchEvent(new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true }));
+    });
+    expect(editorFrom(host).querySelector("[data-resource-line='0']")?.classList.contains("is-selected")).toBe(true);
+
+    const prevented = new KeyboardEvent("keydown", { key: "a", ctrlKey: true, bubbles: true, cancelable: true });
+    act(() => {
+      editorFrom(host).dispatchEvent(prevented);
+    });
+
+    expect(prevented.defaultPrevented).toBe(true);
+    expect(editorFrom(host).querySelector(".is-selected")).toBeNull();
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    });
+    expect(getSelectionRange(editorFrom(host))).toEqual({
+      start: { line: 0, col: 0 },
+      end: { line: 1, col: "some text".length },
+    });
+  });
 });

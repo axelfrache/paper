@@ -488,6 +488,18 @@ export function MarkdownEditor({
     const lineText = (index: number) => lines[index] ?? "";
     const isResource = (index: number) => isResourceLine(lineText(index));
     if (selectedResourceLine !== null) {
+      if (meta && event.key.toLowerCase() === "a") {
+        event.preventDefault();
+        const range = fullTextRange(value);
+        focusedRef.current = true;
+        caretRef.current = range.end;
+        setSelectedResourceLine(null);
+        window.requestAnimationFrame(() => {
+          placeSelection(editorRef.current, range);
+          updateSelectionToolbar(range);
+        });
+        return;
+      }
       handleResourceKey(event, selectedResourceLine, lineText);
       return;
     }
@@ -550,6 +562,15 @@ export function MarkdownEditor({
         selectResource(stepsOntoPrevious ? caret.line - 1 : caret.line + 1);
         return;
       }
+    }
+
+    if (plain && !collapsed && selectionRange && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+      event.preventDefault();
+      setSlash(null);
+      const target = event.key === "ArrowDown" ? selectionRange.end : selectionRange.start;
+      window.getSelection()?.removeAllRanges();
+      focusLine(target.line, target.col);
+      return;
     }
 
     if (event.shiftKey && (event.key === "ArrowRight" || event.key === "ArrowDown")) {
