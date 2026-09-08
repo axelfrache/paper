@@ -711,6 +711,8 @@ export function MarkdownEditor({
       return;
     }
     
+    setHoveredLink(null);
+    
     pointerDownRef.current = true;
     const clearPointerDown = () => {
       pointerDownRef.current = false;
@@ -727,6 +729,7 @@ export function MarkdownEditor({
       if (linkTarget) {
         event.preventDefault();
         event.stopPropagation();
+        setHoveredLink(null);
         window.open(linkTarget.href, "_blank", "noopener,noreferrer");
         return;
       }
