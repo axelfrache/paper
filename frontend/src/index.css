@@ -3073,24 +3073,12 @@ kbd,
 }
 
 @media (max-width: 900px) {
-  .diagram-editor-topbar {
-    height: auto;
-    min-height: 46px;
-    flex-wrap: wrap;
-    padding: 8px 12px;
-  }
-
-  .diagram-editor-actions {
-    width: 100%;
-    justify-content: flex-end;
-  }
-
   .diagram-toolbar {
     right: 10px;
     bottom: 12px;
     left: 10px;
     justify-content: center;
-    overflow-x: auto;
+    flex-wrap: wrap;
     transform: none;
   }
 
