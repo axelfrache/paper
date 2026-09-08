@@ -1,7 +1,10 @@
 import { useEffect, useRef } from "react";
 import type { PointerEvent } from "react";
 import { PanelLeftOpen, Plus, Search, Star } from "lucide-react";
-import { stripDiagramMarkers } from "../lib/diagram";
+import type { ReactNode } from "react";
+import { parseInline } from "../lib/markdown/inline";
+import type { MarkdownInline } from "../lib/markdown/inline";
+import { isDivider, isResourceLine } from "../lib/markdown/resource";
 import type { Note } from "../types/note";
 
 type NoteDirection = "previous" | "next";
@@ -123,7 +126,7 @@ export function NotesColumn({
               <strong>{note.title || "Untitled"}</strong>
               {note.favorite ? <Star size={12} fill="currentColor" strokeWidth={1.8} /> : null}
             </div>
-            <p>{stripDiagramMarkers(note.content).replace(/\s+/g, " ").trim() || "No content"}</p>
+            <p><NoteSummaryPreview content={note.content} /></p>
             <div className="note-card-meta">
               <span>{formatRelative(note.updatedAt)}</span>
               <div>
@@ -192,4 +195,60 @@ function formatRelative(value: string) {
     return `${days}d ago`;
   }
   return `${Math.floor(days / 7)}w ago`;
+}
+
+const blockPrefix = /^\s*(#{1,6}\s+|>\s+|[-*+]\s+(\[[ xX]\]\s+)?)/;
+
+function notePreviewNodes(content: string): MarkdownInline[] {
+  const nodes: MarkdownInline[] = [];
+  for (const raw of content.split("\n")) {
+    const line = raw.trim();
+    if (!line || isDivider(line) || isResourceLine(line)) {
+      continue;
+    }
+    const clean = line.replace(blockPrefix, "").trim();
+    if (!clean) {
+      continue;
+    }
+    if (nodes.length) {
+      nodes.push({ type: "text", text: " " });
+    }
+    nodes.push(...parseInline(clean));
+  }
+  return nodes;
+}
+
+function renderInlineNodes(nodes: MarkdownInline[]): ReactNode {
+  return nodes.map((node, index) => {
+    if (node.type === "text") {
+      return <span key={index}>{node.text}</span>;
+    }
+    if (node.type === "code") {
+      return <code key={index}>{node.text}</code>;
+    }
+    if (node.type === "link") {
+      return <span key={index}>{renderInlineNodes(node.text)}</span>;
+    }
+    if (node.type === "image") {
+      return null;
+    }
+    if (node.type === "strong") {
+      return <strong key={index}>{renderInlineNodes(node.children)}</strong>;
+    }
+    if (node.type === "em") {
+      return <em key={index}>{renderInlineNodes(node.children)}</em>;
+    }
+    if (node.type === "strike") {
+      return <s key={index}>{renderInlineNodes(node.children)}</s>;
+    }
+    return <u key={index}>{renderInlineNodes(node.children)}</u>;
+  });
+}
+
+function NoteSummaryPreview({ content }: { content: string }) {
+  const nodes = notePreviewNodes(content);
+  if (!nodes.length) {
+    return <>No content</>;
+  }
+  return <>{renderInlineNodes(nodes)}</>;
 }
