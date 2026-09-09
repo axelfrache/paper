@@ -25,27 +25,3 @@ func TestNoteServiceIsolatesNotesByUser(t *testing.T) {
 		t.Fatal("second user can open first user's note")
 	}
 }
-
-func TestClaimLegacyNotesRequiresAdministrator(t *testing.T) {
-	repository := memory.NewNoteRepository()
-	if _, err := repository.Create(context.Background(), "legacy", domain.NoteDraft{Title: "Legacy"}); err != nil {
-		t.Fatal(err)
-	}
-	service := NewNote(repository, nil)
-	regular := domain.ContextWithUser(context.Background(), domain.User{ID: "user-1"})
-	if _, err := service.ClaimLegacyNotes(regular); err == nil {
-		t.Fatal("expected regular user to be rejected")
-	}
-	admin := domain.ContextWithUser(context.Background(), domain.User{ID: "admin-1", Roles: []string{"paper-admin"}})
-	claimed, err := service.ClaimLegacyNotes(admin)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if claimed != 1 {
-		t.Fatalf("expected one claimed note, got %d", claimed)
-	}
-	notes, err := service.ListNotes(admin)
-	if err != nil || len(notes) != 1 {
-		t.Fatalf("claimed notes are unavailable: %#v %v", notes, err)
-	}
-}

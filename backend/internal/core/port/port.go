@@ -17,7 +17,6 @@ type NoteService interface {
 	AssistNote(ctx context.Context, id string, action domain.AIAction) (domain.AISuggestion, error)
 	AskNotes(ctx context.Context, req domain.AskRequest) (domain.AskAnswer, error)
 	GenerateAI(ctx context.Context, req domain.AICompletionRequest) (domain.AICompletion, error)
-	ClaimLegacyNotes(ctx context.Context) (int64, error)
 }
 
 type NoteRepository interface {
@@ -26,7 +25,6 @@ type NoteRepository interface {
 	GetByID(ctx context.Context, ownerID, id string) (domain.Note, error)
 	List(ctx context.Context, ownerID string) ([]domain.Note, error)
 	Delete(ctx context.Context, ownerID, id string) error
-	ClaimOwner(ctx context.Context, previousOwnerID, ownerID string) (int64, error)
 }
 
 type NoteAssistant interface {
@@ -65,6 +63,8 @@ type AuthService interface {
 	Config() domain.AuthConfig
 	BeginLogin(register bool, returnTo string) (domain.LoginStart, error)
 	CompleteLogin(ctx context.Context, stateToken, state, code string) (domain.LoginResult, error)
+	LoginWithPassword(ctx context.Context, email, password, returnTo string) (domain.LoginResult, error)
+	RegisterWithPassword(ctx context.Context, email, name, password, returnTo string) (domain.LoginResult, error)
 	Authenticate(ctx context.Context, sessionToken string) (domain.User, error)
 	Logout(ctx context.Context, sessionToken string) (string, error)
 }
@@ -75,6 +75,17 @@ type IdentityProvider interface {
 	Exchange(ctx context.Context, code, verifier, nonce string) (domain.User, domain.IdentityTokens, error)
 	Refresh(ctx context.Context, tokens domain.IdentityTokens) (domain.IdentityTokens, error)
 	LogoutURL(idToken, returnTo string) string
+}
+
+type CredentialProvider interface {
+	Register(ctx context.Context, email, name, password string) (domain.User, error)
+	Authenticate(ctx context.Context, email, password string) (domain.User, error)
+}
+
+type UserRepository interface {
+	Create(ctx context.Context, record domain.UserRecord) error
+	GetByEmail(ctx context.Context, email string) (domain.UserRecord, error)
+	SetRoles(ctx context.Context, id string, roles []string) error
 }
 
 type SessionRepository interface {

@@ -108,6 +108,8 @@ describe("NoteEditor AI integration", () => {
     act(() => host.querySelector<HTMLButtonElement>(".ai-bar-history button[aria-label='Redo']")?.click());
     expect(onUndo).toHaveBeenCalledOnce();
     expect(onRedo).toHaveBeenCalledOnce();
+    expect(host.querySelector(".ai-bar > .ai-bar-sep")).not.toBeNull();
+    expect(host.querySelector(".ai-bar > .ai-bar-count")?.textContent).toBe("7 words");
   });
 
   it("opens the native diagram dialog with note context", () => {

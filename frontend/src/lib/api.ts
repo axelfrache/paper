@@ -41,12 +41,22 @@ export function getCurrentUser() {
   return request<AuthUser>("/api/auth/me");
 }
 
-export function logout() {
-  return request<{ redirectTo: string }>("/api/auth/logout", { method: "POST" });
+export function loginWithPassword(email: string, password: string) {
+  return request<{ redirectTo: string }>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
 }
 
-export function claimLegacyNotes() {
-  return request<{ claimed: number }>("/api/admin/notes/claim-legacy", { method: "POST" });
+export function registerWithPassword(email: string, name: string, password: string) {
+  return request<{ redirectTo: string }>("/api/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ email, name, password }),
+  });
+}
+
+export function logout() {
+  return request<{ redirectTo: string }>("/api/auth/logout", { method: "POST" });
 }
 
 export function listNotes() {

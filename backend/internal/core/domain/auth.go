@@ -28,6 +28,16 @@ type IdentityTokens struct {
 	Expiry       time.Time
 }
 
+type UserRecord struct {
+	ID           string
+	Email        string
+	Name         string
+	Roles        []string
+	PasswordHash string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
 type Session struct {
 	ID            string
 	User          User

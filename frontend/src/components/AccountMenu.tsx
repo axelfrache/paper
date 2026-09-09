@@ -5,12 +5,11 @@ import type { AuthUser } from "../types/auth";
 type AccountMenuProps = {
   user: AuthUser;
   onLogout: () => Promise<void>;
-  onClaimLegacyNotes: () => Promise<number>;
 };
 
-export function AccountMenu({ user, onLogout, onClaimLegacyNotes }: AccountMenuProps) {
+export function AccountMenu({ user, onLogout }: AccountMenuProps) {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
-  const [claimResult, setClaimResult] = useState<string>("");
+  const [error, setError] = useState<string>("");
   const label = user.name || user.email || "Account";
 
   return (
@@ -23,7 +22,7 @@ export function AccountMenu({ user, onLogout, onClaimLegacyNotes }: AccountMenuP
         </div>
       </button>
 
-      <dialog className="account-dialog" ref={dialogRef} onClose={() => setClaimResult("")}>
+      <dialog className="account-dialog" ref={dialogRef} onClose={() => setError("")}>
         <header>
           <div className="account-dialog-icon">
             <UserRound size={17} strokeWidth={1.8} />
@@ -41,28 +40,11 @@ export function AccountMenu({ user, onLogout, onClaimLegacyNotes }: AccountMenuP
             </em>
           ) : null}
         </section>
-        {user.isAdmin ? (
-          <div className="account-admin-actions">
-            <button
-              type="button"
-              onClick={() => {
-                void onClaimLegacyNotes()
-                  .then((count) => setClaimResult(`${count} notes claimed`))
-                  .catch(() => setClaimResult("Could not claim notes"));
-              }}
-            >
-              Claim legacy notes
-            </button>
-            {claimResult ? <span>{claimResult}</span> : null}
-          </div>
-        ) : null}
         <footer>
-          <button
-            type="button"
-            onClick={() => void onLogout().catch(() => setClaimResult("Could not sign out"))}
-          >
+          <button type="button" onClick={() => void onLogout().catch(() => setError("Could not sign out"))}>
             <LogOut size={14} /> Sign out
           </button>
+          {error ? <span>{error}</span> : null}
         </footer>
       </dialog>
     </>

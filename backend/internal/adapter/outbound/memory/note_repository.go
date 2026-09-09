@@ -104,28 +104,6 @@ func (r *NoteRepository) Delete(_ context.Context, ownerID, id string) error {
 	return nil
 }
 
-func (r *NoteRepository) ClaimOwner(_ context.Context, previousOwnerID, ownerID string) (int64, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	var count int64
-	for id, note := range r.notes {
-		if note.OwnerID != previousOwnerID {
-			continue
-		}
-		note.OwnerID = ownerID
-		r.notes[id] = note
-		count++
-	}
-	for id, image := range r.images {
-		if image.OwnerID == previousOwnerID {
-			image.OwnerID = ownerID
-			r.images[id] = image
-		}
-	}
-	return count, nil
-}
-
 func (r *NoteRepository) SaveImage(_ context.Context, image domain.NoteImageRecord) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

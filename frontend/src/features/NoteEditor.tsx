@@ -383,7 +383,7 @@ export function NoteEditor({
             </button>
           </div>
         </details>
-        <span>{wordCount(note.content)}</span>
+        <span className="ai-bar-count">{wordCount(note.content)}</span>
       </footer>
 
       {diagramEdit && diagramEdit.noteId === note.id ? (

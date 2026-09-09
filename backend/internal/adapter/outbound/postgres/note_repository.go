@@ -125,25 +125,6 @@ func (r *NoteRepository) Delete(ctx context.Context, ownerID, id string) error {
 	return nil
 }
 
-func (r *NoteRepository) ClaimOwner(ctx context.Context, previousOwnerID, ownerID string) (int64, error) {
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback(ctx)
-	command, err := tx.Exec(ctx, `update notes set owner_id = $2 where owner_id = $1`, previousOwnerID, ownerID)
-	if err != nil {
-		return 0, err
-	}
-	if _, err := tx.Exec(ctx, `update note_images set owner_id = $2 where owner_id = $1`, previousOwnerID, ownerID); err != nil {
-		return 0, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return 0, err
-	}
-	return command.RowsAffected(), nil
-}
-
 func (r *NoteRepository) SaveImage(ctx context.Context, image domain.NoteImageRecord) error {
 	_, err := r.pool.Exec(ctx, `
 		insert into note_images (id, note_id, owner_id, storage_key, name, content_type, size, created_at)

@@ -42,30 +42,49 @@ func main() {
 	}
 	defer sessions.Close()
 
-	var identityProvider port.IdentityProvider
+	authCfg := service.AuthConfig{
+		Secret: cfg.AuthSecret, RegistrationEnabled: cfg.AuthRegistration,
+		PostLogoutRedirectURL: cfg.AuthPublicURL,
+	}
+	var authService *service.Auth
 	switch cfg.AuthProvider {
 	case "dev":
-		identityProvider = authadapter.NewDev(domain.User{
+		provider := authadapter.NewDev(domain.User{
 			ID: cfg.AuthDevUserID, Email: cfg.AuthDevEmail, Name: cfg.AuthDevName, Roles: cfg.AuthDevRoles,
 		})
+		authService, err = service.NewAuth(provider, sessions, authCfg)
 	case "oidc":
 		if cfg.AuthClientSecret == "" {
 			log.Fatal("OIDC_CLIENT_SECRET is required when AUTH_PROVIDER=oidc")
 		}
-		identityProvider, err = authadapter.NewOIDC(startupCtx, authadapter.OIDCConfig{
+		var provider port.IdentityProvider
+		provider, err = authadapter.NewOIDC(startupCtx, authadapter.OIDCConfig{
 			IssuerURL: cfg.AuthIssuerURL, ClientID: cfg.AuthClientID,
 			ClientSecret: cfg.AuthClientSecret, RedirectURL: cfg.AuthRedirectURL,
 		})
 		if err != nil {
 			log.Fatalf("oidc configuration failed: %v", err)
 		}
+		authService, err = service.NewAuth(provider, sessions, authCfg)
+	case "local":
+		users, uerr := postgres.NewUserRepository(startupCtx, cfg.DatabaseURL)
+		if uerr != nil {
+			log.Fatalf("user database connection failed: %v", uerr)
+		}
+		defer users.Close()
+		local := authadapter.NewLocal(users)
+		if cfg.AuthLocalAdminEmail != "" {
+			if cfg.AuthLocalAdminPassword == "" {
+				log.Fatal("AUTH_LOCAL_ADMIN_PASSWORD is required when AUTH_LOCAL_ADMIN_EMAIL is set")
+			}
+			if _, aerr := local.EnsureAdmin(startupCtx, cfg.AuthLocalAdminEmail, cfg.AuthLocalAdminName, cfg.AuthLocalAdminPassword); aerr != nil {
+				log.Fatalf("admin bootstrap failed: %v", aerr)
+			}
+		}
+		authService, err = service.NewCredentialAuth("local", local, sessions, authCfg)
 	default:
 		log.Fatalf("unsupported AUTH_PROVIDER %q", cfg.AuthProvider)
 	}
-	authService, err := service.NewAuth(identityProvider, sessions, service.AuthConfig{
-		Secret: cfg.AuthSecret, RegistrationEnabled: cfg.AuthRegistration,
-		PostLogoutRedirectURL: cfg.AuthPublicURL,
-	})
 	if err != nil {
 		log.Fatalf("auth configuration failed: %v", err)
 	}

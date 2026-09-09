@@ -28,11 +28,13 @@ type AuthConfig struct {
 }
 
 type Auth struct {
-	provider port.IdentityProvider
-	sessions port.SessionRepository
-	aead     cipher.AEAD
-	config   AuthConfig
-	now      func() time.Time
+	provider     port.IdentityProvider
+	credentials  port.CredentialProvider
+	providerName string
+	sessions     port.SessionRepository
+	aead         cipher.AEAD
+	config       AuthConfig
+	now          func() time.Time
 }
 
 type loginState struct {
@@ -44,6 +46,26 @@ type loginState struct {
 }
 
 func NewAuth(provider port.IdentityProvider, sessions port.SessionRepository, config AuthConfig) (*Auth, error) {
+	auth, err := newAuth(sessions, config)
+	if err != nil {
+		return nil, err
+	}
+	auth.provider = provider
+	auth.providerName = provider.Name()
+	return auth, nil
+}
+
+func NewCredentialAuth(name string, credentials port.CredentialProvider, sessions port.SessionRepository, config AuthConfig) (*Auth, error) {
+	auth, err := newAuth(sessions, config)
+	if err != nil {
+		return nil, err
+	}
+	auth.credentials = credentials
+	auth.providerName = name
+	return auth, nil
+}
+
+func newAuth(sessions port.SessionRepository, config AuthConfig) (*Auth, error) {
 	if strings.TrimSpace(config.Secret) == "" {
 		return nil, fmt.Errorf("auth secret is required")
 	}
@@ -62,14 +84,17 @@ func NewAuth(provider port.IdentityProvider, sessions port.SessionRepository, co
 	if err != nil {
 		return nil, err
 	}
-	return &Auth{provider: provider, sessions: sessions, aead: aead, config: config, now: time.Now}, nil
+	return &Auth{sessions: sessions, aead: aead, config: config, now: time.Now}, nil
 }
 
 func (s *Auth) Config() domain.AuthConfig {
-	return domain.AuthConfig{Provider: s.provider.Name(), RegistrationEnabled: s.config.RegistrationEnabled}
+	return domain.AuthConfig{Provider: s.providerName, RegistrationEnabled: s.config.RegistrationEnabled}
 }
 
 func (s *Auth) BeginLogin(register bool, returnTo string) (domain.LoginStart, error) {
+	if s.provider == nil {
+		return domain.LoginStart{}, domain.NewInvalidError("This authentication provider does not support redirect login.")
+	}
 	if register && !s.config.RegistrationEnabled {
 		return domain.LoginStart{}, domain.NewForbiddenError("Account registration is disabled.")
 	}
@@ -105,6 +130,9 @@ func (s *Auth) BeginLogin(register bool, returnTo string) (domain.LoginStart, er
 }
 
 func (s *Auth) CompleteLogin(ctx context.Context, stateToken, state, code string) (domain.LoginResult, error) {
+	if s.provider == nil {
+		return domain.LoginResult{}, domain.NewInvalidError("This authentication provider does not support redirect login.")
+	}
 	var login loginState
 	if err := s.open(stateToken, &login); err != nil {
 		return domain.LoginResult{}, domain.NewUnauthorizedError("The login request is invalid or expired.")
@@ -119,16 +147,58 @@ func (s *Auth) CompleteLogin(ctx context.Context, stateToken, state, code string
 	if strings.TrimSpace(user.ID) == "" {
 		return domain.LoginResult{}, domain.NewUnauthorizedError("The identity provider returned an invalid user.")
 	}
+	sessionToken, err := s.createSession(ctx, user, tokens)
+	if err != nil {
+		return domain.LoginResult{}, err
+	}
+	return domain.LoginResult{SessionToken: sessionToken, ReturnTo: login.ReturnTo, User: user}, nil
+}
+
+func (s *Auth) LoginWithPassword(ctx context.Context, email, password, returnTo string) (domain.LoginResult, error) {
+	if s.credentials == nil {
+		return domain.LoginResult{}, domain.NewInvalidError("Password login is not enabled.")
+	}
+	user, err := s.credentials.Authenticate(ctx, email, password)
+	if err != nil {
+		return domain.LoginResult{}, err
+	}
+	return s.passwordSession(ctx, user, returnTo)
+}
+
+func (s *Auth) RegisterWithPassword(ctx context.Context, email, name, password, returnTo string) (domain.LoginResult, error) {
+	if s.credentials == nil {
+		return domain.LoginResult{}, domain.NewInvalidError("Password login is not enabled.")
+	}
+	if !s.config.RegistrationEnabled {
+		return domain.LoginResult{}, domain.NewForbiddenError("Account registration is disabled.")
+	}
+	user, err := s.credentials.Register(ctx, email, name, password)
+	if err != nil {
+		return domain.LoginResult{}, err
+	}
+	return s.passwordSession(ctx, user, returnTo)
+}
+
+func (s *Auth) passwordSession(ctx context.Context, user domain.User, returnTo string) (domain.LoginResult, error) {
+	sessionToken, err := s.createSession(ctx, user, domain.IdentityTokens{})
+	if err != nil {
+		return domain.LoginResult{}, err
+	}
+	return domain.LoginResult{SessionToken: sessionToken, ReturnTo: safeReturnTo(returnTo), User: user}, nil
+}
+
+func (s *Auth) createSession(ctx context.Context, user domain.User, tokens domain.IdentityTokens) (string, error) {
 	tokenEnvelope := ""
 	if tokens != (domain.IdentityTokens{}) {
-		tokenEnvelope, err = s.seal(tokens)
+		sealed, err := s.seal(tokens)
 		if err != nil {
-			return domain.LoginResult{}, err
+			return "", err
 		}
+		tokenEnvelope = sealed
 	}
 	sessionToken, err := randomToken(32)
 	if err != nil {
-		return domain.LoginResult{}, err
+		return "", err
 	}
 	now := s.now().UTC()
 	session := domain.Session{
@@ -140,9 +210,9 @@ func (s *Auth) CompleteLogin(ctx context.Context, stateToken, state, code string
 		UpdatedAt:     now,
 	}
 	if err := s.sessions.Save(ctx, session); err != nil {
-		return domain.LoginResult{}, err
+		return "", err
 	}
-	return domain.LoginResult{SessionToken: sessionToken, ReturnTo: login.ReturnTo, User: user}, nil
+	return sessionToken, nil
 }
 
 func (s *Auth) Authenticate(ctx context.Context, sessionToken string) (domain.User, error) {
@@ -205,7 +275,7 @@ func (s *Auth) Logout(ctx context.Context, sessionToken string) (string, error) 
 	if err := s.sessions.Delete(ctx, id); err != nil {
 		return "", err
 	}
-	if session.TokenEnvelope == "" {
+	if session.TokenEnvelope == "" || s.provider == nil {
 		return redirect, nil
 	}
 	var tokens domain.IdentityTokens

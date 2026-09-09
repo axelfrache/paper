@@ -6,7 +6,7 @@ import { NotesColumn } from "../components/NotesColumn";
 import { Sidebar, type ViewKey } from "../components/Sidebar";
 import { Toast } from "../components/Toast";
 import { NoteEditor, type AIResult } from "../features/NoteEditor";
-import { askNotes, assistNote, claimLegacyNotes, createNote, deleteNote, listNotes, updateNote, uploadNoteImage } from "../lib/api";
+import { askNotes, assistNote, createNote, deleteNote, listNotes, updateNote, uploadNoteImage } from "../lib/api";
 import { useShortcuts } from "../lib/useShortcuts";
 import type { AIAction, AskAnswer, Note, NoteDraft } from "../types/note";
 import type { AuthUser } from "../types/auth";
@@ -700,12 +700,6 @@ export function NotesPage({ user, onLogout }: { user: AuthUser; onLogout: () => 
         onToggleCollapse={() => setSidebarHidden((hidden) => !hidden)}
         user={user}
         onLogout={onLogout}
-        onClaimLegacyNotes={async () => {
-          const result = await claimLegacyNotes();
-          const nextNotes = await listNotes();
-          setNotes(nextNotes);
-          return result.claimed;
-        }}
         onResizeStart={(event) => startColumnResize("navigation", event)}
         onResizeBy={(delta) => setColumnWidth("navigation", navigationWidth + delta)}
       />

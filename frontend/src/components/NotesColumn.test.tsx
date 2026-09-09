@@ -65,10 +65,11 @@ afterEach(() => {
 
 describe("note summary preview", () => {
   it("renders inline formatting", () => {
-    const p = mount(noteWith("Plain **bold** and *italic* and ~~gone~~ and `code`"));
+    const p = mount(noteWith("Plain **bold** and *italic* and ~~gone~~ and <u>underlined</u> and `code`"));
     expect(p.querySelector("strong")?.textContent).toBe("bold");
     expect(p.querySelector("em")?.textContent).toBe("italic");
     expect(p.querySelector("s")?.textContent).toBe("gone");
+    expect(p.querySelector("u")?.textContent).toBe("underlined");
     expect(p.querySelector("code")?.textContent).toBe("code");
   });
 

@@ -16,6 +16,8 @@ func NewRouter(notes port.NoteService, images port.NoteImageService, auth port.A
 	mux.HandleFunc("GET /api/health", handler.Health)
 	mux.HandleFunc("GET /api/auth/config", authHandler.Config)
 	mux.HandleFunc("GET /api/auth/login", authHandler.Login)
+	mux.HandleFunc("POST /api/auth/login", authHandler.LoginPassword)
+	mux.HandleFunc("POST /api/auth/register", authHandler.RegisterPassword)
 	mux.HandleFunc("GET /api/auth/callback", authHandler.Callback)
 	mux.HandleFunc("POST /api/auth/logout", authHandler.Logout)
 	mux.Handle("GET /api/auth/me", requireAuth(auth, stdhttp.HandlerFunc(authHandler.Me)))
@@ -31,7 +33,6 @@ func NewRouter(notes port.NoteService, images port.NoteImageService, auth port.A
 	mux.Handle("POST /api/notes/ask", requireAuth(auth, stdhttp.HandlerFunc(handler.AskNotes)))
 	mux.Handle("POST /api/ai/generate", requireAuth(auth, stdhttp.HandlerFunc(handler.GenerateAI)))
 	mux.Handle("POST /api/search", requireAuth(auth, stdhttp.HandlerFunc(handler.SearchNotes)))
-	mux.Handle("POST /api/admin/notes/claim-legacy", requireAuth(auth, stdhttp.HandlerFunc(handler.ClaimLegacyNotes)))
 
 	return cors(allowedOrigins)(mux)
 }

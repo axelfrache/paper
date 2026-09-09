@@ -1,5 +1,5 @@
 export type AuthConfig = {
-  provider: "dev" | "oidc";
+  provider: "dev" | "oidc" | "local";
   registrationEnabled: boolean;
 };
 

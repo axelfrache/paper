@@ -18,7 +18,6 @@ type SidebarProps = {
   onToggleCollapse: () => void;
   user: AuthUser;
   onLogout: () => Promise<void>;
-  onClaimLegacyNotes: () => Promise<number>;
   onResizeStart: (event: PointerEvent<HTMLDivElement>) => void;
   onResizeBy: (delta: number) => void;
 };
@@ -30,7 +29,7 @@ const viewDefs: Array<{ key: ViewKey; label: string; icon: LucideIcon }> = [
   { key: "tasks", label: "Tasks", icon: ListTodo },
 ];
 
-export function Sidebar({ notes, view, activeTag, hidden, onViewChange, onTagChange, onNew, onToggleCollapse, user, onLogout, onClaimLegacyNotes, onResizeStart, onResizeBy }: SidebarProps) {
+export function Sidebar({ notes, view, activeTag, hidden, onViewChange, onTagChange, onNew, onToggleCollapse, user, onLogout, onResizeStart, onResizeBy }: SidebarProps) {
   const tagCounts = tagCountsFor(notes);
 
   return (
@@ -110,7 +109,7 @@ export function Sidebar({ notes, view, activeTag, hidden, onViewChange, onTagCha
           <em>⌘⌥B</em>
         </div>
       </div>
-      <AccountMenu user={user} onLogout={onLogout} onClaimLegacyNotes={onClaimLegacyNotes} />
+      <AccountMenu user={user} onLogout={onLogout} />
       <div
         className="column-resize-handle"
         role="separator"

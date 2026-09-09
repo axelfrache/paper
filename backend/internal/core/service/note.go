@@ -179,17 +179,6 @@ func (s *Note) AskNotes(ctx context.Context, req domain.AskRequest) (domain.AskA
 	return fallbackAskAnswer(relevant), nil
 }
 
-func (s *Note) ClaimLegacyNotes(ctx context.Context) (int64, error) {
-	user, err := domain.RequireUser(ctx)
-	if err != nil {
-		return 0, err
-	}
-	if !user.IsAdmin() {
-		return 0, domain.NewForbiddenError("Administrator access is required.")
-	}
-	return s.repo.ClaimOwner(ctx, "legacy", user.ID)
-}
-
 func (s *Note) GenerateAI(ctx context.Context, req domain.AICompletionRequest) (domain.AICompletion, error) {
 	if _, err := domain.RequireUser(ctx); err != nil {
 		return domain.AICompletion{}, err

@@ -59,12 +59,53 @@ func (h *AuthHandler) Callback(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		stdhttp.Redirect(w, r, "/?authError=login", stdhttp.StatusFound)
 		return
 	}
+	h.setSessionCookie(w, result.SessionToken)
+	stdhttp.Redirect(w, r, result.ReturnTo, stdhttp.StatusFound)
+}
+
+type passwordCredentialsDTO struct {
+	Email    string `json:"email"`
+	Name     string `json:"name"`
+	Password string `json:"password"`
+	ReturnTo string `json:"returnTo"`
+}
+
+func (h *AuthHandler) LoginPassword(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	var dto passwordCredentialsDTO
+	if err := decodeJSON(w, r, &dto); err != nil {
+		writeError(w, err)
+		return
+	}
+	result, err := h.service.LoginWithPassword(r.Context(), dto.Email, dto.Password, dto.ReturnTo)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	h.setSessionCookie(w, result.SessionToken)
+	writeJSON(w, stdhttp.StatusOK, map[string]string{"redirectTo": result.ReturnTo})
+}
+
+func (h *AuthHandler) RegisterPassword(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	var dto passwordCredentialsDTO
+	if err := decodeJSON(w, r, &dto); err != nil {
+		writeError(w, err)
+		return
+	}
+	result, err := h.service.RegisterWithPassword(r.Context(), dto.Email, dto.Name, dto.Password, dto.ReturnTo)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	h.setSessionCookie(w, result.SessionToken)
+	writeJSON(w, stdhttp.StatusOK, map[string]string{"redirectTo": result.ReturnTo})
+}
+
+func (h *AuthHandler) setSessionCookie(w stdhttp.ResponseWriter, token string) {
 	stdhttp.SetCookie(w, &stdhttp.Cookie{
-		Name: sessionCookieName, Value: result.SessionToken, Path: "/",
+		Name: sessionCookieName, Value: token, Path: "/",
 		HttpOnly: true, Secure: h.config.CookieSecure, SameSite: stdhttp.SameSiteLaxMode,
 		MaxAge: int((30 * 24 * time.Hour).Seconds()),
 	})
-	stdhttp.Redirect(w, r, result.ReturnTo, stdhttp.StatusFound)
 }
 
 func (h *AuthHandler) Me(w stdhttp.ResponseWriter, r *stdhttp.Request) {
