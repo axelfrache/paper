@@ -13,16 +13,16 @@
 
 Paper is an AI-assisted notes app. It pairs a from-scratch markdown editor with embedded, editable diagrams and a set of LLM-powered actions that work directly on the note you are writing.
 
-The backend is a Go API built on a strict hexagonal (ports & adapters) architecture; the frontend is a React 19 + TypeScript SPA. Notes live in Postgres, images in a self-hosted S3-compatible store (Garage), and the AI features talk to a pluggable, OpenAI-compatible LLM provider.
+The backend is a Go API built on a strict hexagonal (ports & adapters) architecture. The frontend is a React 19 + TypeScript SPA. Notes live in Postgres, images in a self-hosted S3-compatible store (Garage), and the AI features talk to a pluggable, OpenAI-compatible LLM provider.
 
 ### Features
 
-- **WYSIWYG markdown editor** — a hand-rolled editor over `contenteditable` with its own caret model, rendered line by line.
-- **Diagrams** — flat and isometric diagrams as embedded blocks, with an interactive editor (with an isometric placement grid) and text-to-diagram generation.
-- **AI note actions** — summarize, extract tasks, suggest title/tags, clean up, improve clarity, and ask-your-notes.
-- **Diagram-safe rewriting** — `clean up` and `improve clarity` mask embedded diagram markers before sending content to the LLM, so a diagram is never mangled.
-- **Image uploads** — client-side resize/compression, stored in a self-hosted S3 bucket.
-- **Pluggable LLM providers** — configured by environment, not code (`ai-gateway`, `ollama`, or any `openai-compatible` endpoint).
+- **WYSIWYG markdown editor**: a hand-rolled editor over `contenteditable` with its own caret model, rendered line by line.
+- **Diagrams**: flat and isometric diagrams as embedded blocks, with an interactive editor (with an isometric placement grid) and text-to-diagram generation.
+- **AI note actions**: summarize, extract tasks, suggest title/tags, clean up, improve clarity, and ask-your-notes.
+- **Diagram-safe rewriting**: clean up and improve clarity mask embedded diagram markers before sending content to the LLM, so a diagram is never mangled.
+- **Image uploads**: client-side resize and compression, stored in a self-hosted S3 bucket.
+- **Pluggable LLM providers**: configured by environment, not code (`ai-gateway`, `ollama`, or any `openai-compatible` endpoint).
 
 ## Architecture
 
@@ -35,12 +35,12 @@ Paper runs as a small set of containers wired together by `docker-compose.yml`:
 | `garage` | S3-compatible image store, self-provisioning | 3902 |
 | `postgres` | Persistent note store | 5432 (internal) |
 
-The backend follows the dependency direction *adapters → core, never core → adapter*:
+The backend follows the dependency direction *adapters to core, never core to adapter*:
 
 ```
-cmd/api/main.go              wiring: config → postgres repo → ai assistant → note service
+cmd/api/main.go              wiring: config, postgres repo, ai assistant, note service
 internal/core/domain/        domain types and errors
-internal/core/port/          interfaces (NoteService, NoteRepository, NoteAssistant, ImageStorage…)
+internal/core/port/          interfaces (NoteService, NoteRepository, NoteAssistant, ImageStorage)
 internal/core/service/       business logic, talks only to ports (the only Go tests live here)
 internal/adapter/inbound/    HTTP server, routes, handlers, DTOs
 internal/adapter/outbound/   postgres, memory, ai (OpenAI-compatible), s3 (Garage) adapters
@@ -80,7 +80,7 @@ docker compose down
 Use `-v` to also remove the Postgres and Garage volumes.
 
 > Garage self-provisions its layout, bucket and access key on first boot and marks itself
-> healthy once ready; the backend waits on that healthcheck before starting.
+> healthy once ready. The backend waits on that healthcheck before starting.
 
 ### Frontend only (development mode)
 
@@ -90,7 +90,7 @@ npm install
 npm run dev
 ```
 
-→ http://localhost:5173 (proxies `/api` to `http://localhost:8080`)
+Runs on http://localhost:5173 and proxies `/api` to http://localhost:8080.
 
 ### Backend only (development mode)
 
@@ -99,7 +99,7 @@ cd backend
 go run ./cmd/api
 ```
 
-→ http://localhost:8080
+Runs on http://localhost:8080.
 
 The backend reads its configuration from environment variables (see `.env.example`) and expects a
 reachable Postgres and S3 endpoint. `ALLOWED_ORIGINS` must include the frontend origin for CORS.
@@ -108,7 +108,7 @@ reachable Postgres and S3 endpoint. `ALLOWED_ORIGINS` must include the frontend 
 
 The AI features are configured entirely by environment, not code:
 
-- `AI_PROVIDER` — `ai-gateway` (default), `ollama`, or `openai-compatible`
+- `AI_PROVIDER`: `ai-gateway` (default), `ollama`, or `openai-compatible`
 - `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`
 
 All three providers speak the same OpenAI-compatible chat API.
@@ -139,7 +139,7 @@ npm run format         # fix formatting
 ```
 
 > **Warning**: CI checks backend `vet` / `gofmt` / `go test` and frontend `build` / `test` on every
-> push, then builds and pushes the Docker images. Keep `gofmt` clean and `tsc` error-free — both gate CI.
+> push, then builds and pushes the Docker images. Keep `gofmt` clean and `tsc` error-free. Both gate CI.
 
 ## License
 
