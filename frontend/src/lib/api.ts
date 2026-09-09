@@ -41,17 +41,17 @@ export function getCurrentUser() {
   return request<AuthUser>("/api/auth/me");
 }
 
-export function loginWithPassword(email: string, password: string) {
+export function loginWithPassword(email: string, password: string, returnTo?: string) {
   return request<{ redirectTo: string }>("/api/auth/login", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, returnTo }),
   });
 }
 
-export function registerWithPassword(email: string, name: string, password: string) {
+export function registerWithPassword(email: string, name: string, password: string, returnTo?: string) {
   return request<{ redirectTo: string }>("/api/auth/register", {
     method: "POST",
-    body: JSON.stringify({ email, name, password }),
+    body: JSON.stringify({ email, name, password, returnTo }),
   });
 }
 
@@ -80,6 +80,25 @@ export function updateNote(id: string, draft: NoteDraft) {
 export function deleteNote(id: string) {
   return request<void>(`/api/notes/${id}`, {
     method: "DELETE",
+  });
+}
+
+export function enableShare(id: string) {
+  return request<Note>(`/api/notes/${id}/share`, { method: "POST" });
+}
+
+export function disableShare(id: string) {
+  return request<void>(`/api/notes/${id}/share`, { method: "DELETE" });
+}
+
+export function getSharedNote(token: string) {
+  return request<Note>(`/api/shared/${token}`);
+}
+
+export function updateSharedNote(token: string, draft: NoteDraft) {
+  return request<Note>(`/api/shared/${token}`, {
+    method: "PATCH",
+    body: JSON.stringify(draft),
   });
 }
 

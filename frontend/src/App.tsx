@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import { LoginPage } from "./components/LoginPage";
 import { APIError, getAuthConfig, getCurrentUser, logout } from "./lib/api";
 import { NotesPage } from "./pages/NotesPage";
+import { SharedNotePage } from "./pages/SharedNotePage";
 import type { AuthConfig, AuthUser } from "./types/auth";
+
+const sharedNoteMatch = /^\/shared\/([^/]+)$/.exec(window.location.pathname);
 
 export default function App() {
   const [config, setConfig] = useState<AuthConfig | null>(null);
@@ -60,21 +63,30 @@ export default function App() {
         config={config}
         theme={theme}
         error={new URLSearchParams(window.location.search).has("authError")}
+        returnTo={sharedNoteMatch ? window.location.pathname : undefined}
         onToggleTheme={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
       />
     );
   }
 
-  return (
-    <NotesPage
-      user={user}
-      aiEnabled={config.aiEnabled}
-      onLogout={async () => {
-        const result = await logout();
-        window.location.assign(result.redirectTo || "/");
-      }}
-    />
-  );
+  const handleLogout = async () => {
+    const result = await logout();
+    window.location.assign(result.redirectTo || "/");
+  };
+
+  if (sharedNoteMatch) {
+    return (
+      <SharedNotePage
+        token={sharedNoteMatch[1]}
+        theme={theme}
+        user={user}
+        onLogout={handleLogout}
+        onToggleTheme={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+      />
+    );
+  }
+
+  return <NotesPage user={user} aiEnabled={config.aiEnabled} onLogout={handleLogout} />;
 }
 
 function initialTheme(): "light" | "dark" {

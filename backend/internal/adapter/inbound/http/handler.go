@@ -18,10 +18,11 @@ const maxImageRequestBytes = 8<<20 + 64<<10
 type Handler struct {
 	service port.NoteService
 	images  port.NoteImageService
+	live    *LiveHub
 }
 
-func NewHandler(service port.NoteService, images port.NoteImageService) *Handler {
-	return &Handler{service: service, images: images}
+func NewHandler(service port.NoteService, images port.NoteImageService, live *LiveHub) *Handler {
+	return &Handler{service: service, images: images, live: live}
 }
 
 func (h *Handler) CreateNote(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -206,6 +207,65 @@ func (h *Handler) DeleteNoteImage(w stdhttp.ResponseWriter, r *stdhttp.Request) 
 		return
 	}
 	w.WriteHeader(stdhttp.StatusNoContent)
+}
+
+func (h *Handler) EnableShare(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	note, err := h.service.EnableShare(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, stdhttp.StatusOK, newNoteDTO(note))
+}
+
+func (h *Handler) DisableShare(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	if err := h.service.DisableShare(r.Context(), r.PathValue("id")); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.WriteHeader(stdhttp.StatusNoContent)
+}
+
+func (h *Handler) GetSharedNote(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	note, err := h.service.GetSharedNote(r.Context(), r.PathValue("token"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, stdhttp.StatusOK, newNoteDTO(note))
+}
+
+func (h *Handler) UpdateSharedNote(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	var dto noteDraftDTO
+	if err := decodeJSON(w, r, &dto); err != nil {
+		writeError(w, err)
+		return
+	}
+
+	note, err := h.service.UpdateSharedNote(r.Context(), r.PathValue("token"), dto.toDomain())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, stdhttp.StatusOK, newNoteDTO(note))
+}
+
+func (h *Handler) LiveNote(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	note, err := h.service.GetNote(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	h.live.stream(w, r, note.ID)
+}
+
+func (h *Handler) LiveSharedNote(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	note, err := h.service.GetSharedNote(r.Context(), r.PathValue("token"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	h.live.stream(w, r, note.ID)
 }
 
 func (h *Handler) Health(w stdhttp.ResponseWriter, _ *stdhttp.Request) {

@@ -1,5 +1,6 @@
-import { LogOut, ShieldCheck, UserRound, X } from "lucide-react";
+import { LogOut, ShieldCheck, UserRound } from "lucide-react";
 import { useRef, useState } from "react";
+import { DialogHeader } from "./DialogHeader";
 import type { AuthUser } from "../types/auth";
 
 type AccountMenuProps = {
@@ -23,14 +24,7 @@ export function AccountMenu({ user, onLogout }: AccountMenuProps) {
       </button>
 
       <dialog className="account-dialog" ref={dialogRef} onClose={() => setError("")}>
-        <header>
-          <div className="account-dialog-icon">
-            <UserRound size={17} strokeWidth={1.8} />
-          </div>
-          <button type="button" onClick={() => dialogRef.current?.close()} aria-label="Close">
-            <X size={15} />
-          </button>
-        </header>
+        <DialogHeader icon={UserRound} onClose={() => dialogRef.current?.close()} />
         <section>
           <strong>{label}</strong>
           <span>{user.email}</span>

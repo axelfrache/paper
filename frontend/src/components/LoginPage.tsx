@@ -8,6 +8,7 @@ type LoginPageProps = {
   config: AuthConfig;
   theme: "light" | "dark";
   error: boolean;
+  returnTo?: string;
   onToggleTheme: () => void;
 };
 
@@ -15,10 +16,12 @@ export function LoginPage({
   config,
   theme,
   error,
+  returnTo,
   onToggleTheme,
 }: LoginPageProps) {
   const isDev = config.provider === "dev";
   const isLocal = config.provider === "local";
+  const returnToParam = returnTo ? `returnTo=${encodeURIComponent(returnTo)}` : "";
 
   return (
     <div className="login-page">
@@ -42,7 +45,7 @@ export function LoginPage({
 
       <main className="login-main">
         {isLocal ? (
-          <LocalLogin registrationEnabled={config.registrationEnabled} />
+          <LocalLogin registrationEnabled={config.registrationEnabled} returnTo={returnTo} />
         ) : (
           <section className="login-panel">
             <div className="login-copy">
@@ -51,27 +54,19 @@ export function LoginPage({
             </div>
 
             <div className="login-card">
-              <a className="login-primary" href="/api/auth/login">
+              <a className="login-primary" href={`/api/auth/login${returnToParam ? `?${returnToParam}` : ""}`}>
                 <KeyRound size={16} strokeWidth={1.8} />
                 {isDev ? "Continue locally" : "Continue with passkey"}
               </a>
-              <p>
-                {isDev
-                  ? "Local development identity"
-                  : "Use your device or security key"}
-              </p>
+              <p>{isDev ? "Local development identity" : "Use your device or security key"}</p>
             </div>
 
-            {error ? (
-              <div className="login-error">
-                Authentication could not be completed. Try again.
-              </div>
-            ) : null}
+            {error ? <div className="login-error">Authentication could not be completed. Try again.</div> : null}
 
             {!isDev && config.registrationEnabled ? (
               <div className="login-switch">
                 <span>New to Paper?</span>
-                <a href="/api/auth/login?mode=register">Create an account</a>
+                <a href={`/api/auth/login?mode=register${returnToParam ? `&${returnToParam}` : ""}`}>Create an account</a>
               </div>
             ) : null}
           </section>
@@ -81,7 +76,7 @@ export function LoginPage({
   );
 }
 
-function LocalLogin({ registrationEnabled }: { registrationEnabled: boolean }) {
+function LocalLogin({ registrationEnabled, returnTo }: { registrationEnabled: boolean; returnTo?: string }) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -100,8 +95,8 @@ function LocalLogin({ registrationEnabled }: { registrationEnabled: boolean }) {
     setFormError(null);
     try {
       const result = registering
-        ? await registerWithPassword(email, name, password)
-        : await loginWithPassword(email, password);
+        ? await registerWithPassword(email, name, password, returnTo)
+        : await loginWithPassword(email, password, returnTo);
       window.location.assign(result.redirectTo || "/");
     } catch (caught) {
       setFormError(

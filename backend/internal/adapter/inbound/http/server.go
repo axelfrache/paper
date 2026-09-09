@@ -8,8 +8,8 @@ import (
 	"github.com/axelfrache/paper/backend/internal/core/port"
 )
 
-func NewRouter(notes port.NoteService, images port.NoteImageService, auth port.AuthService, authConfig AuthHTTPConfig, allowedOrigins []string) stdhttp.Handler {
-	handler := NewHandler(notes, images)
+func NewRouter(notes port.NoteService, images port.NoteImageService, auth port.AuthService, live *LiveHub, authConfig AuthHTTPConfig, allowedOrigins []string) stdhttp.Handler {
+	handler := NewHandler(notes, images, live)
 	authHandler := NewAuthHandler(auth, authConfig)
 
 	mux := stdhttp.NewServeMux()
@@ -26,6 +26,12 @@ func NewRouter(notes port.NoteService, images port.NoteImageService, auth port.A
 	mux.Handle("GET /api/notes/{id}", requireAuth(auth, stdhttp.HandlerFunc(handler.GetNote)))
 	mux.Handle("PATCH /api/notes/{id}", requireAuth(auth, stdhttp.HandlerFunc(handler.UpdateNote)))
 	mux.Handle("DELETE /api/notes/{id}", requireAuth(auth, stdhttp.HandlerFunc(handler.DeleteNote)))
+	mux.Handle("POST /api/notes/{id}/share", requireAuth(auth, stdhttp.HandlerFunc(handler.EnableShare)))
+	mux.Handle("DELETE /api/notes/{id}/share", requireAuth(auth, stdhttp.HandlerFunc(handler.DisableShare)))
+	mux.Handle("GET /api/shared/{token}", requireAuth(auth, stdhttp.HandlerFunc(handler.GetSharedNote)))
+	mux.Handle("PATCH /api/shared/{token}", requireAuth(auth, stdhttp.HandlerFunc(handler.UpdateSharedNote)))
+	mux.Handle("GET /api/notes/{id}/live", requireAuth(auth, stdhttp.HandlerFunc(handler.LiveNote)))
+	mux.Handle("GET /api/shared/{token}/live", requireAuth(auth, stdhttp.HandlerFunc(handler.LiveSharedNote)))
 	mux.Handle("POST /api/notes/{id}/assist", requireAuth(auth, stdhttp.HandlerFunc(handler.AssistNote)))
 	mux.Handle("POST /api/notes/{id}/images", requireAuth(auth, stdhttp.HandlerFunc(handler.UploadNoteImage)))
 	mux.Handle("GET /api/images/{imageID}", requireAuth(auth, stdhttp.HandlerFunc(handler.GetNoteImage)))

@@ -12,13 +12,21 @@ import (
 )
 
 type Note struct {
-	repo      port.NoteRepository
-	assistant port.NoteAssistant
+	repo        port.NoteRepository
+	assistant   port.NoteAssistant
+	broadcaster port.NoteBroadcaster
 }
 
-func NewNote(repo port.NoteRepository, assistant port.NoteAssistant) *Note {
-	return &Note{repo: repo, assistant: assistant}
+func NewNote(repo port.NoteRepository, assistant port.NoteAssistant, broadcaster port.NoteBroadcaster) *Note {
+	if broadcaster == nil {
+		broadcaster = noopBroadcaster{}
+	}
+	return &Note{repo: repo, assistant: assistant, broadcaster: broadcaster}
 }
+
+type noopBroadcaster struct{}
+
+func (noopBroadcaster) Publish(domain.Note) {}
 
 func (s *Note) CreateNote(ctx context.Context, draft domain.NoteDraft) (domain.Note, error) {
 	user, err := domain.RequireUser(ctx)
@@ -39,7 +47,12 @@ func (s *Note) UpdateNote(ctx context.Context, id string, draft domain.NoteDraft
 	if err := draft.Validate(); err != nil {
 		return domain.Note{}, err
 	}
-	return s.repo.Update(ctx, user.ID, id, draft.Normalize())
+	note, err := s.repo.Update(ctx, user.ID, id, draft.Normalize())
+	if err != nil {
+		return domain.Note{}, err
+	}
+	s.broadcaster.Publish(note)
+	return note, nil
 }
 
 func (s *Note) GetNote(ctx context.Context, id string) (domain.Note, error) {
@@ -177,6 +190,44 @@ func (s *Note) AskNotes(ctx context.Context, req domain.AskRequest) (domain.AskA
 		return answer, nil
 	}
 	return fallbackAskAnswer(relevant), nil
+}
+
+func (s *Note) EnableShare(ctx context.Context, id string) (domain.Note, error) {
+	user, err := domain.RequireUser(ctx)
+	if err != nil {
+		return domain.Note{}, err
+	}
+	return s.repo.EnableShare(ctx, user.ID, id)
+}
+
+func (s *Note) DisableShare(ctx context.Context, id string) error {
+	user, err := domain.RequireUser(ctx)
+	if err != nil {
+		return err
+	}
+	return s.repo.DisableShare(ctx, user.ID, id)
+}
+
+func (s *Note) GetSharedNote(ctx context.Context, token string) (domain.Note, error) {
+	if _, err := domain.RequireUser(ctx); err != nil {
+		return domain.Note{}, err
+	}
+	return s.repo.GetByShareToken(ctx, token)
+}
+
+func (s *Note) UpdateSharedNote(ctx context.Context, token string, draft domain.NoteDraft) (domain.Note, error) {
+	if _, err := domain.RequireUser(ctx); err != nil {
+		return domain.Note{}, err
+	}
+	if err := draft.Validate(); err != nil {
+		return domain.Note{}, err
+	}
+	note, err := s.repo.UpdateByShareToken(ctx, token, draft.Normalize())
+	if err != nil {
+		return domain.Note{}, err
+	}
+	s.broadcaster.Publish(note)
+	return note, nil
 }
 
 func (s *Note) GenerateAI(ctx context.Context, req domain.AICompletionRequest) (domain.AICompletion, error) {

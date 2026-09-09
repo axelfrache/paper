@@ -106,7 +106,8 @@ func main() {
 	} else {
 		assistant = ai.NewDisabled()
 	}
-	noteService := service.NewNote(notes, assistant)
+	liveHub := httpadapter.NewLiveHub()
+	noteService := service.NewNote(notes, assistant, liveHub)
 	var imageStorage port.ImageStorage
 	switch cfg.StorageProvider {
 	case "filesystem":
@@ -127,7 +128,7 @@ func main() {
 	}
 	imageService := service.NewImage(notes, notes, imageStorage)
 
-	router := httpadapter.NewRouter(noteService, imageService, authService, httpadapter.AuthHTTPConfig{
+	router := httpadapter.NewRouter(noteService, imageService, authService, liveHub, httpadapter.AuthHTTPConfig{
 		CookieSecure: cfg.AuthCookieSecure,
 		AIEnabled:    aiEnabled,
 	}, cfg.AllowedOrigins)

@@ -1,19 +1,22 @@
 package domain
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"strings"
 	"time"
 )
 
 type Note struct {
-	ID        string
-	OwnerID   string
-	Title     string
-	Content   string
-	Tags      []string
-	Favorite  bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID         string
+	OwnerID    string
+	Title      string
+	Content    string
+	Tags       []string
+	Favorite   bool
+	ShareToken string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 type NoteDraft struct {
@@ -126,6 +129,14 @@ func NormalizeTags(tags []string) []string {
 		out = append(out, tag)
 	}
 	return out
+}
+
+func NewShareToken() (string, error) {
+	bytes := make([]byte, 24)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
 }
 
 func hasTag(tags []string, target string) bool {

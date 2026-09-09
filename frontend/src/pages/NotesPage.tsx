@@ -6,8 +6,22 @@ import { NotesColumn } from "../components/NotesColumn";
 import { Sidebar, type ViewKey } from "../components/Sidebar";
 import { Toast } from "../components/Toast";
 import { NoteEditor, type AIResult } from "../features/NoteEditor";
-import { askNotes, assistNote, createNote, deleteNote, listNotes, updateNote, uploadNoteImage } from "../lib/api";
+import {
+  askNotes,
+  assistNote,
+  createNote,
+  deleteNote,
+  disableShare,
+  enableShare,
+  listNotes,
+  updateNote,
+  uploadNoteImage,
+} from "../lib/api";
+import { subscribeToNoteLiveDeferred } from "../lib/live";
+import { toDraft } from "../lib/note";
+import { useDebouncedSave } from "../lib/useDebouncedSave";
 import { useShortcuts } from "../lib/useShortcuts";
+import { useToast } from "../lib/useToast";
 import type { AIAction, AskAnswer, Note, NoteDraft } from "../types/note";
 import type { AuthUser } from "../types/auth";
 
@@ -68,14 +82,21 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
     answer: string;
     sourceIds: string[];
   }>({ status: "idle", answer: "", sourceIds: [] });
-  const [toast, setToast] = useState("");
-  const saveTimers = useRef(new Map<string, number>());
-  const toastTimer = useRef<number | null>(null);
   const aiRequestRef = useRef(0);
   const editorLineRef = useRef<number | null>(null);
   const lastSelectedIdRef = useRef<string | null>(null);
   const historyRef = useRef(new Map<string, NoteHistory>());
+  const lastLocalEditAtRef = useRef(0);
   const deletedHistoryRef = useRef<{ undo: DeletedNotesAction[]; redo: DeletedNotesAction[] }>({ undo: [], redo: [] });
+  const { toast, flash } = useToast();
+  const doSave = useCallback(
+    (_: string, note: Note) => {
+      void updateNote(note.id, toDraft(note)).catch(() => flash("Could not save note"));
+    },
+    [flash],
+  );
+  const { schedule: scheduleSave, cancel: cancelSave } = useDebouncedSave<Note>(doSave);
+  const persist = useCallback((note: Note) => scheduleSave(note.id, note), [scheduleSave]);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -127,17 +148,6 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
     }
   }, [activeId]);
 
-  useEffect(() => {
-    return () => {
-      for (const timer of saveTimers.current.values()) {
-        window.clearTimeout(timer);
-      }
-      if (toastTimer.current) {
-        window.clearTimeout(toastTimer.current);
-      }
-    };
-  }, []);
-
   const activeNote = useMemo(
     () => notes.find((note) => note.id === activeId) ?? null,
     [notes, activeId],
@@ -147,6 +157,27 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
     aiRequestRef.current += 1;
     setAIResult(null);
   }, [activeId]);
+
+  useEffect(() => {
+    if (!activeNote?.shareToken) {
+      return;
+    }
+    const noteId = activeNote.id;
+    return subscribeToNoteLiveDeferred(
+      `/api/notes/${noteId}/live`,
+      () => lastLocalEditAtRef.current,
+      (incoming) => {
+        setNotes((current) =>
+          current.map((item) => {
+            if (item.id !== incoming.id || incoming.updatedAt <= item.updatedAt) {
+              return item;
+            }
+            return incoming;
+          }),
+        );
+      },
+    );
+  }, [activeNote?.id, activeNote?.shareToken]);
 
   const visibleNotes = useMemo(() => {
     let pool = [...notes].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
@@ -168,14 +199,6 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
     }
     return pool;
   }, [notes, activeTag, view, query]);
-
-  const flash = useCallback((message: string) => {
-    setToast(message);
-    if (toastTimer.current) {
-      window.clearTimeout(toastTimer.current);
-    }
-    toastTimer.current = window.setTimeout(() => setToast(""), 1900);
-  }, []);
 
   const setColumnWidth = useCallback((column: ResizableColumn, width: number) => {
     const next = clampColumnWidth(column, width);
@@ -225,18 +248,6 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
     }
   }, []);
 
-  const persist = useCallback((note: Note) => {
-    const existing = saveTimers.current.get(note.id);
-    if (existing) {
-      window.clearTimeout(existing);
-    }
-    const timer = window.setTimeout(() => {
-      void updateNote(note.id, toDraft(note)).catch(() => flash("Could not save note"));
-      saveTimers.current.delete(note.id);
-    }, 420);
-    saveTimers.current.set(note.id, timer);
-  }, [flash]);
-
   const pushUndo = useCallback((note: Note) => {
     const history = historyRef.current.get(note.id) ?? { undo: [], redo: [] };
     const draft = toDraft(note);
@@ -261,6 +272,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       if (sameDraft(toDraft(activeNote), toDraft(nextNote))) {
         return;
       }
+      lastLocalEditAtRef.current = Date.now();
       pushUndo(activeNote);
       setNotes((current) => current.map((note) => (note.id === nextNote.id ? nextNote : note)));
       persist(nextNote);
@@ -479,11 +491,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       await Promise.all(ids.map((id) => deleteNote(id)));
       for (const id of ids) {
         historyRef.current.delete(id);
-        const timer = saveTimers.current.get(id);
-        if (timer) {
-          window.clearTimeout(timer);
-          saveTimers.current.delete(id);
-        }
+        cancelSave(id);
       }
       const deleted = new Set(ids);
       const rest = notes.filter((note) => !deleted.has(note.id));
@@ -500,7 +508,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
     } catch {
       flash(ids.length === 1 ? "Could not delete note" : "Could not delete notes");
     }
-  }, [activeNote, selectedIds, notes, flash]);
+  }, [activeNote, selectedIds, notes, flash, cancelSave]);
 
   const toggleFavorite = useCallback(() => {
     if (!activeNote) {
@@ -509,6 +517,32 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
     patchActive({ favorite: !activeNote.favorite });
     flash(activeNote.favorite ? "Removed from favorites" : "Added to favorites");
   }, [activeNote, patchActive, flash]);
+
+  const enableActiveShare = useCallback(async () => {
+    if (!activeNote) {
+      return;
+    }
+    try {
+      const note = await enableShare(activeNote.id);
+      setNotes((current) => current.map((item) => (item.id === note.id ? note : item)));
+    } catch {
+      flash("Could not enable sharing");
+    }
+  }, [activeNote, flash]);
+
+  const disableActiveShare = useCallback(async () => {
+    if (!activeNote) {
+      return;
+    }
+    try {
+      await disableShare(activeNote.id);
+      setNotes((current) =>
+        current.map((item) => (item.id === activeNote.id ? { ...item, shareToken: "" } : item)),
+      );
+    } catch {
+      flash("Could not turn off sharing");
+    }
+  }, [activeNote, flash]);
 
   const toggleTheme = useCallback(() => {
     setTheme((current) => (current === "dark" ? "light" : "dark"));
@@ -759,6 +793,8 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
         onRemoveTag={removeTag}
         onToggleFavorite={toggleFavorite}
         onDelete={() => void handleDelete()}
+        onEnableShare={enableActiveShare}
+        onDisableShare={disableActiveShare}
         onSearch={() => openPalette("search")}
         onToggleTheme={toggleTheme}
         onFocusNoteList={focusActiveNoteCard}
@@ -790,15 +826,6 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       <Toast message={toast} />
     </div>
   );
-}
-
-function toDraft(note: Note): NoteDraft {
-  return {
-    title: note.title,
-    content: note.content,
-    tags: note.tags,
-    favorite: note.favorite,
-  };
 }
 
 function sameDraft(a: NoteDraft | undefined, b: NoteDraft | undefined) {

@@ -15,6 +15,7 @@ const note: Note = {
   content: "Client calls an API backed by PostgreSQL.",
   tags: ["architecture"],
   favorite: false,
+  shareToken: "",
   createdAt: "2026-09-01T12:00:00.000Z",
   updatedAt: "2026-09-01T12:00:00.000Z",
 };
@@ -103,6 +104,8 @@ describe("NoteEditor AI integration", () => {
           onRemoveTag={vi.fn()}
           onToggleFavorite={vi.fn()}
           onDelete={vi.fn()}
+          onEnableShare={vi.fn()}
+          onDisableShare={vi.fn()}
           onSearch={vi.fn()}
           onToggleTheme={vi.fn()}
           onFocusNoteList={vi.fn()}
@@ -199,6 +202,8 @@ function render(target: Note, aiResult: AIResult | null, onApplyResult = vi.fn()
       onRemoveTag={vi.fn()}
       onToggleFavorite={vi.fn()}
       onDelete={vi.fn()}
+      onEnableShare={vi.fn()}
+      onDisableShare={vi.fn()}
       onSearch={vi.fn()}
       onToggleTheme={vi.fn()}
       onFocusNoteList={vi.fn()}
@@ -238,6 +243,8 @@ function mount(aiResult: AIResult | null, aiEnabled = true) {
         onRemoveTag={vi.fn()}
         onToggleFavorite={vi.fn()}
         onDelete={vi.fn()}
+        onEnableShare={vi.fn()}
+        onDisableShare={vi.fn()}
         onSearch={vi.fn()}
         onToggleTheme={vi.fn()}
         onFocusNoteList={vi.fn()}

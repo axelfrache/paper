@@ -4,6 +4,7 @@ export type Note = {
   content: string;
   tags: string[];
   favorite: boolean;
+  shareToken: string;
   createdAt: string;
   updatedAt: string;
 };
