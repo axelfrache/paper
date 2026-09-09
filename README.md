@@ -13,7 +13,7 @@
 
 Paper is an AI-assisted notes app. It pairs a from-scratch markdown editor with embedded, editable diagrams and a set of LLM-powered actions that work directly on the note you are writing.
 
-The backend is a Go application built on a strict hexagonal (ports & adapters) architecture. It embeds and serves the React 19 + TypeScript SPA in production. Notes live in Postgres, images in a self-hosted S3-compatible store (Garage), and the AI features talk to a pluggable, OpenAI-compatible LLM provider.
+The backend is a Go application built on a strict hexagonal (ports & adapters) architecture. It embeds and serves the React 19 + TypeScript SPA in production. Notes live in Postgres, images use either the local filesystem or an S3-compatible store, and the AI features talk to a pluggable, OpenAI-compatible LLM provider.
 
 ### Features
 
@@ -21,18 +21,19 @@ The backend is a Go application built on a strict hexagonal (ports & adapters) a
 - **Diagrams**: flat and isometric diagrams as embedded blocks, with an interactive editor (with an isometric placement grid) and text-to-diagram generation.
 - **AI note actions**: summarize, extract tasks, suggest title/tags, clean up, improve clarity, and ask-your-notes.
 - **Diagram-safe rewriting**: clean up and improve clarity mask embedded diagram markers before sending content to the LLM, so a diagram is never mangled.
-- **Image uploads**: client-side resize and compression, stored in a self-hosted S3 bucket.
+- **Image uploads**: client-side resize and compression, stored locally or in an S3-compatible bucket.
 - **Pluggable LLM providers**: configured by environment, not code (`ai-gateway`, `ollama`, or any `openai-compatible` endpoint).
 
 ## Architecture
 
-Paper runs as three containers wired together by `docker-compose.yml`:
+The minimal Docker Compose deployment runs two containers:
 
 | Service | Role | Port |
 |---------|------|------|
 | `paper` | Go API and embedded React SPA | 5173 and 8080 |
-| `garage` | S3-compatible image store, self-provisioning | 3902 |
 | `postgres` | Persistent note store | 5432 (internal) |
+
+The optional `docker-compose.s3.yml` override adds a self-provisioning Garage container on port 3902.
 
 The backend follows the dependency direction *adapters to core, never core to adapter*:
 
@@ -42,7 +43,7 @@ internal/core/domain/        domain types and errors
 internal/core/port/          interfaces (NoteService, NoteRepository, NoteAssistant, ImageStorage)
 internal/core/service/       business logic, talks only to ports (the only Go tests live here)
 internal/adapter/inbound/    HTTP server, routes, handlers, DTOs
-internal/adapter/outbound/   postgres, memory, ai (OpenAI-compatible), s3 (Garage) adapters
+internal/adapter/outbound/   postgres, memory, ai, filesystem, and s3 adapters
 internal/config/             env var loading
 ```
 
@@ -76,10 +77,19 @@ To stop:
 docker compose down
 ```
 
-Use `-v` to also remove the Postgres and Garage volumes.
+Use `-v` to also remove the Postgres and local image volumes.
 
-> Garage self-provisions its layout, bucket and access key on first boot and marks itself
-> healthy once ready. The backend waits on that healthcheck before starting.
+Images are stored in the `paper-uploads` volume by default.
+
+### S3-compatible image storage
+
+Start Paper with Garage instead of local image storage:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.s3.yml up --build
+```
+
+Set `STORAGE_PROVIDER=s3` with `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`, and `S3_REGION` when using another S3-compatible service. Garage self-provisions its layout, bucket, and access key. Switching providers does not migrate existing images.
 
 ### Frontend only (development mode)
 
@@ -100,7 +110,7 @@ go run ./cmd/api
 
 Runs on http://localhost:8080.
 
-The development backend does not contain generated frontend assets; use the Vite server alongside it. The backend reads its configuration from environment variables (see `.env.example`) and expects a reachable Postgres and S3 endpoint. `ALLOWED_ORIGINS` must include the frontend origin for CORS.
+The development backend does not contain generated frontend assets; use the Vite server alongside it. The backend reads its configuration from environment variables (see `.env.example`) and expects a reachable Postgres instance. Local image storage defaults to `data/uploads`. `ALLOWED_ORIGINS` must include the frontend origin for CORS.
 
 ### Standalone binary
 

@@ -55,6 +55,14 @@ func TestImageUploadStoresImageForExistingNote(t *testing.T) {
 	if image.ContentType != "image/png" || storage.upload.ContentType != "image/png" {
 		t.Fatalf("unexpected content type %q", image.ContentType)
 	}
+	stored, err := service.Open(ctx, image.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stored.Body.Close()
+	if stored.Name != "diagram.png" || stored.ContentType != "image/png" || stored.Size != int64(len(png)) {
+		t.Fatalf("unexpected stored image metadata: %#v", stored)
+	}
 }
 
 func TestImageUploadRejectsUnsupportedContent(t *testing.T) {

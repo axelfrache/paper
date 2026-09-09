@@ -98,7 +98,14 @@ func (s *Image) Open(ctx context.Context, imageID string) (port.StoredImage, err
 	if err != nil {
 		return port.StoredImage{}, err
 	}
-	return s.storage.Open(ctx, image.StorageKey)
+	stored, err := s.storage.Open(ctx, image.StorageKey)
+	if err != nil {
+		return port.StoredImage{}, err
+	}
+	stored.Name = image.Name
+	stored.ContentType = image.ContentType
+	stored.Size = image.Size
+	return stored, nil
 }
 
 func (s *Image) Delete(ctx context.Context, imageID string) error {

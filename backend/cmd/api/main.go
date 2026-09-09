@@ -13,6 +13,7 @@ import (
 	httpadapter "github.com/axelfrache/paper/backend/internal/adapter/inbound/http"
 	"github.com/axelfrache/paper/backend/internal/adapter/outbound/ai"
 	authadapter "github.com/axelfrache/paper/backend/internal/adapter/outbound/auth"
+	filesystemadapter "github.com/axelfrache/paper/backend/internal/adapter/outbound/filesystem"
 	"github.com/axelfrache/paper/backend/internal/adapter/outbound/postgres"
 	s3adapter "github.com/axelfrache/paper/backend/internal/adapter/outbound/s3"
 	"github.com/axelfrache/paper/backend/internal/config"
@@ -97,13 +98,21 @@ func main() {
 		Timeout:  cfg.AITimeout,
 	})
 	noteService := service.NewNote(notes, assistant)
-	imageStorage, err := s3adapter.New(startupCtx, s3adapter.Config{
-		Endpoint:  cfg.S3Endpoint,
-		Region:    cfg.S3Region,
-		Bucket:    cfg.S3Bucket,
-		AccessKey: cfg.S3AccessKey,
-		SecretKey: cfg.S3SecretKey,
-	})
+	var imageStorage port.ImageStorage
+	switch cfg.StorageProvider {
+	case "filesystem":
+		imageStorage, err = filesystemadapter.New(cfg.FilesystemStoragePath)
+	case "s3":
+		imageStorage, err = s3adapter.New(startupCtx, s3adapter.Config{
+			Endpoint:  cfg.S3Endpoint,
+			Region:    cfg.S3Region,
+			Bucket:    cfg.S3Bucket,
+			AccessKey: cfg.S3AccessKey,
+			SecretKey: cfg.S3SecretKey,
+		})
+	default:
+		log.Fatalf("unsupported STORAGE_PROVIDER %q", cfg.StorageProvider)
+	}
 	if err != nil {
 		log.Fatalf("image storage configuration failed: %v", err)
 	}

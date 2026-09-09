@@ -24,7 +24,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /out/paper-api ./cmd/api
 
 FROM alpine:3.22
 
-RUN adduser -D -H app
+RUN adduser -D -H app \
+    && mkdir -p /var/lib/paper/uploads \
+    && chown -R app:app /var/lib/paper
 
 WORKDIR /app
 
