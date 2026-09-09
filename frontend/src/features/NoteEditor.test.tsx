@@ -68,6 +68,48 @@ describe("NoteEditor AI integration", () => {
     expect(onDismissResult).toHaveBeenCalledOnce();
   });
 
+  it("fires undo and redo from the bottom bar buttons", () => {
+    const onUndo = vi.fn();
+    const onRedo = vi.fn();
+    const host = document.createElement("div");
+    document.body.replaceChildren(host);
+    root = createRoot(host);
+    act(() => {
+      root?.render(
+        <NoteEditor
+          note={note}
+          tagDraft=""
+          aiResult={null}
+          titleFocusRequest={null}
+          contentFocusRequest={null}
+          onTitleChange={vi.fn()}
+          onContentChange={vi.fn()}
+          onUploadImage={vi.fn()}
+          onTagDraftChange={vi.fn()}
+          onAddTag={vi.fn()}
+          onRemoveTag={vi.fn()}
+          onToggleFavorite={vi.fn()}
+          onDelete={vi.fn()}
+          onSearch={vi.fn()}
+          onToggleTheme={vi.fn()}
+          onFocusNoteList={vi.fn()}
+          onBackToNotes={vi.fn()}
+          onAssist={vi.fn()}
+          onCaretLineChange={vi.fn()}
+          onApplyResult={vi.fn()}
+          onDismissResult={vi.fn()}
+          onUndo={onUndo}
+          onRedo={onRedo}
+          theme="light"
+        />,
+      );
+    });
+    act(() => host.querySelector<HTMLButtonElement>(".ai-bar-history button[aria-label='Undo']")?.click());
+    act(() => host.querySelector<HTMLButtonElement>(".ai-bar-history button[aria-label='Redo']")?.click());
+    expect(onUndo).toHaveBeenCalledOnce();
+    expect(onRedo).toHaveBeenCalledOnce();
+  });
+
   it("opens the native diagram dialog with note context", () => {
     const { host } = mount(null);
     const button = Array.from(host.querySelectorAll<HTMLButtonElement>(".ai-bar button")).find(
@@ -149,6 +191,8 @@ function render(target: Note, aiResult: AIResult | null, onApplyResult = vi.fn()
       onCaretLineChange={vi.fn()}
       onApplyResult={onApplyResult}
       onDismissResult={onDismissResult}
+      onUndo={vi.fn()}
+      onRedo={vi.fn()}
       theme="light"
     />,
   );
@@ -185,6 +229,8 @@ function mount(aiResult: AIResult | null) {
         onCaretLineChange={vi.fn()}
         onApplyResult={onApplyResult}
         onDismissResult={onDismissResult}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
         theme="light"
       />,
     );

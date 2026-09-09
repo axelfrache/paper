@@ -332,10 +332,10 @@ export function NotesPage({ user, onLogout }: { user: AuthUser; onLogout: () => 
     }
   }, [flash]);
 
-  const undoActive = useCallback(async () => {
-    if (await undoDeletedNotes()) {
-      return;
-    }
+  const editorFocused = () =>
+    document.activeElement instanceof HTMLElement && Boolean(document.activeElement.closest(".editor-shell"));
+
+  const undoNoteContent = useCallback(() => {
     if (!activeNote) {
       return;
     }
@@ -348,12 +348,9 @@ export function NotesPage({ user, onLogout }: { user: AuthUser; onLogout: () => 
     history.redo.push(toDraft(activeNote));
     historyRef.current.set(activeNote.id, history);
     restoreActiveDraft(previous);
-  }, [activeNote, flash, restoreActiveDraft, undoDeletedNotes]);
+  }, [activeNote, flash, restoreActiveDraft]);
 
-  const redoActive = useCallback(async () => {
-    if (await redoDeletedNotes()) {
-      return;
-    }
+  const redoNoteContent = useCallback(() => {
     if (!activeNote) {
       return;
     }
@@ -369,7 +366,21 @@ export function NotesPage({ user, onLogout }: { user: AuthUser; onLogout: () => 
     }
     historyRef.current.set(activeNote.id, history);
     restoreActiveDraft(next);
-  }, [activeNote, flash, restoreActiveDraft, redoDeletedNotes]);
+  }, [activeNote, flash, restoreActiveDraft]);
+
+  const undoActive = useCallback(async () => {
+    if (!editorFocused() && (await undoDeletedNotes())) {
+      return;
+    }
+    undoNoteContent();
+  }, [undoDeletedNotes, undoNoteContent]);
+
+  const redoActive = useCallback(async () => {
+    if (!editorFocused() && (await redoDeletedNotes())) {
+      return;
+    }
+    redoNoteContent();
+  }, [redoDeletedNotes, redoNoteContent]);
 
   const handleNew = useCallback(async () => {
     try {
@@ -756,6 +767,8 @@ export function NotesPage({ user, onLogout }: { user: AuthUser; onLogout: () => 
         }}
         onApplyResult={applyAIResult}
         onDismissResult={dismissAIResult}
+        onUndo={() => void undoNoteContent()}
+        onRedo={() => void redoNoteContent()}
         theme={theme}
       />
 

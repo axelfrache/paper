@@ -35,6 +35,8 @@ type NoteEditorProps = {
   onCaretLineChange: (line: number) => void;
   onApplyResult: () => void;
   onDismissResult: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
   theme: "light" | "dark";
 };
 
@@ -81,6 +83,8 @@ export function NoteEditor({
   onCaretLineChange,
   onApplyResult,
   onDismissResult,
+  onUndo,
+  onRedo,
   theme,
 }: NoteEditorProps) {
   const titleRef = useRef<HTMLInputElement | null>(null);
@@ -324,6 +328,15 @@ export function NoteEditor({
       ) : null}
 
       <footer className="ai-bar">
+        <div className="ai-bar-history">
+          <button type="button" title="Undo  Ctrl+Z" aria-label="Undo" onClick={onUndo}>
+            Undo
+          </button>
+          <button type="button" title="Redo  Ctrl+Shift+Z" aria-label="Redo" onClick={onRedo}>
+            Redo
+          </button>
+        </div>
+        <span className="ai-bar-sep" aria-hidden="true"></span>
         <strong>AI</strong>
         <div className="ai-bar-actions">
           {aiActions.map((action) => (
