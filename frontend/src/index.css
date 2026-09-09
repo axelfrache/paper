@@ -812,6 +812,35 @@ kbd,
   border-top: 1px solid var(--line-soft);
 }
 
+.share-dialog-link {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px 14px;
+}
+
+.share-dialog-link input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line-control);
+  border-radius: 6px;
+  background: var(--surface-sunken);
+  padding: 6px 9px;
+  color: var(--muted-strong);
+  font-size: 11.5px;
+}
+
+.share-dialog-link button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: var(--muted-strong);
+  background: var(--surface);
+  font-size: 11.5px;
+}
+
 .notes-column {
   position: relative;
   display: flex;

@@ -3,6 +3,7 @@ import { ArrowLeft, Moon, Search, Sparkles, Star, Sun, Trash2, X } from "lucide-
 import { DiagramEditor } from "../components/DiagramEditor";
 import { MarkdownEditor } from "../components/MarkdownEditor";
 import { MarkdownView } from "../components/MarkdownView";
+import { ShareDialog } from "../components/ShareDialog";
 import { replaceDiagramMarkerAtLine, stripDiagramMarkers } from "../lib/diagram";
 import type { AIAction, Note, NoteImage } from "../types/note";
 import type { Diagram } from "../lib/diagram";
@@ -27,6 +28,8 @@ type NoteEditorProps = {
   onRemoveTag: (tag: string) => void;
   onToggleFavorite: () => void;
   onDelete: () => void;
+  onEnableShare: () => Promise<void>;
+  onDisableShare: () => Promise<void>;
   onSearch: () => void;
   onToggleTheme: () => void;
   onFocusNoteList: () => void;
@@ -76,6 +79,8 @@ export function NoteEditor({
   onRemoveTag,
   onToggleFavorite,
   onDelete,
+  onEnableShare,
+  onDisableShare,
   onSearch,
   onToggleTheme,
   onFocusNoteList,
@@ -222,6 +227,7 @@ export function NoteEditor({
           onDelete={onDelete}
           theme={theme}
           onBackToNotes={onBackToNotes}
+          share={null}
         />
         <div className="empty-editor">Select or create a note.</div>
       </main>
@@ -239,6 +245,7 @@ export function NoteEditor({
         onDelete={onDelete}
         theme={theme}
         onBackToNotes={onBackToNotes}
+        share={{ note, onEnableShare, onDisableShare }}
       />
 
       <div className="editor-scroll">
@@ -415,6 +422,7 @@ function EditorTopbar({
   onDelete,
   theme,
   onBackToNotes,
+  share,
 }: {
   label: string;
   favorite: boolean;
@@ -425,6 +433,7 @@ function EditorTopbar({
   onDelete: () => void;
   theme: "light" | "dark";
   onBackToNotes: () => void;
+  share: { note: Note; onEnableShare: () => Promise<void>; onDisableShare: () => Promise<void> } | null;
 }) {
   return (
     <header className="editor-topbar">
@@ -443,6 +452,9 @@ function EditorTopbar({
           <Star size={14} fill={favorite ? "currentColor" : "none"} strokeWidth={1.9} />
           <span>Favorite</span>
         </button>
+        {share ? (
+          <ShareDialog note={share.note} onEnableShare={share.onEnableShare} onDisableShare={share.onDisableShare} />
+        ) : null}
         <button
           className="topbar-icon-button"
           onClick={onToggleTheme}

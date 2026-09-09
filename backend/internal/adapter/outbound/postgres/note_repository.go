@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -74,14 +75,14 @@ func (r *NoteRepository) Update(ctx context.Context, ownerID, id string, draft d
 		update notes
 		set title = $2, content = $3, tags = $4, favorite = $5, updated_at = $6
 		where id = $1 and owner_id = $7
-		returning id, title, content, tags, favorite, created_at, updated_at
+		returning id, title, content, tags, favorite, created_at, updated_at, share_token
 	`, id, draft.Title, draft.Content, tags, draft.Favorite, now, ownerID)
 	return scanNote(row, id)
 }
 
 func (r *NoteRepository) GetByID(ctx context.Context, ownerID, id string) (domain.Note, error) {
 	row := r.pool.QueryRow(ctx, `
-		select id, title, content, tags, favorite, created_at, updated_at
+		select id, title, content, tags, favorite, created_at, updated_at, share_token
 		from notes
 		where id = $1 and owner_id = $2
 	`, id, ownerID)
@@ -90,7 +91,7 @@ func (r *NoteRepository) GetByID(ctx context.Context, ownerID, id string) (domai
 
 func (r *NoteRepository) List(ctx context.Context, ownerID string) ([]domain.Note, error) {
 	rows, err := r.pool.Query(ctx, `
-		select id, title, content, tags, favorite, created_at, updated_at
+		select id, title, content, tags, favorite, created_at, updated_at, share_token
 		from notes
 		where owner_id = $1
 		order by updated_at desc
@@ -123,6 +124,60 @@ func (r *NoteRepository) Delete(ctx context.Context, ownerID, id string) error {
 		return domain.NewNotFoundError("Note %q was not found.", id)
 	}
 	return nil
+}
+
+func (r *NoteRepository) EnableShare(ctx context.Context, ownerID, id string) (domain.Note, error) {
+	token, err := domain.NewShareToken()
+	if err != nil {
+		return domain.Note{}, err
+	}
+	row := r.pool.QueryRow(ctx, `
+		update notes set share_token = coalesce(share_token, $3)
+		where id = $1 and owner_id = $2
+		returning id, title, content, tags, favorite, created_at, updated_at, share_token
+	`, id, ownerID, token)
+	return scanNote(row, id)
+}
+
+func (r *NoteRepository) DisableShare(ctx context.Context, ownerID, id string) error {
+	command, err := r.pool.Exec(ctx, `update notes set share_token = null where id = $1 and owner_id = $2`, id, ownerID)
+	if err != nil {
+		return err
+	}
+	if command.RowsAffected() == 0 {
+		return domain.NewNotFoundError("Note %q was not found.", id)
+	}
+	return nil
+}
+
+func (r *NoteRepository) GetByShareToken(ctx context.Context, token string) (domain.Note, error) {
+	if token == "" {
+		return domain.Note{}, domain.NewNotFoundError("Note was not found.")
+	}
+	row := r.pool.QueryRow(ctx, `
+		select id, title, content, tags, favorite, created_at, updated_at, share_token
+		from notes
+		where share_token = $1
+	`, token)
+	return scanNote(row, "")
+}
+
+func (r *NoteRepository) UpdateByShareToken(ctx context.Context, token string, draft domain.NoteDraft) (domain.Note, error) {
+	if token == "" {
+		return domain.Note{}, domain.NewNotFoundError("Note was not found.")
+	}
+	now := time.Now().UTC()
+	tags, err := json.Marshal(draft.Tags)
+	if err != nil {
+		return domain.Note{}, err
+	}
+	row := r.pool.QueryRow(ctx, `
+		update notes
+		set title = $2, content = $3, tags = $4, favorite = $5, updated_at = $6
+		where share_token = $1
+		returning id, title, content, tags, favorite, created_at, updated_at, share_token
+	`, token, draft.Title, draft.Content, tags, draft.Favorite, now)
+	return scanNote(row, "")
 }
 
 func (r *NoteRepository) SaveImage(ctx context.Context, image domain.NoteImageRecord) error {
@@ -181,7 +236,8 @@ func (r *NoteRepository) migrate(ctx context.Context, legacyOwnerID string) erro
 			created_at timestamptz not null,
 			updated_at timestamptz not null
 		)
-	`, `alter table notes add column if not exists owner_id text`, `
+	`, `alter table notes add column if not exists owner_id text`,
+		`alter table notes add column if not exists share_token text`, `
 		create table if not exists note_images (
 			id text primary key,
 			note_id text not null references notes(id) on delete cascade,
@@ -193,14 +249,15 @@ func (r *NoteRepository) migrate(ctx context.Context, legacyOwnerID string) erro
 			created_at timestamptz not null
 		)
 	`, `create index if not exists notes_owner_updated_idx on notes (owner_id, updated_at desc)`,
-		`create index if not exists note_images_owner_idx on note_images (owner_id, id)`, `
+		`create index if not exists note_images_owner_idx on note_images (owner_id, id)`,
+		`create unique index if not exists notes_share_token_idx on notes (share_token) where share_token is not null`, `
 		insert into note_images (id, note_id, owner_id, storage_key, name, content_type, size, created_at)
 		select found[1], notes.id, notes.owner_id, 'images/' || found[1], found[1], '', 0, notes.created_at
 		from notes
 		cross join lateral regexp_matches(notes.content, '/api/images/([a-f0-9]{32}\.(png|jpg|gif|webp|svg))', 'g') as found
 		on conflict (id) do nothing
 	`}
-	for _, statement := range statements[:2] {
+	for _, statement := range statements[:3] {
 		if _, err := tx.Exec(ctx, statement); err != nil {
 			return err
 		}
@@ -211,7 +268,7 @@ func (r *NoteRepository) migrate(ctx context.Context, legacyOwnerID string) erro
 	if _, err := tx.Exec(ctx, `alter table notes alter column owner_id set not null`); err != nil {
 		return err
 	}
-	for _, statement := range statements[2:] {
+	for _, statement := range statements[3:] {
 		if _, err := tx.Exec(ctx, statement); err != nil {
 			return err
 		}
@@ -226,8 +283,12 @@ type noteScanner interface {
 func scanNote(scanner noteScanner, requestedID string) (domain.Note, error) {
 	var note domain.Note
 	var rawTags []byte
-	if err := scanner.Scan(&note.ID, &note.Title, &note.Content, &rawTags, &note.Favorite, &note.CreatedAt, &note.UpdatedAt); err != nil {
+	var shareToken sql.NullString
+	if err := scanner.Scan(&note.ID, &note.Title, &note.Content, &rawTags, &note.Favorite, &note.CreatedAt, &note.UpdatedAt, &shareToken); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			if requestedID == "" {
+				return domain.Note{}, domain.NewNotFoundError("Note was not found.")
+			}
 			return domain.Note{}, domain.NewNotFoundError("Note %q was not found.", requestedID)
 		}
 		return domain.Note{}, err
@@ -236,6 +297,7 @@ func scanNote(scanner noteScanner, requestedID string) (domain.Note, error) {
 		return domain.Note{}, err
 	}
 	note.Tags = domain.NormalizeTags(note.Tags)
+	note.ShareToken = shareToken.String
 	return note, nil
 }
 

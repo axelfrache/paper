@@ -104,6 +104,74 @@ func (r *NoteRepository) Delete(_ context.Context, ownerID, id string) error {
 	return nil
 }
 
+func (r *NoteRepository) EnableShare(_ context.Context, ownerID, id string) (domain.Note, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	note, ok := r.notes[id]
+	if !ok || note.OwnerID != ownerID {
+		return domain.Note{}, domain.NewNotFoundError("Note %q was not found.", id)
+	}
+	if note.ShareToken == "" {
+		token, err := domain.NewShareToken()
+		if err != nil {
+			return domain.Note{}, err
+		}
+		note.ShareToken = token
+		r.notes[id] = note
+	}
+	return cloneNote(note), nil
+}
+
+func (r *NoteRepository) DisableShare(_ context.Context, ownerID, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	note, ok := r.notes[id]
+	if !ok || note.OwnerID != ownerID {
+		return domain.NewNotFoundError("Note %q was not found.", id)
+	}
+	note.ShareToken = ""
+	r.notes[id] = note
+	return nil
+}
+
+func (r *NoteRepository) GetByShareToken(_ context.Context, token string) (domain.Note, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if token == "" {
+		return domain.Note{}, domain.NewNotFoundError("Note was not found.")
+	}
+	for _, note := range r.notes {
+		if note.ShareToken == token {
+			return cloneNote(note), nil
+		}
+	}
+	return domain.Note{}, domain.NewNotFoundError("Note was not found.")
+}
+
+func (r *NoteRepository) UpdateByShareToken(_ context.Context, token string, draft domain.NoteDraft) (domain.Note, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if token == "" {
+		return domain.Note{}, domain.NewNotFoundError("Note was not found.")
+	}
+	for id, note := range r.notes {
+		if note.ShareToken == token {
+			note.Title = draft.Title
+			note.Content = draft.Content
+			note.Tags = cloneTags(draft.Tags)
+			note.Favorite = draft.Favorite
+			note.UpdatedAt = time.Now().UTC()
+			r.notes[id] = note
+			return cloneNote(note), nil
+		}
+	}
+	return domain.Note{}, domain.NewNotFoundError("Note was not found.")
+}
+
 func (r *NoteRepository) SaveImage(_ context.Context, image domain.NoteImageRecord) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

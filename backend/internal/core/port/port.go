@@ -17,6 +17,10 @@ type NoteService interface {
 	AssistNote(ctx context.Context, id string, action domain.AIAction) (domain.AISuggestion, error)
 	AskNotes(ctx context.Context, req domain.AskRequest) (domain.AskAnswer, error)
 	GenerateAI(ctx context.Context, req domain.AICompletionRequest) (domain.AICompletion, error)
+	EnableShare(ctx context.Context, id string) (domain.Note, error)
+	DisableShare(ctx context.Context, id string) error
+	GetSharedNote(ctx context.Context, token string) (domain.Note, error)
+	UpdateSharedNote(ctx context.Context, token string, draft domain.NoteDraft) (domain.Note, error)
 }
 
 type NoteRepository interface {
@@ -25,6 +29,14 @@ type NoteRepository interface {
 	GetByID(ctx context.Context, ownerID, id string) (domain.Note, error)
 	List(ctx context.Context, ownerID string) ([]domain.Note, error)
 	Delete(ctx context.Context, ownerID, id string) error
+	EnableShare(ctx context.Context, ownerID, id string) (domain.Note, error)
+	DisableShare(ctx context.Context, ownerID, id string) error
+	GetByShareToken(ctx context.Context, token string) (domain.Note, error)
+	UpdateByShareToken(ctx context.Context, token string, draft domain.NoteDraft) (domain.Note, error)
+}
+
+type NoteBroadcaster interface {
+	Publish(note domain.Note)
 }
 
 type NoteAssistant interface {

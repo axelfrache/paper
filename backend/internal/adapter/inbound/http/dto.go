@@ -23,24 +23,26 @@ func (d noteDraftDTO) toDomain() domain.NoteDraft {
 }
 
 type noteDTO struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	Content   string    `json:"content"`
-	Tags      []string  `json:"tags"`
-	Favorite  bool      `json:"favorite"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID         string    `json:"id"`
+	Title      string    `json:"title"`
+	Content    string    `json:"content"`
+	Tags       []string  `json:"tags"`
+	Favorite   bool      `json:"favorite"`
+	ShareToken string    `json:"shareToken"`
+	CreatedAt  time.Time `json:"createdAt"`
+	UpdatedAt  time.Time `json:"updatedAt"`
 }
 
 func newNoteDTO(note domain.Note) noteDTO {
 	return noteDTO{
-		ID:        note.ID,
-		Title:     note.Title,
-		Content:   note.Content,
-		Tags:      note.Tags,
-		Favorite:  note.Favorite,
-		CreatedAt: note.CreatedAt,
-		UpdatedAt: note.UpdatedAt,
+		ID:         note.ID,
+		Title:      note.Title,
+		Content:    note.Content,
+		Tags:       note.Tags,
+		Favorite:   note.Favorite,
+		ShareToken: note.ShareToken,
+		CreatedAt:  note.CreatedAt,
+		UpdatedAt:  note.UpdatedAt,
 	}
 }
 
