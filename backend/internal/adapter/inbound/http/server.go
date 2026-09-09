@@ -33,6 +33,9 @@ func NewRouter(notes port.NoteService, images port.NoteImageService, auth port.A
 	mux.Handle("POST /api/notes/ask", requireAuth(auth, stdhttp.HandlerFunc(handler.AskNotes)))
 	mux.Handle("POST /api/ai/generate", requireAuth(auth, stdhttp.HandlerFunc(handler.GenerateAI)))
 	mux.Handle("POST /api/search", requireAuth(auth, stdhttp.HandlerFunc(handler.SearchNotes)))
+	mux.Handle("/api", stdhttp.NotFoundHandler())
+	mux.Handle("/api/", stdhttp.NotFoundHandler())
+	mux.Handle("/", newSPAHandler(embeddedFrontend()))
 
 	return cors(allowedOrigins)(mux)
 }

@@ -1,0 +1,13 @@
+.git
+.env
+**/node_modules
+**/dist
+backend/bin
+ai-integration
+custom-navbar
+diagram
+diagramtype
+mail
+paperdiagrams
+systemicons
+update

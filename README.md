@@ -13,7 +13,7 @@
 
 Paper is an AI-assisted notes app. It pairs a from-scratch markdown editor with embedded, editable diagrams and a set of LLM-powered actions that work directly on the note you are writing.
 
-The backend is a Go API built on a strict hexagonal (ports & adapters) architecture. The frontend is a React 19 + TypeScript SPA. Notes live in Postgres, images in a self-hosted S3-compatible store (Garage), and the AI features talk to a pluggable, OpenAI-compatible LLM provider.
+The backend is a Go application built on a strict hexagonal (ports & adapters) architecture. It embeds and serves the React 19 + TypeScript SPA in production. Notes live in Postgres, images in a self-hosted S3-compatible store (Garage), and the AI features talk to a pluggable, OpenAI-compatible LLM provider.
 
 ### Features
 
@@ -26,12 +26,11 @@ The backend is a Go API built on a strict hexagonal (ports & adapters) architect
 
 ## Architecture
 
-Paper runs as a small set of containers wired together by `docker-compose.yml`:
+Paper runs as three containers wired together by `docker-compose.yml`:
 
 | Service | Role | Port |
 |---------|------|------|
-| `frontend` | React 19 + Vite SPA, served by nginx | 5173 |
-| `backend` | Go API (hexagonal / ports & adapters) | 8080 |
+| `paper` | Go API and embedded React SPA | 5173 and 8080 |
 | `garage` | S3-compatible image store, self-provisioning | 3902 |
 | `postgres` | Persistent note store | 5432 (internal) |
 
@@ -67,7 +66,7 @@ docker compose up --build
 ```
 
 Then go to:
-- Frontend: http://localhost:5173
+- Application: http://localhost:5173
 - Backend API: http://localhost:8080
 - Health check: http://localhost:8080/api/health
 
@@ -86,8 +85,8 @@ Use `-v` to also remove the Postgres and Garage volumes.
 
 ```bash
 cd frontend
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
 Runs on http://localhost:5173 and proxies `/api` to http://localhost:8080.
@@ -101,8 +100,16 @@ go run ./cmd/api
 
 Runs on http://localhost:8080.
 
-The backend reads its configuration from environment variables (see `.env.example`) and expects a
-reachable Postgres and S3 endpoint. `ALLOWED_ORIGINS` must include the frontend origin for CORS.
+The development backend does not contain generated frontend assets; use the Vite server alongside it. The backend reads its configuration from environment variables (see `.env.example`) and expects a reachable Postgres and S3 endpoint. `ALLOWED_ORIGINS` must include the frontend origin for CORS.
+
+### Standalone binary
+
+```bash
+./scripts/build-standalone.sh
+./backend/bin/paper
+```
+
+The build script compiles the frontend and embeds it in the Go binary. Node.js and pnpm are build-time dependencies only.
 
 ### AI provider
 
@@ -132,14 +139,14 @@ go test ./...
 **Frontend (run from `frontend/`):**
 
 ```bash
-npm run build          # tsc -b && vite build
-npm run test           # type-check + vitest run
-npm run format:check   # check formatting
-npm run format         # fix formatting
+pnpm run build          # tsc -b && vite build
+pnpm run test           # type-check + vitest run
+pnpm run format:check   # check formatting
+pnpm run format         # fix formatting
 ```
 
 > **Warning**: CI checks backend `vet` / `gofmt` / `go test` and frontend `build` / `test` on every
-> push, then builds and pushes the Docker images. Keep `gofmt` clean and `tsc` error-free. Both gate CI.
+> push, then builds and pushes the `paper` Docker image. Keep `gofmt` clean and `tsc` error-free. Both gate CI.
 
 ## License
 

@@ -10,3 +10,5 @@ backend/coverage.out
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+backend/internal/adapter/inbound/http/web/dist/*
+!backend/internal/adapter/inbound/http/web/dist/.keep

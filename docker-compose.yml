@@ -37,9 +37,10 @@ services:
     ports:
       - "${GARAGE_PORT:-3902}:3900"
 
-  backend:
+  paper:
+    image: paper:local
     build:
-      context: ./backend
+      context: .
     depends_on:
       postgres:
         condition: service_healthy
@@ -80,14 +81,7 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - "${BACKEND_PORT:-8080}:8080"
-
-  frontend:
-    build:
-      context: ./frontend
-    depends_on:
-      - backend
-    ports:
-      - "${FRONTEND_PORT:-5173}:80"
+      - "${FRONTEND_PORT:-5173}:8080"
 
 volumes:
   postgres-data:
