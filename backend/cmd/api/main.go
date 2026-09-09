@@ -55,6 +55,9 @@ func main() {
 		})
 		authService, err = service.NewAuth(provider, sessions, authCfg)
 	case "oidc":
+		if cfg.AuthIssuerURL == "" {
+			log.Fatal("OIDC_ISSUER_URL is required when AUTH_PROVIDER=oidc")
+		}
 		if cfg.AuthClientSecret == "" {
 			log.Fatal("OIDC_CLIENT_SECRET is required when AUTH_PROVIDER=oidc")
 		}

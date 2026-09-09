@@ -73,7 +73,7 @@ func Load() Config {
 		AllowedOrigins:         splitOrigins(getEnv("ALLOWED_ORIGINS", "http://localhost:5173")),
 		AuthProvider:           authProvider,
 		AuthSecret:             getEnv("AUTH_SESSION_SECRET", authSecretDefault),
-		AuthIssuerURL:          getEnv("OIDC_ISSUER_URL", "https://auth.getquestify.com/realms/paper"),
+		AuthIssuerURL:          getEnv("OIDC_ISSUER_URL", ""),
 		AuthClientID:           getEnv("OIDC_CLIENT_ID", "paper"),
 		AuthClientSecret:       os.Getenv("OIDC_CLIENT_SECRET"),
 		AuthRedirectURL:        getEnv("OIDC_REDIRECT_URL", publicURL+"/api/auth/callback"),
