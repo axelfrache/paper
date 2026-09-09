@@ -166,3 +166,38 @@ describe("moving a selection with the arrow keys", () => {
     expect(editor.x("middle")).toBe(200);
   });
 });
+
+describe("the isometric placement grid", () => {
+  function mountEditor(initial: Diagram) {
+    const host = document.createElement("div");
+    document.body.replaceChildren(host);
+    root = createRoot(host);
+    act(() => {
+      root?.render(<Harness initial={initial} onValue={() => {}} />);
+    });
+    return host;
+  }
+
+  it("draws grid lines for an isometric diagram", () => {
+    const host = mountEditor(rowOfThree("iso"));
+    expect(host.querySelectorAll(".diagram-grid line").length).toBeGreaterThan(0);
+  });
+
+  it("stays hidden for a flat diagram", () => {
+    const host = mountEditor(rowOfThree("flat"));
+    expect(host.querySelector(".diagram-grid")).toBeNull();
+    expect(host.querySelector("button[aria-label='Isometric grid']")).toBeNull();
+  });
+
+  it("clears the grid when the toggle is turned off", () => {
+    const host = mountEditor(rowOfThree("iso"));
+    const toggle = host.querySelector<HTMLButtonElement>("button[aria-label='Isometric grid']");
+    expect(toggle).not.toBeNull();
+
+    act(() => {
+      toggle?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(host.querySelector(".diagram-grid")).toBeNull();
+  });
+});

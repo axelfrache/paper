@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Box, ChevronDown, Copy, Download, Hand, Maximize, Minus, MousePointer2, Plus, Square, Trash2, Type, X, Sparkles, Wand2 } from "lucide-react";
+import { ArrowRight, Box, ChevronDown, Copy, Download, Grid3x3, Hand, Maximize, Minus, MousePointer2, Plus, Square, Trash2, Type, X, Sparkles, Wand2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
   createDiagramEdge,
@@ -18,6 +18,7 @@ import {
 } from "../lib/diagram";
 import { guidesAt, snapToGuides, stepWithMagnet } from "../lib/diagramGuides";
 import type { AlignmentGuide, GuideBox, SpacingHint } from "../lib/diagramGuides";
+import { isoGridLines } from "../lib/diagramGrid";
 import { generateAI } from "../lib/api";
 import { downloadDiagram } from "../lib/diagramExport";
 import type { DiagramExportBackground, DiagramExportFormat } from "../lib/diagramExport";
@@ -129,6 +130,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title }: DiagramEdit
   const fitViewportRef = useRef(defaultViewport);
   const viewportRef = useRef(defaultViewport);
   const [tool, setTool] = useState<DiagramTool>("select");
+  const [showGrid, setShowGrid] = useState(true);
   const [viewport, setViewportState] = useState(defaultViewport);
   const [liveDiagram, setLiveDiagram] = useState(diagram);
   const [exportOpen, setExportOpen] = useState(false);
@@ -160,6 +162,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title }: DiagramEdit
   const selectedEdge = liveDiagram.edges.find((edge) => edge.id === selectedEdgeId) ?? null;
   const selectedNodeIcon = selectedNode ? diagramIconForKind(selectedNode.kind) : null;
   const zoom = fitViewportRef.current.width / viewport.width;
+  const gridLines = liveDiagram.mode === "iso" && showGrid ? isoGridLines(viewport) : [];
 
   useEffect(() => {
     diagramRef.current = diagram;
@@ -1117,7 +1120,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title }: DiagramEdit
       <div className="diagram-editor-body">
         <svg
           ref={svgRef}
-          className={tool === "pan" || contextPanning ? "diagram-canvas is-panning" : "diagram-canvas"}
+          className={["diagram-canvas", liveDiagram.mode === "iso" ? "is-iso" : "", tool === "pan" || contextPanning ? "is-panning" : ""].filter(Boolean).join(" ")}
           viewBox={`${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}`}
           onPointerDown={handleCanvasPointerDown}
           onContextMenu={(event) => {
@@ -1142,6 +1145,14 @@ export function DiagramEditor({ diagram, onChange, onClose, title }: DiagramEdit
               </marker>
             ))}
           </defs>
+
+          {gridLines.length ? (
+            <g className="diagram-grid" aria-hidden="true">
+              {gridLines.map((line, index) => (
+                <line key={index} x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} />
+              ))}
+            </g>
+          ) : null}
 
           {layout.edges.map((edge) => (
             <g
@@ -1422,6 +1433,20 @@ export function DiagramEditor({ diagram, onChange, onClose, title }: DiagramEdit
               </div>
             ) : null}
           </div>
+          {liveDiagram.mode === "iso" ? (
+            <>
+              <span />
+              <button
+                className={showGrid ? "active" : ""}
+                title="Isometric grid"
+                aria-label="Isometric grid"
+                aria-pressed={showGrid}
+                onClick={() => setShowGrid((on) => !on)}
+              >
+                <Grid3x3 size={15} strokeWidth={1.9} />
+              </button>
+            </>
+          ) : null}
           <span />
           {colors.map((name) => (
             <button

@@ -2090,6 +2090,13 @@ kbd,
   vector-effect: non-scaling-stroke;
 }
 
+.diagram-grid line {
+  stroke: var(--line);
+  stroke-width: 1;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+
 /* Distance between the dragged node and its neighbours, once the gaps are equal. */
 .diagram-spacing line {
   stroke: var(--accent);
@@ -2143,6 +2150,10 @@ kbd,
   font-family: inherit;
   overscroll-behavior: none;
   touch-action: none;
+}
+
+.diagram-canvas.is-iso {
+  background-image: none;
 }
 
 .diagram-canvas.is-panning {
