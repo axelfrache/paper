@@ -68,6 +68,7 @@ export default function App() {
   return (
     <NotesPage
       user={user}
+      aiEnabled={config.aiEnabled}
       onLogout={async () => {
         const result = await logout();
         window.location.assign(result.redirectTo || "/");

@@ -37,6 +37,7 @@ type NoteEditorProps = {
   onDismissResult: () => void;
   onUndo: () => void;
   onRedo: () => void;
+  aiEnabled: boolean;
   theme: "light" | "dark";
 };
 
@@ -85,6 +86,7 @@ export function NoteEditor({
   onDismissResult,
   onUndo,
   onRedo,
+  aiEnabled,
   theme,
 }: NoteEditorProps) {
   const titleRef = useRef<HTMLInputElement | null>(null);
@@ -336,53 +338,57 @@ export function NoteEditor({
             Redo
           </button>
         </div>
-        <span className="ai-bar-sep" aria-hidden="true"></span>
-        <strong>AI</strong>
-        <div className="ai-bar-actions">
-          {aiActions.map((action) => (
-            <button key={action.action} title={action.hint} onClick={() => onAssist(action.action)} disabled={aiResult?.status === "loading"}>
-              {action.label}
-            </button>
-          ))}
-          <button
-            title={diagramAction.hint}
-            disabled={aiResult?.status === "loading"}
-            onClick={() => openDiagramDescribe(note, setDiagramDescribeRequest)}
-          >
-            {diagramAction.label}
-          </button>
-        </div>
-        <details className="ai-bar-menu">
-          <summary aria-label="AI actions" title="AI actions">
-            <Sparkles size={15} strokeWidth={1.9} />
-            <span>AI actions</span>
-          </summary>
-          <div>
-            {aiActions.map((action) => (
+        {aiEnabled ? (
+          <>
+            <span className="ai-bar-sep" aria-hidden="true"></span>
+            <strong>AI</strong>
+            <div className="ai-bar-actions">
+              {aiActions.map((action) => (
+                <button key={action.action} title={action.hint} onClick={() => onAssist(action.action)} disabled={aiResult?.status === "loading"}>
+                  {action.label}
+                </button>
+              ))}
               <button
-                key={action.action}
-                type="button"
+                title={diagramAction.hint}
                 disabled={aiResult?.status === "loading"}
-                onClick={(event) => {
-                  event.currentTarget.closest("details")?.removeAttribute("open");
-                  onAssist(action.action);
-                }}
+                onClick={() => openDiagramDescribe(note, setDiagramDescribeRequest)}
               >
-                {action.label}
+                {diagramAction.label}
               </button>
-            ))}
-            <button
-              type="button"
-              disabled={aiResult?.status === "loading"}
-              onClick={(event) => {
-                event.currentTarget.closest("details")?.removeAttribute("open");
-                openDiagramDescribe(note, setDiagramDescribeRequest);
-              }}
-            >
-              {diagramAction.label}
-            </button>
-          </div>
-        </details>
+            </div>
+            <details className="ai-bar-menu">
+              <summary aria-label="AI actions" title="AI actions">
+                <Sparkles size={15} strokeWidth={1.9} />
+                <span>AI actions</span>
+              </summary>
+              <div>
+                {aiActions.map((action) => (
+                  <button
+                    key={action.action}
+                    type="button"
+                    disabled={aiResult?.status === "loading"}
+                    onClick={(event) => {
+                      event.currentTarget.closest("details")?.removeAttribute("open");
+                      onAssist(action.action);
+                    }}
+                  >
+                    {action.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  disabled={aiResult?.status === "loading"}
+                  onClick={(event) => {
+                    event.currentTarget.closest("details")?.removeAttribute("open");
+                    openDiagramDescribe(note, setDiagramDescribeRequest);
+                  }}
+                >
+                  {diagramAction.label}
+                </button>
+              </div>
+            </details>
+          </>
+        ) : null}
         <span className="ai-bar-count">{wordCount(note.content)}</span>
       </footer>
 
@@ -392,6 +398,7 @@ export function NoteEditor({
           onChange={changeDiagram}
           onClose={closeDiagram}
           title={note.title}
+          aiEnabled={aiEnabled}
         />
       ) : null}
     </main>

@@ -42,6 +42,19 @@ afterEach(() => {
 });
 
 describe("NoteEditor AI integration", () => {
+  it("hides the AI actions when AI is disabled", () => {
+    const { host } = mount(null, false);
+    expect(host.querySelector(".ai-bar-actions")).toBeNull();
+    expect(host.querySelector(".ai-bar-menu")).toBeNull();
+    expect(host.querySelector(".ai-bar-history")).not.toBeNull();
+    expect(host.querySelector(".ai-bar-count")).not.toBeNull();
+  });
+
+  it("shows the AI actions when AI is enabled", () => {
+    const { host } = mount(null, true);
+    expect(host.querySelector(".ai-bar-actions")).not.toBeNull();
+  });
+
   it("docks structured AI results outside the scrolling document", () => {
     const result: AIResult = {
       action: "suggest_tags",
@@ -100,6 +113,7 @@ describe("NoteEditor AI integration", () => {
           onDismissResult={vi.fn()}
           onUndo={onUndo}
           onRedo={onRedo}
+          aiEnabled={true}
           theme="light"
         />,
       );
@@ -195,12 +209,13 @@ function render(target: Note, aiResult: AIResult | null, onApplyResult = vi.fn()
       onDismissResult={onDismissResult}
       onUndo={vi.fn()}
       onRedo={vi.fn()}
+      aiEnabled={true}
       theme="light"
     />,
   );
 }
 
-function mount(aiResult: AIResult | null) {
+function mount(aiResult: AIResult | null, aiEnabled = true) {
   const host = document.createElement("div");
   const onApplyResult = vi.fn();
   const onDismissResult = vi.fn();
@@ -233,6 +248,7 @@ function mount(aiResult: AIResult | null) {
         onDismissResult={onDismissResult}
         onUndo={vi.fn()}
         onRedo={vi.fn()}
+        aiEnabled={aiEnabled}
         theme="light"
       />,
     );

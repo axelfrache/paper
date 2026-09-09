@@ -44,7 +44,7 @@ const emptyDraft: NoteDraft = {
   favorite: false,
 };
 
-export function NotesPage({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
+export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEnabled: boolean; onLogout: () => Promise<void> }) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -622,39 +622,47 @@ export function NotesPage({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const actions = useMemo<PaletteAction[]>(
     () => [
       { label: "New note", meta: "", icon: <Plus size={14} strokeWidth={2} />, kbd: "⌘N", run: handleNew },
-      {
-        label: "Ask my notes",
-        meta: "semantic question",
-        icon: <MessageCircleQuestion size={14} strokeWidth={1.9} />,
-        kbd: "⌘⇧K",
-        run: () => openPalette("ask"),
-      },
-      {
-        label: "Summarize note",
-        meta: activeNote?.title || "Untitled",
-        icon: <AlignLeft size={14} strokeWidth={1.9} />,
-        run: () => {
-          setPaletteOpen(false);
-          void runAI("summarize");
-        },
-      },
-      {
-        label: "Extract tasks",
-        meta: activeNote?.title || "Untitled",
-        icon: <ListTodo size={14} strokeWidth={1.9} />,
-        run: () => {
-          setPaletteOpen(false);
-          void runAI("extract_tasks");
-        },
-      },
+      ...(aiEnabled
+        ? [
+            {
+              label: "Ask my notes",
+              meta: "semantic question",
+              icon: <MessageCircleQuestion size={14} strokeWidth={1.9} />,
+              kbd: "⌘⇧K",
+              run: () => openPalette("ask"),
+            },
+            {
+              label: "Summarize note",
+              meta: activeNote?.title || "Untitled",
+              icon: <AlignLeft size={14} strokeWidth={1.9} />,
+              run: () => {
+                setPaletteOpen(false);
+                void runAI("summarize");
+              },
+            },
+            {
+              label: "Extract tasks",
+              meta: activeNote?.title || "Untitled",
+              icon: <ListTodo size={14} strokeWidth={1.9} />,
+              run: () => {
+                setPaletteOpen(false);
+                void runAI("extract_tasks");
+              },
+            },
+          ]
+        : []),
       { label: "Toggle favorite", meta: "", icon: <Star size={14} strokeWidth={1.9} />, kbd: "⌘F", run: toggleFavorite },
     ],
-    [handleNew, openPalette, activeNote, runAI, toggleFavorite],
+    [handleNew, openPalette, activeNote, runAI, toggleFavorite, aiEnabled],
   );
 
   useShortcuts({
     onCommandPalette: () => openPalette("search"),
-    onAskPalette: () => openPalette("ask"),
+    onAskPalette: () => {
+      if (aiEnabled) {
+        openPalette("ask");
+      }
+    },
     onCreateNote: () => void handleNew(),
     onDelete: () => void handleDelete(),
     onToggleFavorite: toggleFavorite,
@@ -763,6 +771,7 @@ export function NotesPage({ user, onLogout }: { user: AuthUser; onLogout: () => 
         onDismissResult={dismissAIResult}
         onUndo={() => void undoNoteContent()}
         onRedo={() => void redoNoteContent()}
+        aiEnabled={aiEnabled}
         theme={theme}
       />
 

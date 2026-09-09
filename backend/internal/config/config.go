@@ -43,7 +43,10 @@ type Config struct {
 }
 
 func Load() Config {
-	provider := getEnv("AI_PROVIDER", "ai-gateway")
+	provider := strings.ToLower(getEnv("AI_PROVIDER", ""))
+	if provider == "none" {
+		provider = ""
+	}
 	authProvider := getEnv("AUTH_PROVIDER", "dev")
 	authSecretDefault := ""
 	if authProvider == "dev" {

@@ -34,14 +34,14 @@ afterEach(() => {
 
 describe("LoginPage", () => {
   it("shows a credential form for the local provider", () => {
-    const host = mount({ provider: "local", registrationEnabled: true });
+    const host = mount({ provider: "local", registrationEnabled: true, aiEnabled: true });
     expect(host.querySelector("input[type='email']")).not.toBeNull();
     expect(host.querySelector("input[type='password']")).not.toBeNull();
     expect(host.querySelector("input[type='text']")).toBeNull();
   });
 
   it("switches to the registration form and reveals the name field", () => {
-    const host = mount({ provider: "local", registrationEnabled: true });
+    const host = mount({ provider: "local", registrationEnabled: true, aiEnabled: true });
     const toggle = Array.from(
       host.querySelectorAll<HTMLButtonElement>(".login-switch button"),
     ).find((button) => /create an account/i.test(button.textContent ?? ""));
@@ -55,12 +55,12 @@ describe("LoginPage", () => {
   });
 
   it("hides the registration switch when registration is disabled", () => {
-    const host = mount({ provider: "local", registrationEnabled: false });
+    const host = mount({ provider: "local", registrationEnabled: false, aiEnabled: true });
     expect(host.querySelector(".login-switch")).toBeNull();
   });
 
   it("renders a redirect link instead of a form for the oidc provider", () => {
-    const host = mount({ provider: "oidc", registrationEnabled: true });
+    const host = mount({ provider: "oidc", registrationEnabled: true, aiEnabled: true });
     expect(host.querySelector("input[type='password']")).toBeNull();
     expect(
       host.querySelector("a.login-primary[href='/api/auth/login']"),

@@ -13,6 +13,7 @@ const loginStateCookieName = "paper_login"
 
 type AuthHTTPConfig struct {
 	CookieSecure bool
+	AIEnabled    bool
 }
 
 type AuthHandler struct {
@@ -29,6 +30,7 @@ func (h *AuthHandler) Config(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
 	writeJSON(w, stdhttp.StatusOK, map[string]any{
 		"provider":            config.Provider,
 		"registrationEnabled": config.RegistrationEnabled,
+		"aiEnabled":           h.config.AIEnabled,
 	})
 }
 

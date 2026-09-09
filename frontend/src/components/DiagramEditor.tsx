@@ -45,6 +45,7 @@ type DiagramEditorProps = {
   onChange: (diagram: Diagram) => void;
   onClose: () => void;
   title?: string;
+  aiEnabled?: boolean;
 };
 
 type DiagramClipboard = {
@@ -120,7 +121,7 @@ const minZoom = 0.25;
 const maxZoom = 3;
 const defaultViewport: EditorViewport = { x: -120, y: -120, width: 1040, height: 680 };
 
-export function DiagramEditor({ diagram, onChange, onClose, title }: DiagramEditorProps) {
+export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = true }: DiagramEditorProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const aiDialogRef = useRef<HTMLDialogElement | null>(null);
   const labelInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1037,10 +1038,12 @@ export function DiagramEditor({ diagram, onChange, onClose, title }: DiagramEdit
           </span>
         </div>
         <div className="diagram-editor-actions">
-          <button className="topbar-button" onClick={openAiDialog}>
-            <Sparkles size={14} strokeWidth={1.9} />
-            <span>Describe</span>
-          </button>
+          {aiEnabled ? (
+            <button className="topbar-button" onClick={openAiDialog}>
+              <Sparkles size={14} strokeWidth={1.9} />
+              <span>Describe</span>
+            </button>
+          ) : null}
           <div className="diagram-export">
             <button className="topbar-button" onClick={() => setExportOpen((open) => !open)} aria-haspopup="menu" aria-expanded={exportOpen} style={{ marginLeft: "4px" }}>
               <Download size={14} strokeWidth={1.9} />

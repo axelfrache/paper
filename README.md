@@ -123,9 +123,10 @@ The build script compiles the frontend and embeds it in the Go binary. Node.js a
 
 ### AI provider
 
-The AI features are configured entirely by environment, not code:
+The AI features are optional and **off by default**: with `AI_PROVIDER` unset, the AI
+actions are hidden and the app runs without them. Set a provider to enable them:
 
-- `AI_PROVIDER`: `ai-gateway` (default), `ollama`, or `openai-compatible`
+- `AI_PROVIDER`: `ollama`, `openai-compatible`, or `ai-gateway`
 - `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`
 
 All three providers speak the same OpenAI-compatible chat API.

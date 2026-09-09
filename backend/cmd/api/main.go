@@ -93,13 +93,19 @@ func main() {
 		log.Fatalf("auth configuration failed: %v", err)
 	}
 
-	assistant := ai.New(ai.Config{
-		Provider: cfg.AIProvider,
-		BaseURL:  cfg.AIBaseURL,
-		APIKey:   cfg.AIAPIKey,
-		Model:    cfg.AIModel,
-		Timeout:  cfg.AITimeout,
-	})
+	aiEnabled := cfg.AIProvider != ""
+	var assistant port.NoteAssistant
+	if aiEnabled {
+		assistant = ai.New(ai.Config{
+			Provider: cfg.AIProvider,
+			BaseURL:  cfg.AIBaseURL,
+			APIKey:   cfg.AIAPIKey,
+			Model:    cfg.AIModel,
+			Timeout:  cfg.AITimeout,
+		})
+	} else {
+		assistant = ai.NewDisabled()
+	}
 	noteService := service.NewNote(notes, assistant)
 	var imageStorage port.ImageStorage
 	switch cfg.StorageProvider {
@@ -123,6 +129,7 @@ func main() {
 
 	router := httpadapter.NewRouter(noteService, imageService, authService, httpadapter.AuthHTTPConfig{
 		CookieSecure: cfg.AuthCookieSecure,
+		AIEnabled:    aiEnabled,
 	}, cfg.AllowedOrigins)
 	server := httpadapter.NewServer(cfg.Addr(), router, cfg.AITimeout+30*time.Second)
 
