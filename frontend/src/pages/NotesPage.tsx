@@ -6,7 +6,8 @@ import { NotesColumn } from "../components/NotesColumn";
 import { Sidebar, type ViewKey } from "../components/Sidebar";
 import { Toast } from "../components/Toast";
 import { NoteEditor, type AIResult } from "../features/NoteEditor";
-import { askNotes, assistNote, createNote, deleteNote, listNotes, updateNote, uploadNoteImage } from "../lib/api";
+import { askNotes, assistNote, createNote, deleteNote, listNotes, searchNotes, updateNote, uploadNoteImage } from "../lib/api";
+import { matchesFilter } from "../lib/notesFilter";
 import { useShortcuts } from "../lib/useShortcuts";
 import type { AIAction, AskAnswer, Note, NoteDraft } from "../types/note";
 import type { AuthUser } from "../types/auth";
@@ -49,8 +50,9 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [view, setView] = useState<ViewKey>("all");
-  const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [activeTags, setActiveTags] = useState<string[]>([]);
   const [query, setQuery] = useState("");
+  const [matchIds, setMatchIds] = useState<Set<string> | null>(null);
   const [tagDraft, setTagDraft] = useState("");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteMode, setPaletteMode] = useState<PaletteMode>("search");
@@ -157,24 +159,46 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
 
   const visibleNotes = useMemo(() => {
     let pool = [...notes].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-    if (activeTag) {
-      pool = pool.filter((note) => note.tags.includes(activeTag));
-    } else if (view === "recent") {
-      pool = pool.slice(0, 5);
-    } else if (view === "favorites") {
+    if (matchIds) {
+      pool = pool.filter((note) => matchIds.has(note.id));
+    }
+    if (view === "favorites") {
       pool = pool.filter((note) => note.favorite);
     } else if (view === "tasks") {
       pool = pool.filter((note) => hasTask(note.content));
-    }
-
-    const search = query.trim().toLowerCase();
-    if (search) {
-      pool = pool.filter((note) =>
-        `${note.title} ${note.content} ${note.tags.join(" ")}`.toLowerCase().includes(search),
-      );
+    } else if (view === "recent") {
+      pool = pool.slice(0, 5);
     }
     return pool;
-  }, [notes, activeTag, view, query]);
+  }, [notes, view, matchIds]);
+
+  const notesRef = useRef(notes);
+  notesRef.current = notes;
+  const searchSeq = useRef(0);
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed && activeTags.length === 0) {
+      setMatchIds(null);
+      return;
+    }
+    const seq = ++searchSeq.current;
+    const handle = window.setTimeout(() => {
+      void searchNotes(trimmed, activeTags)
+        .then((results) => {
+          if (seq === searchSeq.current) {
+            setMatchIds(new Set(results.map((note) => note.id)));
+          }
+        })
+        .catch(() => {
+          if (seq === searchSeq.current) {
+            const filtered = notesRef.current.filter((note) => matchesFilter(note, { query: trimmed, tags: activeTags }));
+            setMatchIds(new Set(filtered.map((note) => note.id)));
+          }
+        });
+    }, 200);
+    return () => window.clearTimeout(handle);
+  }, [query, activeTags]);
 
   const flash = useCallback((message: string) => {
     setToast(message);
@@ -397,7 +421,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       setSelectedIds([note.id]);
       lastSelectedIdRef.current = note.id;
       setView("all");
-      setActiveTag(null);
+      setActiveTags([]);
       setQuery("");
       setTagDraft("");
       setAIResult(null);
@@ -563,6 +587,32 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
     },
     [notes, flash],
   );
+
+  const toggleFilterTag = useCallback((tag: string) => {
+    const normalized = normalizeTag(tag);
+    if (!normalized) {
+      return;
+    }
+    setView("all");
+    setActiveTags((current) => (current.includes(normalized) ? current.filter((item) => item !== normalized) : [...current, normalized]));
+  }, []);
+
+  const addFilterTag = useCallback((tag: string) => {
+    const normalized = normalizeTag(tag);
+    if (!normalized) {
+      return;
+    }
+    setActiveTags((current) => (current.includes(normalized) ? current : [...current, normalized]));
+  }, []);
+
+  const removeFilterTag = useCallback((tag: string) => {
+    setActiveTags((current) => current.filter((item) => item !== tag));
+  }, []);
+
+  const clearFilters = useCallback(() => {
+    setActiveTags([]);
+    setQuery("");
+  }, []);
 
   const toggleTheme = useCallback(() => {
     setTheme((current) => (current === "dark" ? "light" : "dark"));
@@ -748,17 +798,17 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       <Sidebar
         notes={notes}
         view={view}
-        activeTag={activeTag}
+        activeTags={activeTags}
         hidden={sidebarHidden}
         onViewChange={(nextView) => {
           setView(nextView);
-          setActiveTag(null);
+          setActiveTags([]);
+          setQuery("");
           setMobilePane("notes");
           closeCompactSidebar();
         }}
-        onTagChange={(tag) => {
-          setActiveTag(tag);
-          setView("all");
+        onToggleTag={(tag) => {
+          toggleFilterTag(tag);
           setMobilePane("notes");
           closeCompactSidebar();
         }}
@@ -786,14 +836,18 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       ) : null}
 
       <NotesColumn
-        title={activeTag ? `#${activeTag}` : titleForView(view)}
+        title={titleForView(view)}
         notes={visibleNotes}
         activeId={activeId}
         selectedIds={selectedIds}
         query={query}
+        activeTags={activeTags}
         sidebarHidden={sidebarHidden}
         focusRequest={noteCardFocusRequest}
         onQueryChange={setQuery}
+        onAddTag={addFilterTag}
+        onRemoveTag={removeFilterTag}
+        onClearFilters={clearFilters}
         onNew={() => void handleNew()}
         onSelect={selectNote}
         onFavoriteNote={favoriteNote}

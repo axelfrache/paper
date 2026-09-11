@@ -89,6 +89,9 @@ func (n Note) Matches(q SearchQuery) bool {
 	query := strings.ToLower(strings.TrimSpace(q.Query))
 	if query != "" {
 		haystack := strings.ToLower(n.Title + "\n" + n.Content + "\n" + strings.Join(n.Tags, " "))
+		if len(n.Tags) > 0 {
+			haystack += " #" + strings.ToLower(strings.Join(n.Tags, " #"))
+		}
 		if !strings.Contains(haystack, query) {
 			return false
 		}

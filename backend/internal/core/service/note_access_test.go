@@ -25,3 +25,28 @@ func TestNoteServiceIsolatesNotesByUser(t *testing.T) {
 		t.Fatal("second user can open first user's note")
 	}
 }
+
+func TestSearchNotesMatchesHashPrefixedTag(t *testing.T) {
+	repository := memory.NewNoteRepository()
+	ctx := domain.ContextWithUser(context.Background(), domain.User{ID: "user-1"})
+	if _, err := repository.Create(ctx, "user-1", domain.NoteDraft{Title: "Deploy", Tags: []string{"work"}}); err != nil {
+		t.Fatal(err)
+	}
+	service := NewNote(repository, nil)
+
+	matched, err := service.SearchNotes(ctx, domain.SearchQuery{Query: "#work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matched) != 1 {
+		t.Fatalf("expected the #work query to match the tagged note, got %d", len(matched))
+	}
+
+	missing, err := service.SearchNotes(ctx, domain.SearchQuery{Query: "#missing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(missing) != 0 {
+		t.Fatalf("expected no match for #missing, got %d", len(missing))
+	}
+}

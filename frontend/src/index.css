@@ -966,6 +966,59 @@ kbd,
   padding: 0 11px;
 }
 
+.notes-active-tags {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  border-bottom: 1px solid var(--line-soft);
+  padding: 7px 11px;
+}
+
+.notes-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--line-button);
+  border-radius: 5px;
+  padding: 2px 7px;
+  color: var(--muted);
+  background: var(--code);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.notes-tag-chip:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.notes-tag-chip svg {
+  color: var(--faint);
+}
+
+.notes-clear-filters {
+  margin-left: 2px;
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  color: var(--soft);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.notes-clear-filters:hover {
+  color: var(--text);
+}
+
+.note-card mark {
+  border-radius: 2px;
+  padding: 0 1px;
+  color: inherit;
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
 .notes-filter div {
   display: flex;
   min-width: 0;

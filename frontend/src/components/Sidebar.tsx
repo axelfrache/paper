@@ -11,10 +11,10 @@ export type ViewKey = "all" | "recent" | "favorites" | "tasks";
 type SidebarProps = {
   notes: Note[];
   view: ViewKey;
-  activeTag: string | null;
+  activeTags: string[];
   hidden: boolean;
   onViewChange: (view: ViewKey) => void;
-  onTagChange: (tag: string | null) => void;
+  onToggleTag: (tag: string) => void;
   onNew: () => void;
   onToggleCollapse: () => void;
   user: AuthUser;
@@ -30,7 +30,7 @@ const viewDefs: Array<{ key: ViewKey; label: string; icon: LucideIcon }> = [
   { key: "tasks", label: "Tasks", icon: ListTodo },
 ];
 
-export function Sidebar({ notes, view, activeTag, hidden, onViewChange, onTagChange, onNew, onToggleCollapse, user, onLogout, onResizeStart, onResizeBy }: SidebarProps) {
+export function Sidebar({ notes, view, activeTags, hidden, onViewChange, onToggleTag, onNew, onToggleCollapse, user, onLogout, onResizeStart, onResizeBy }: SidebarProps) {
   const tagCounts = tagCountsFor(notes);
 
   return (
@@ -53,7 +53,7 @@ export function Sidebar({ notes, view, activeTag, hidden, onViewChange, onTagCha
 
       <nav className="sidebar-nav">
         {viewDefs.map((item) => {
-          const active = view === item.key && !activeTag;
+          const active = view === item.key && activeTags.length === 0;
           const Icon = item.icon;
           return (
             <button
@@ -76,8 +76,8 @@ export function Sidebar({ notes, view, activeTag, hidden, onViewChange, onTagCha
         {tagCounts.map((tag) => (
           <button
             key={tag.name}
-            className={activeTag === tag.name ? "nav-item active" : "nav-item"}
-            onClick={() => onTagChange(activeTag === tag.name ? null : tag.name)}
+            className={activeTags.includes(tag.name) ? "nav-item active" : "nav-item"}
+            onClick={() => onToggleTag(tag.name)}
           >
             <span className="nav-icon">
               <Hash size={13} strokeWidth={2} />

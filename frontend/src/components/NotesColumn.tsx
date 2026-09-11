@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { PointerEvent } from "react";
-import { Copy, PanelLeftOpen, Plus, PanelRightOpen, Search, Star, StarOff, Trash2 } from "lucide-react";
+import { Copy, PanelLeftOpen, Plus, PanelRightOpen, Search, Star, StarOff, Trash2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { parseInline } from "../lib/markdown/inline";
 import type { MarkdownInline } from "../lib/markdown/inline";
 import { isDivider, isResourceLine } from "../lib/markdown/resource";
+import { extractTagTokens, highlightSegments, takeTrailingTag } from "../lib/notesFilter";
 import type { Note } from "../types/note";
 
 type NoteDirection = "previous" | "next";
@@ -15,9 +16,13 @@ type NotesColumnProps = {
   activeId: string | null;
   selectedIds: string[];
   query: string;
+  activeTags: string[];
   sidebarHidden: boolean;
   focusRequest: number;
   onQueryChange: (query: string) => void;
+  onAddTag: (tag: string) => void;
+  onRemoveTag: (tag: string) => void;
+  onClearFilters: () => void;
   onNew: () => void;
   onSelect: (note: Note, extend: boolean) => void;
   onFavoriteNote: (note: Note) => void;
@@ -37,9 +42,13 @@ export function NotesColumn({
   activeId,
   selectedIds,
   query,
+  activeTags,
   sidebarHidden,
   focusRequest,
   onQueryChange,
+  onAddTag,
+  onRemoveTag,
+  onClearFilters,
   onNew,
   onSelect,
   onFavoriteNote,
@@ -121,12 +130,45 @@ export function NotesColumn({
         ) : null}
         <div>
           <Search size={13} strokeWidth={2} />
-          <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Filter notes" />
+          <input
+            value={query}
+            onChange={(event) => {
+              const { query: rest, tags } = extractTagTokens(event.target.value);
+              tags.forEach(onAddTag);
+              onQueryChange(rest);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter") {
+                return;
+              }
+              const { tag, rest } = takeTrailingTag(query);
+              if (tag) {
+                event.preventDefault();
+                onAddTag(tag);
+                onQueryChange(rest);
+              }
+            }}
+            placeholder="Filter notes (try #tag)"
+          />
         </div>
         <button className="notes-new-button" onClick={onNew} aria-label="New note" title="New note (⌘N)">
           <Plus size={15} strokeWidth={2} />
         </button>
       </div>
+
+      {activeTags.length ? (
+        <div className="notes-active-tags">
+          {activeTags.map((tag) => (
+            <button key={tag} type="button" className="notes-tag-chip" onClick={() => onRemoveTag(tag)} aria-label={`Remove #${tag} filter`}>
+              <span>#{tag}</span>
+              <X size={11} strokeWidth={2.2} />
+            </button>
+          ))}
+          <button type="button" className="notes-clear-filters" onClick={onClearFilters}>
+            Clear
+          </button>
+        </div>
+      ) : null}
 
       <div className="list-title">
         <strong>{title}</strong>
@@ -171,10 +213,10 @@ export function NotesColumn({
             }}
           >
             <div className="note-card-title">
-              <strong>{note.title || "Untitled"}</strong>
+              <strong>{renderHighlighted(note.title || "Untitled", query)}</strong>
               {note.favorite ? <Star size={12} fill="currentColor" strokeWidth={1.8} /> : null}
             </div>
-            <p><NoteSummaryPreview content={note.content} /></p>
+            <p><NoteSummaryPreview content={note.content} query={query} /></p>
             <div className="note-card-meta">
               <span>{formatRelative(note.updatedAt)}</span>
               <div>
@@ -293,37 +335,46 @@ function notePreviewNodes(content: string): MarkdownInline[] {
   return nodes;
 }
 
-function renderInlineNodes(nodes: MarkdownInline[]): ReactNode {
+function renderHighlighted(text: string, query: string): ReactNode {
+  if (!query.trim()) {
+    return text;
+  }
+  return highlightSegments(text, query).map((segment, index) =>
+    segment.match ? <mark key={index}>{segment.text}</mark> : <Fragment key={index}>{segment.text}</Fragment>,
+  );
+}
+
+function renderInlineNodes(nodes: MarkdownInline[], query: string): ReactNode {
   return nodes.map((node, index) => {
     if (node.type === "text") {
-      return <span key={index}>{node.text}</span>;
+      return <span key={index}>{renderHighlighted(node.text, query)}</span>;
     }
     if (node.type === "code") {
-      return <code key={index}>{node.text}</code>;
+      return <code key={index}>{renderHighlighted(node.text, query)}</code>;
     }
     if (node.type === "link") {
-      return <span key={index}>{renderInlineNodes(node.text)}</span>;
+      return <span key={index}>{renderInlineNodes(node.text, query)}</span>;
     }
     if (node.type === "image") {
       return null;
     }
     if (node.type === "strong") {
-      return <strong key={index}>{renderInlineNodes(node.children)}</strong>;
+      return <strong key={index}>{renderInlineNodes(node.children, query)}</strong>;
     }
     if (node.type === "em") {
-      return <em key={index}>{renderInlineNodes(node.children)}</em>;
+      return <em key={index}>{renderInlineNodes(node.children, query)}</em>;
     }
     if (node.type === "strike") {
-      return <s key={index}>{renderInlineNodes(node.children)}</s>;
+      return <s key={index}>{renderInlineNodes(node.children, query)}</s>;
     }
-    return <u key={index}>{renderInlineNodes(node.children)}</u>;
+    return <u key={index}>{renderInlineNodes(node.children, query)}</u>;
   });
 }
 
-function NoteSummaryPreview({ content }: { content: string }) {
+function NoteSummaryPreview({ content, query }: { content: string; query: string }) {
   const nodes = notePreviewNodes(content);
   if (!nodes.length) {
     return <>No content</>;
   }
-  return <>{renderInlineNodes(nodes)}</>;
+  return <>{renderInlineNodes(nodes, query)}</>;
 }
