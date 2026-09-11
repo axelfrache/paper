@@ -4,6 +4,7 @@ import type { PointerEvent } from "react";
 import type { Note } from "../types/note";
 import type { AuthUser } from "../types/auth";
 import { AccountMenu } from "./AccountMenu";
+import { ShortcutsHelp } from "./ShortcutsDialog";
 
 export type ViewKey = "all" | "recent" | "favorites" | "tasks";
 
@@ -87,28 +88,7 @@ export function Sidebar({ notes, view, activeTag, hidden, onViewChange, onTagCha
         ))}
       </div>
 
-      <div className="shortcut-hints">
-        <div>
-          <span>Search</span>
-          <em>⌘K</em>
-        </div>
-        <div>
-          <span>Ask my notes</span>
-          <em>⌘⇧K</em>
-        </div>
-        <div>
-          <span>Insert block</span>
-          <em>/</em>
-        </div>
-        <div>
-          <span>Light / dark</span>
-          <em>⌘⇧L</em>
-        </div>
-        <div>
-          <span>Hide sidebar</span>
-          <em>⌘⌥B</em>
-        </div>
-      </div>
+      <ShortcutsHelp />
       <AccountMenu user={user} onLogout={onLogout} />
       <div
         className="column-resize-handle"

@@ -56,6 +56,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
   const [paletteMode, setPaletteMode] = useState<PaletteMode>("search");
   const [theme, setTheme] = useState<Theme>(() => initialTheme());
   const [sidebarHidden, setSidebarHidden] = useState(() => matchesCompactNavigation());
+  const [navPinned, setNavPinned] = useState(false);
   const [mobilePane, setMobilePane] = useState<MobilePane>("notes");
   const [navigationWidth, setNavigationWidth] = useState(() => initialColumnWidth("navigation"));
   const [notesWidth, setNotesWidth] = useState(() => initialColumnWidth("notes"));
@@ -99,6 +100,12 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
     query.addEventListener("change", handleChange);
     return () => query.removeEventListener("change", handleChange);
   }, []);
+
+  useEffect(() => {
+    if (activeId && !navPinned && !matchesCompactNavigation()) {
+      setSidebarHidden(true);
+    }
+  }, [activeId, navPinned]);
 
   useEffect(() => {
     const load = async () => {
@@ -510,6 +517,53 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
     flash(activeNote.favorite ? "Removed from favorites" : "Added to favorites");
   }, [activeNote, patchActive, flash]);
 
+  const favoriteNote = useCallback(
+    (note: Note) => {
+      const next = { ...note, favorite: !note.favorite, updatedAt: new Date().toISOString() };
+      setNotes((current) => current.map((item) => (item.id === note.id ? next : item)));
+      persist(next);
+      flash(next.favorite ? "Added to favorites" : "Removed from favorites");
+    },
+    [persist, flash],
+  );
+
+  const duplicateNote = useCallback(
+    async (note: Note) => {
+      try {
+        const created = await createNote({ ...toDraft(note), title: note.title ? `${note.title} (copy)` : "" });
+        setNotes((current) => [created, ...current]);
+        setActiveId(created.id);
+        setSelectedIds([created.id]);
+        lastSelectedIdRef.current = created.id;
+        flash("Note duplicated");
+      } catch {
+        flash("Could not duplicate note");
+      }
+    },
+    [flash],
+  );
+
+  const deleteSingleNote = useCallback(
+    async (note: Note) => {
+      const index = Math.max(0, notes.findIndex((item) => item.id === note.id));
+      try {
+        await deleteNote(note.id);
+        setNotes((current) => current.filter((item) => item.id !== note.id));
+        setSelectedIds((current) => current.filter((id) => id !== note.id));
+        setActiveId((current) => (current === note.id ? null : current));
+        if (lastSelectedIdRef.current === note.id) {
+          lastSelectedIdRef.current = null;
+        }
+        deletedHistoryRef.current.undo.push({ notes: [note], index });
+        deletedHistoryRef.current.redo = [];
+        flash("Note deleted");
+      } catch {
+        flash("Could not delete note");
+      }
+    },
+    [notes, flash],
+  );
+
   const toggleTheme = useCallback(() => {
     setTheme((current) => (current === "dark" ? "light" : "dark"));
   }, []);
@@ -666,7 +720,11 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
     onCreateNote: () => void handleNew(),
     onDelete: () => void handleDelete(),
     onToggleFavorite: toggleFavorite,
-    onToggleSidebar: () => setSidebarHidden((hidden) => !hidden),
+    onToggleSidebar: () => {
+      const opening = sidebarHidden;
+      setNavPinned(opening);
+      setSidebarHidden(!opening);
+    },
     onToggleTheme: toggleTheme,
     onUndo: undoActive,
     onRedo: redoActive,
@@ -705,7 +763,10 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
           closeCompactSidebar();
         }}
         onNew={() => void handleNew()}
-        onToggleCollapse={() => setSidebarHidden((hidden) => !hidden)}
+        onToggleCollapse={() => {
+          setNavPinned(false);
+          setSidebarHidden(true);
+        }}
         user={user}
         onLogout={onLogout}
         onResizeStart={(event) => startColumnResize("navigation", event)}
@@ -713,7 +774,15 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       />
 
       {!sidebarHidden ? (
-        <button className="sidebar-scrim" type="button" onClick={() => setSidebarHidden(true)} aria-label="Close navigation" />
+        <button
+          className="sidebar-scrim"
+          type="button"
+          onClick={() => {
+            setNavPinned(false);
+            setSidebarHidden(true);
+          }}
+          aria-label="Close navigation"
+        />
       ) : null}
 
       <NotesColumn
@@ -727,10 +796,16 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
         onQueryChange={setQuery}
         onNew={() => void handleNew()}
         onSelect={selectNote}
+        onFavoriteNote={favoriteNote}
+        onDuplicateNote={(note) => void duplicateNote(note)}
+        onDeleteNote={(note) => void deleteSingleNote(note)}
         onNavigate={navigateNote}
         onFocusTitle={focusActiveTitle}
         onFocusContent={focusActiveContent}
-        onToggleSidebar={() => setSidebarHidden(false)}
+        onToggleSidebar={() => {
+          setNavPinned(true);
+          setSidebarHidden(false);
+        }}
         onResizeStart={(event) => startColumnResize("notes", event)}
         onResizeBy={(delta) => setColumnWidth("notes", notesWidth + delta)}
       />

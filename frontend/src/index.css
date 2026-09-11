@@ -498,6 +498,30 @@ textarea:focus-visible {
   animation: fade-in 0.18s ease both;
 }
 
+.notes-brand {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  border-radius: 7px;
+  padding: 2px 5px;
+  color: var(--muted);
+  background: none;
+  cursor: pointer;
+  animation: fade-in 0.18s ease both;
+}
+
+.notes-brand:hover {
+  color: var(--text);
+  background: var(--surface-sunken);
+}
+
+.notes-brand .brand-lockup {
+  width: 88px;
+  height: 19px;
+}
+
 .sidebar-restore-button:hover {
   border-color: var(--line-hover-strong);
   color: var(--text);
@@ -637,25 +661,135 @@ kbd,
   font-variant-numeric: tabular-nums;
 }
 
-.shortcut-hints {
+.shortcut-help-button {
   display: flex;
   flex: none;
-  flex-direction: column;
-  gap: 4px;
-  border-top: 1px solid var(--line);
-  padding: 10px 15px;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 7px 9px;
   color: var(--soft);
-  font-size: 11px;
+  background: none;
+  font-size: 12px;
+  cursor: pointer;
 }
 
-.shortcut-hints div {
+.shortcut-help-button:hover {
+  background: var(--hover);
+}
+
+.shortcuts-dialog {
+  width: min(420px, calc(100vw - 32px));
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 0;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.shortcuts-dialog::backdrop {
+  background: rgba(16, 18, 22, 0.32);
+}
+
+.shortcuts-dialog header {
   display: flex;
+  align-items: center;
   justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  padding: 12px 14px;
 }
 
-.shortcut-hints em {
-  font-style: normal;
+.shortcuts-dialog header button {
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 6px;
+  padding: 4px;
+  color: var(--muted);
+  background: none;
+  cursor: pointer;
+}
+
+.shortcuts-dialog header button:hover {
+  background: var(--surface-sunken);
+}
+
+.shortcuts-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+}
+
+.shortcuts-groups h3 {
+  margin: 0 0 6px;
+  color: var(--faint);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.shortcuts-groups div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 12.5px;
+}
+
+.shortcuts-groups kbd {
+  color: var(--muted-strong);
   font-variant-numeric: tabular-nums;
+}
+
+.note-context-menu {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  min-width: 180px;
+  flex-direction: column;
+  gap: 1px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 5px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.note-context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 9px;
+  color: var(--text);
+  background: none;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.note-context-menu button:hover {
+  background: var(--surface-sunken);
+}
+
+.note-context-menu button.danger {
+  color: var(--danger);
+}
+
+.note-context-menu button.danger:hover {
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+}
+
+.note-context-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line);
 }
 
 .account-trigger {
@@ -2800,18 +2934,11 @@ kbd,
   padding: 8px 16px;
 }
 
-.ai-bar-history {
+.editor-topbar > .editor-topbar-history {
   display: flex;
-  flex: none;
   align-items: center;
-  gap: 4px;
-}
-
-.ai-bar-sep {
-  width: 1px;
-  height: 18px;
-  margin: 0 6px 0 2px;
-  background: var(--line);
+  gap: 2px;
+  margin-left: 0;
 }
 
 .ai-bar strong {
@@ -3321,7 +3448,7 @@ kbd,
     max-height: 60dvh;
   }
 
-  .shortcut-hints {
+  .shortcut-help-button {
     display: none;
   }
 }

@@ -46,7 +46,7 @@ describe("NoteEditor AI integration", () => {
     const { host } = mount(null, false);
     expect(host.querySelector(".ai-bar-actions")).toBeNull();
     expect(host.querySelector(".ai-bar-menu")).toBeNull();
-    expect(host.querySelector(".ai-bar-history")).not.toBeNull();
+    expect(host.querySelector(".editor-topbar-history")).not.toBeNull();
     expect(host.querySelector(".ai-bar-count")).not.toBeNull();
   });
 
@@ -81,7 +81,7 @@ describe("NoteEditor AI integration", () => {
     expect(onDismissResult).toHaveBeenCalledOnce();
   });
 
-  it("fires undo and redo from the bottom bar buttons", () => {
+  it("fires undo and redo from the topbar buttons", () => {
     const onUndo = vi.fn();
     const onRedo = vi.fn();
     const host = document.createElement("div");
@@ -118,11 +118,10 @@ describe("NoteEditor AI integration", () => {
         />,
       );
     });
-    act(() => host.querySelector<HTMLButtonElement>(".ai-bar-history button[aria-label='Undo']")?.click());
-    act(() => host.querySelector<HTMLButtonElement>(".ai-bar-history button[aria-label='Redo']")?.click());
+    act(() => host.querySelector<HTMLButtonElement>(".editor-topbar-history button[aria-label='Undo']")?.click());
+    act(() => host.querySelector<HTMLButtonElement>(".editor-topbar-history button[aria-label='Redo']")?.click());
     expect(onUndo).toHaveBeenCalledOnce();
     expect(onRedo).toHaveBeenCalledOnce();
-    expect(host.querySelector(".ai-bar > .ai-bar-sep")).not.toBeNull();
     expect(host.querySelector(".ai-bar > .ai-bar-count")?.textContent).toBe("7 words");
   });
 

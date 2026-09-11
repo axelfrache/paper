@@ -38,6 +38,9 @@ function mount(note: Note) {
         onQueryChange={vi.fn()}
         onNew={vi.fn()}
         onSelect={vi.fn()}
+        onFavoriteNote={vi.fn()}
+        onDuplicateNote={vi.fn()}
+        onDeleteNote={vi.fn()}
         onNavigate={vi.fn()}
         onFocusTitle={vi.fn()}
         onFocusContent={vi.fn()}
@@ -107,5 +110,58 @@ describe("note summary preview", () => {
     const diagram = serializeDiagramMarker(createDefaultDiagram("flat"));
     expect(mount(noteWith("")).textContent).toBe("No content");
     expect(mount(noteWith(diagram)).textContent).toBe("No content");
+  });
+});
+
+describe("note context menu", () => {
+  function mountColumn(note: Note) {
+    const spies = { onDuplicateNote: vi.fn(), onDeleteNote: vi.fn(), onFavoriteNote: vi.fn() };
+    const host = document.createElement("div");
+    document.body.replaceChildren(host);
+    root = createRoot(host);
+    act(() => {
+      root?.render(
+        <NotesColumn
+          title="Notes"
+          notes={[note]}
+          activeId={null}
+          selectedIds={[]}
+          query=""
+          sidebarHidden={false}
+          focusRequest={0}
+          onQueryChange={vi.fn()}
+          onNew={vi.fn()}
+          onSelect={vi.fn()}
+          onFavoriteNote={spies.onFavoriteNote}
+          onDuplicateNote={spies.onDuplicateNote}
+          onDeleteNote={spies.onDeleteNote}
+          onNavigate={vi.fn()}
+          onFocusTitle={vi.fn()}
+          onFocusContent={vi.fn()}
+          onToggleSidebar={vi.fn()}
+          onResizeStart={vi.fn()}
+          onResizeBy={vi.fn()}
+        />,
+      );
+    });
+    return { host, spies };
+  }
+
+  it("opens on right-click and runs the chosen action", () => {
+    const { host, spies } = mountColumn(noteWith("Body"));
+    expect(host.querySelector(".note-context-menu")).toBeNull();
+
+    act(() => {
+      host.querySelector(".note-card")?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    });
+    const menu = host.querySelector(".note-context-menu");
+    expect(menu).not.toBeNull();
+
+    const duplicate = Array.from(menu!.querySelectorAll("button")).find((button) => /duplicate/i.test(button.textContent ?? ""));
+    act(() => duplicate?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })));
+
+    expect(spies.onDuplicateNote).toHaveBeenCalledOnce();
+    expect(spies.onDuplicateNote.mock.calls[0][0].id).toBe("n1");
+    expect(host.querySelector(".note-context-menu")).toBeNull();
   });
 });

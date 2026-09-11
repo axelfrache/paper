@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Moon, Search, Sparkles, Star, Sun, Trash2, X } from "lucide-react";
+import { ArrowLeft, Moon, Redo2, Search, Sparkles, Star, Sun, Trash2, Undo2, X } from "lucide-react";
 import { DiagramEditor } from "../components/DiagramEditor";
 import { MarkdownEditor } from "../components/MarkdownEditor";
 import { MarkdownView } from "../components/MarkdownView";
@@ -237,6 +237,8 @@ export function NoteEditor({
         onToggleTheme={onToggleTheme}
         onSearch={onSearch}
         onDelete={onDelete}
+        onUndo={onUndo}
+        onRedo={onRedo}
         theme={theme}
         onBackToNotes={onBackToNotes}
       />
@@ -330,17 +332,8 @@ export function NoteEditor({
       ) : null}
 
       <footer className="ai-bar">
-        <div className="ai-bar-history">
-          <button type="button" title="Undo  Ctrl+Z" aria-label="Undo" onClick={onUndo}>
-            Undo
-          </button>
-          <button type="button" title="Redo  Ctrl+Shift+Z" aria-label="Redo" onClick={onRedo}>
-            Redo
-          </button>
-        </div>
         {aiEnabled ? (
           <>
-            <span className="ai-bar-sep" aria-hidden="true"></span>
             <strong>AI</strong>
             <div className="ai-bar-actions">
               {aiActions.map((action) => (
@@ -413,6 +406,8 @@ function EditorTopbar({
   onToggleTheme,
   onSearch,
   onDelete,
+  onUndo,
+  onRedo,
   theme,
   onBackToNotes,
 }: {
@@ -423,6 +418,8 @@ function EditorTopbar({
   onToggleTheme: () => void;
   onSearch: () => void;
   onDelete: () => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
   theme: "light" | "dark";
   onBackToNotes: () => void;
 }) {
@@ -432,6 +429,16 @@ function EditorTopbar({
         <ArrowLeft size={16} strokeWidth={1.9} />
       </button>
       <span>{label}</span>
+      {onUndo && onRedo ? (
+        <div className="editor-topbar-history">
+          <button className="topbar-icon-button" type="button" onClick={onUndo} title="Undo  Ctrl+Z" aria-label="Undo">
+            <Undo2 size={14} strokeWidth={1.9} />
+          </button>
+          <button className="topbar-icon-button" type="button" onClick={onRedo} title="Redo  Ctrl+Shift+Z" aria-label="Redo">
+            <Redo2 size={14} strokeWidth={1.9} />
+          </button>
+        </div>
+      ) : null}
       <div>
         <button
           className={favorite ? "topbar-button favorite" : "topbar-button"}

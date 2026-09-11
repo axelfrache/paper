@@ -1,6 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PointerEvent } from "react";
-import { PanelLeftOpen, Plus, Search, Star } from "lucide-react";
+import { Copy, PanelLeftOpen, Plus, PanelRightOpen, Search, Star, StarOff, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { parseInline } from "../lib/markdown/inline";
 import type { MarkdownInline } from "../lib/markdown/inline";
@@ -20,6 +20,9 @@ type NotesColumnProps = {
   onQueryChange: (query: string) => void;
   onNew: () => void;
   onSelect: (note: Note, extend: boolean) => void;
+  onFavoriteNote: (note: Note) => void;
+  onDuplicateNote: (note: Note) => void;
+  onDeleteNote: (note: Note) => void;
   onNavigate: (direction: NoteDirection, extend: boolean) => void;
   onFocusTitle: () => void;
   onFocusContent: () => void;
@@ -39,6 +42,9 @@ export function NotesColumn({
   onQueryChange,
   onNew,
   onSelect,
+  onFavoriteNote,
+  onDuplicateNote,
+  onDeleteNote,
   onNavigate,
   onFocusTitle,
   onFocusContent,
@@ -50,6 +56,42 @@ export function NotesColumn({
   const cardRefs = useRef(new Map<string, HTMLButtonElement>());
   const focusAfterNavigationRef = useRef(false);
   const handledFocusRequestRef = useRef(0);
+  const [menu, setMenu] = useState<{ note: Note; x: number; y: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!menu) {
+      return;
+    }
+    const close = () => setMenu(null);
+    const onPointerDown = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        close();
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        close();
+      }
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("resize", close);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [menu]);
+
+  const runMenuAction = (action: (note: Note) => void) => {
+    if (menu) {
+      action(menu.note);
+    }
+    setMenu(null);
+  };
 
   useEffect(() => {
     const shouldFocusRequest = focusRequest > 0 && handledFocusRequestRef.current !== focusRequest;
@@ -71,7 +113,9 @@ export function NotesColumn({
     <section className="notes-column">
       <div className="notes-filter">
         {sidebarHidden ? (
-          <button className="sidebar-restore-button" onClick={onToggleSidebar} aria-label="Expand navigation">
+          <button className="notes-brand" onClick={onToggleSidebar} aria-label="Expand navigation" title="Expand navigation">
+            <img className="brand-lockup brand-lockup-light" src="/paper-lockup.svg" alt="Paper" />
+            <img className="brand-lockup brand-lockup-dark" src="/paper-lockup-dark.svg" alt="Paper" />
             <PanelLeftOpen size={15} strokeWidth={1.9} />
           </button>
         ) : null}
@@ -103,6 +147,10 @@ export function NotesColumn({
             className={noteCardClass(note.id, activeId, selected)}
             aria-selected={selected.has(note.id)}
             onClick={(event) => onSelect(note, event.shiftKey)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              setMenu({ note, x: event.clientX, y: event.clientY });
+            }}
             onKeyDown={(event) => {
               if ((event.key === "Enter" || event.key === "ArrowRight") && !event.ctrlKey && !event.metaKey && !event.altKey) {
                 event.preventDefault();
@@ -158,6 +206,33 @@ export function NotesColumn({
           }
         }}
       />
+
+      {menu ? (
+        <div
+          ref={menuRef}
+          className="note-context-menu"
+          role="menu"
+          style={{ left: menu.x, top: menu.y }}
+        >
+          <button type="button" role="menuitem" onClick={() => runMenuAction((note) => onSelect(note, false))}>
+            <PanelRightOpen size={14} strokeWidth={1.8} />
+            <span>Open</span>
+          </button>
+          <button type="button" role="menuitem" onClick={() => runMenuAction(onFavoriteNote)}>
+            {menu.note.favorite ? <StarOff size={14} strokeWidth={1.8} /> : <Star size={14} strokeWidth={1.8} />}
+            <span>{menu.note.favorite ? "Remove favorite" : "Add to favorites"}</span>
+          </button>
+          <button type="button" role="menuitem" onClick={() => runMenuAction(onDuplicateNote)}>
+            <Copy size={14} strokeWidth={1.8} />
+            <span>Duplicate</span>
+          </button>
+          <span className="note-context-menu-sep" aria-hidden="true"></span>
+          <button type="button" role="menuitem" className="danger" onClick={() => runMenuAction(onDeleteNote)}>
+            <Trash2 size={14} strokeWidth={1.8} />
+            <span>Delete</span>
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }
