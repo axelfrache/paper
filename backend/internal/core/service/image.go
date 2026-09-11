@@ -57,6 +57,9 @@ func (s *Image) Upload(ctx context.Context, noteID string, upload domain.ImageUp
 	if !ok {
 		return domain.NoteImage{}, &domain.AppError{Kind: domain.KindUnsupportedMedia, Message: "The selected file is not a supported image."}
 	}
+	if contentType == "image/svg+xml" && svgHasActiveContent(upload.Data) {
+		return domain.NoteImage{}, &domain.AppError{Kind: domain.KindUnsupportedMedia, Message: "The SVG contains active content and was rejected."}
+	}
 
 	id, err := newImageID(extension)
 	if err != nil {
@@ -142,6 +145,18 @@ func normalizeImageContentType(claimed string, data []byte) string {
 func looksLikeSVG(data []byte) bool {
 	head := strings.ToLower(strings.TrimSpace(string(data[:min(len(data), 512)])))
 	return strings.HasPrefix(head, "<svg") || (strings.HasPrefix(head, "<?xml") && strings.Contains(head, "<svg"))
+}
+
+var svgEventHandlerPattern = regexp.MustCompile(`(?i)\son[a-z]+\s*=`)
+
+func svgHasActiveContent(data []byte) bool {
+	lower := strings.ToLower(string(data))
+	if strings.Contains(lower, "<script") ||
+		strings.Contains(lower, "javascript:") ||
+		strings.Contains(lower, "<foreignobject") {
+		return true
+	}
+	return svgEventHandlerPattern.Match(data)
 }
 
 func cleanImageName(name, extension string) string {

@@ -192,9 +192,17 @@ func (h *Handler) GetNoteImage(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	if image.ETag != "" {
 		w.Header().Set("ETag", `"`+image.ETag+`"`)
 	}
-	if image.Name != "" {
-		w.Header().Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": image.Name}))
+	disposition := "inline"
+	if image.ContentType == "image/svg+xml" {
+		disposition = "attachment"
 	}
+	params := map[string]string{}
+	if image.Name != "" {
+		params["filename"] = image.Name
+	}
+	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, params))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
 	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
 	w.WriteHeader(stdhttp.StatusOK)
 	_, _ = io.Copy(w, image.Body)

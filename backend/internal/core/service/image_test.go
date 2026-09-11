@@ -80,6 +80,46 @@ func TestImageUploadRejectsUnsupportedContent(t *testing.T) {
 	}
 }
 
+func TestImageUploadAcceptsCleanSVG(t *testing.T) {
+	repo := memory.NewNoteRepository()
+	ctx := domain.ContextWithUser(context.Background(), domain.User{ID: "user-1"})
+	note, err := repo.Create(ctx, "user-1", domain.NoteDraft{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewImage(repo, repo, &imageStorageStub{})
+	svg := []byte(`<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10" fill="red"/></svg>`)
+
+	image, err := service.Upload(ctx, note.ID, domain.ImageUpload{Name: "shape.svg", ContentType: "image/svg+xml", Data: svg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if image.ContentType != "image/svg+xml" {
+		t.Fatalf("unexpected content type %q", image.ContentType)
+	}
+}
+
+func TestImageUploadRejectsSVGWithActiveContent(t *testing.T) {
+	repo := memory.NewNoteRepository()
+	ctx := domain.ContextWithUser(context.Background(), domain.User{ID: "user-1"})
+	note, err := repo.Create(ctx, "user-1", domain.NoteDraft{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewImage(repo, repo, &imageStorageStub{})
+
+	payloads := map[string][]byte{
+		"script":        []byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`),
+		"event":         []byte(`<svg xmlns="http://www.w3.org/2000/svg"><rect onload="alert(1)"/></svg>`),
+		"foreignobject": []byte(`<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><body>x</body></foreignObject></svg>`),
+	}
+	for name, svg := range payloads {
+		if _, err := service.Upload(ctx, note.ID, domain.ImageUpload{Name: "bad.svg", ContentType: "image/svg+xml", Data: svg}); err == nil {
+			t.Fatalf("expected the %s SVG payload to be rejected", name)
+		}
+	}
+}
+
 func TestImageAccessIsScopedToItsOwner(t *testing.T) {
 	repo := memory.NewNoteRepository()
 	owner := domain.ContextWithUser(context.Background(), domain.User{ID: "user-1"})
