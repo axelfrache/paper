@@ -12,6 +12,7 @@ const (
 	KindAIUnavailable    ErrorKind = "ai_unavailable"
 	KindUnauthorized     ErrorKind = "unauthorized"
 	KindForbidden        ErrorKind = "forbidden"
+	KindRateLimited      ErrorKind = "rate_limited"
 )
 
 type AppError struct {
@@ -42,4 +43,8 @@ func NewForbiddenError(format string, args ...any) error {
 
 func NewAIError(status int, format string, args ...any) error {
 	return &AppError{Kind: KindAIUnavailable, Status: status, Message: fmt.Sprintf(format, args...)}
+}
+
+func NewRateLimitedError(format string, args ...any) error {
+	return &AppError{Kind: KindRateLimited, Message: fmt.Sprintf(format, args...)}
 }

@@ -130,6 +130,15 @@ func main() {
 	router := httpadapter.NewRouter(noteService, imageService, authService, httpadapter.AuthHTTPConfig{
 		CookieSecure: cfg.AuthCookieSecure,
 		AIEnabled:    aiEnabled,
+	}, httpadapter.RateLimitConfig{
+		Enabled:       cfg.RateLimitEnabled,
+		TrustProxy:    cfg.TrustProxy,
+		AuthPerMinute: cfg.RateLimitAuthPerMinute,
+		AuthBurst:     cfg.RateLimitAuthBurst,
+		AIPerMinute:   cfg.RateLimitAIPerMinute,
+		AIBurst:       cfg.RateLimitAIBurst,
+		APIPerMinute:  cfg.RateLimitAPIPerMinute,
+		APIBurst:      cfg.RateLimitAPIBurst,
 	}, cfg.AllowedOrigins)
 	server := httpadapter.NewServer(cfg.Addr(), router, cfg.AITimeout+30*time.Second)
 

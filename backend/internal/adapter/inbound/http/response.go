@@ -43,6 +43,8 @@ func writeError(w stdhttp.ResponseWriter, err error) {
 			status = stdhttp.StatusUnauthorized
 		case domain.KindForbidden:
 			status = stdhttp.StatusForbidden
+		case domain.KindRateLimited:
+			status = stdhttp.StatusTooManyRequests
 		}
 	}
 

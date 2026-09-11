@@ -40,6 +40,14 @@ type Config struct {
 	AuthLocalAdminEmail    string
 	AuthLocalAdminName     string
 	AuthLocalAdminPassword string
+	RateLimitEnabled       bool
+	TrustProxy             bool
+	RateLimitAuthPerMinute int
+	RateLimitAuthBurst     int
+	RateLimitAIPerMinute   int
+	RateLimitAIBurst       int
+	RateLimitAPIPerMinute  int
+	RateLimitAPIBurst      int
 }
 
 func Load() Config {
@@ -91,7 +99,27 @@ func Load() Config {
 		AuthLocalAdminEmail:    getEnv("AUTH_LOCAL_ADMIN_EMAIL", ""),
 		AuthLocalAdminName:     getEnv("AUTH_LOCAL_ADMIN_NAME", "Administrator"),
 		AuthLocalAdminPassword: os.Getenv("AUTH_LOCAL_ADMIN_PASSWORD"),
+		RateLimitEnabled:       getBool("RATE_LIMIT_ENABLED", true),
+		TrustProxy:             getBool("TRUST_PROXY", false),
+		RateLimitAuthPerMinute: getInt("RATE_LIMIT_AUTH_PER_MINUTE", 10),
+		RateLimitAuthBurst:     getInt("RATE_LIMIT_AUTH_BURST", 5),
+		RateLimitAIPerMinute:   getInt("RATE_LIMIT_AI_PER_MINUTE", 20),
+		RateLimitAIBurst:       getInt("RATE_LIMIT_AI_BURST", 5),
+		RateLimitAPIPerMinute:  getInt("RATE_LIMIT_API_PER_MINUTE", 300),
+		RateLimitAPIBurst:      getInt("RATE_LIMIT_API_BURST", 60),
 	}
+}
+
+func getInt(key string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }
 
 func (c Config) Addr() string {

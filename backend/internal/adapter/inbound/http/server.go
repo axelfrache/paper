@@ -8,16 +8,27 @@ import (
 	"github.com/axelfrache/paper/backend/internal/core/port"
 )
 
-func NewRouter(notes port.NoteService, images port.NoteImageService, auth port.AuthService, authConfig AuthHTTPConfig, allowedOrigins []string) stdhttp.Handler {
+func NewRouter(notes port.NoteService, images port.NoteImageService, auth port.AuthService, authConfig AuthHTTPConfig, rateConfig RateLimitConfig, allowedOrigins []string) stdhttp.Handler {
 	handler := NewHandler(notes, images)
 	authHandler := NewAuthHandler(auth, authConfig)
+
+	var authLimiter, aiLimiter, apiLimiter *rateLimiter
+	if rateConfig.Enabled {
+		authLimiter = newRateLimiter(rateConfig.AuthPerMinute, rateConfig.AuthBurst)
+		aiLimiter = newRateLimiter(rateConfig.AIPerMinute, rateConfig.AIBurst)
+		apiLimiter = newRateLimiter(rateConfig.APIPerMinute, rateConfig.APIBurst)
+	}
+	clientIP := clientIPFunc(rateConfig.TrustProxy)
+	ai := func(next stdhttp.HandlerFunc) stdhttp.Handler {
+		return requireAuth(auth, rateLimit(aiLimiter, userKey, stdhttp.HandlerFunc(next)))
+	}
 
 	mux := stdhttp.NewServeMux()
 	mux.HandleFunc("GET /api/health", handler.Health)
 	mux.HandleFunc("GET /api/auth/config", authHandler.Config)
 	mux.HandleFunc("GET /api/auth/login", authHandler.Login)
-	mux.HandleFunc("POST /api/auth/login", authHandler.LoginPassword)
-	mux.HandleFunc("POST /api/auth/register", authHandler.RegisterPassword)
+	mux.Handle("POST /api/auth/login", rateLimit(authLimiter, clientIP, stdhttp.HandlerFunc(authHandler.LoginPassword)))
+	mux.Handle("POST /api/auth/register", rateLimit(authLimiter, clientIP, stdhttp.HandlerFunc(authHandler.RegisterPassword)))
 	mux.HandleFunc("GET /api/auth/callback", authHandler.Callback)
 	mux.HandleFunc("POST /api/auth/logout", authHandler.Logout)
 	mux.Handle("GET /api/auth/me", requireAuth(auth, stdhttp.HandlerFunc(authHandler.Me)))
@@ -26,18 +37,18 @@ func NewRouter(notes port.NoteService, images port.NoteImageService, auth port.A
 	mux.Handle("GET /api/notes/{id}", requireAuth(auth, stdhttp.HandlerFunc(handler.GetNote)))
 	mux.Handle("PATCH /api/notes/{id}", requireAuth(auth, stdhttp.HandlerFunc(handler.UpdateNote)))
 	mux.Handle("DELETE /api/notes/{id}", requireAuth(auth, stdhttp.HandlerFunc(handler.DeleteNote)))
-	mux.Handle("POST /api/notes/{id}/assist", requireAuth(auth, stdhttp.HandlerFunc(handler.AssistNote)))
+	mux.Handle("POST /api/notes/{id}/assist", ai(handler.AssistNote))
 	mux.Handle("POST /api/notes/{id}/images", requireAuth(auth, stdhttp.HandlerFunc(handler.UploadNoteImage)))
 	mux.Handle("GET /api/images/{imageID}", requireAuth(auth, stdhttp.HandlerFunc(handler.GetNoteImage)))
 	mux.Handle("DELETE /api/images/{imageID}", requireAuth(auth, stdhttp.HandlerFunc(handler.DeleteNoteImage)))
-	mux.Handle("POST /api/notes/ask", requireAuth(auth, stdhttp.HandlerFunc(handler.AskNotes)))
-	mux.Handle("POST /api/ai/generate", requireAuth(auth, stdhttp.HandlerFunc(handler.GenerateAI)))
+	mux.Handle("POST /api/notes/ask", ai(handler.AskNotes))
+	mux.Handle("POST /api/ai/generate", ai(handler.GenerateAI))
 	mux.Handle("POST /api/search", requireAuth(auth, stdhttp.HandlerFunc(handler.SearchNotes)))
 	mux.Handle("/api", stdhttp.NotFoundHandler())
 	mux.Handle("/api/", stdhttp.NotFoundHandler())
 	mux.Handle("/", newSPAHandler(embeddedFrontend()))
 
-	return cors(allowedOrigins)(mux)
+	return cors(allowedOrigins)(rateLimitAPI(apiLimiter, clientIP, mux))
 }
 
 // NewServer builds the API server. writeTimeout must stay above the AI client's own

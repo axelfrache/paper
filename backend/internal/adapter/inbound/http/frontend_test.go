@@ -66,7 +66,7 @@ func TestEmbeddedFrontendFilesystemIsAvailable(t *testing.T) {
 func TestRouterDoesNotServeTheSPAForUnknownAPIRoutes(t *testing.T) {
 	request := httptest.NewRequest(stdhttp.MethodGet, "/api/missing", nil)
 	response := httptest.NewRecorder()
-	NewRouter(nil, nil, nil, AuthHTTPConfig{}, nil).ServeHTTP(response, request)
+	NewRouter(nil, nil, nil, AuthHTTPConfig{}, RateLimitConfig{}, nil).ServeHTTP(response, request)
 	if response.Code != stdhttp.StatusNotFound {
 		t.Fatalf("expected status %d, got %d", stdhttp.StatusNotFound, response.Code)
 	}
