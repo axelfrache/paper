@@ -824,6 +824,99 @@ kbd,
   font-weight: 650;
 }
 
+.account-avatar {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.account-dialog section.account-profile {
+  gap: 12px;
+}
+
+.account-avatar-edit {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.account-avatar-lg {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--muted-strong);
+  background: var(--surface);
+  font-size: 16px;
+  font-weight: 650;
+  object-fit: cover;
+}
+
+.account-avatar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.account-avatar-actions button {
+  border: 1px solid var(--line-button);
+  border-radius: 6px;
+  padding: 4px 9px;
+  color: var(--muted-strong);
+  background: var(--surface);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.account-avatar-actions button:hover:not(:disabled) {
+  border-color: var(--line-hover-strong);
+  color: var(--text);
+}
+
+.account-avatar-actions button.link-danger {
+  border: none;
+  padding: 4px 2px;
+  color: var(--danger);
+  background: none;
+}
+
+.account-avatar-actions button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.account-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.account-field input {
+  height: 34px;
+  border: 1px solid var(--line-input);
+  border-radius: 7px;
+  padding: 0 10px;
+  color: var(--text);
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.account-field input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.account-error {
+  color: var(--danger);
+  font-size: 12px;
+}
+
 .account-trigger div {
   display: flex;
   min-width: 0;

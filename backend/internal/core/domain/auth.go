@@ -38,6 +38,14 @@ type UserRecord struct {
 	UpdatedAt    time.Time
 }
 
+type UserProfile struct {
+	UserID            string
+	DisplayName       string
+	AvatarKey         string
+	AvatarContentType string
+	UpdatedAt         time.Time
+}
+
 type Session struct {
 	ID            string
 	User          User

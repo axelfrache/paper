@@ -59,6 +59,25 @@ export function logout() {
   return request<{ redirectTo: string }>("/api/auth/logout", { method: "POST" });
 }
 
+export function updateDisplayName(displayName: string) {
+  return request<AuthUser>("/api/profile", { method: "PATCH", body: JSON.stringify({ displayName }) });
+}
+
+export async function uploadAvatar(file: File) {
+  const body = new FormData();
+  body.append("file", file);
+  const response = await fetch("/api/profile/avatar", { method: "POST", body, credentials: "same-origin" });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new APIError(payload?.error ?? "Avatar upload failed", response.status);
+  }
+  return response.json() as Promise<AuthUser>;
+}
+
+export function removeAvatar() {
+  return request<AuthUser>("/api/profile/avatar", { method: "DELETE" });
+}
+
 export function listNotes() {
   return request<Note[]>("/api/notes");
 }

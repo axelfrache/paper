@@ -10,4 +10,5 @@ export type AuthUser = {
   name: string;
   roles: string[];
   isAdmin: boolean;
+  avatarUrl: string | null;
 };

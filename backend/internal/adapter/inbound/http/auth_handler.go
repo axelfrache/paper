@@ -2,6 +2,8 @@ package http
 
 import (
 	stdhttp "net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/axelfrache/paper/backend/internal/core/domain"
@@ -17,12 +19,28 @@ type AuthHTTPConfig struct {
 }
 
 type AuthHandler struct {
-	service port.AuthService
-	config  AuthHTTPConfig
+	service  port.AuthService
+	profiles port.ProfileService
+	config   AuthHTTPConfig
 }
 
-func NewAuthHandler(service port.AuthService, config AuthHTTPConfig) *AuthHandler {
-	return &AuthHandler{service: service, config: config}
+func NewAuthHandler(service port.AuthService, profiles port.ProfileService, config AuthHTTPConfig) *AuthHandler {
+	return &AuthHandler{service: service, profiles: profiles, config: config}
+}
+
+func userResponse(user domain.User, profile domain.UserProfile) map[string]any {
+	name := user.Name
+	if strings.TrimSpace(profile.DisplayName) != "" {
+		name = profile.DisplayName
+	}
+	var avatarURL any
+	if profile.AvatarKey != "" {
+		avatarURL = "/api/profile/avatar?v=" + strconv.FormatInt(profile.UpdatedAt.Unix(), 10)
+	}
+	return map[string]any{
+		"id": user.ID, "email": user.Email, "name": name,
+		"roles": user.Roles, "isAdmin": user.IsAdmin(), "avatarUrl": avatarURL,
+	}
 }
 
 func (h *AuthHandler) Config(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
@@ -116,10 +134,12 @@ func (h *AuthHandler) Me(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, stdhttp.StatusOK, map[string]any{
-		"id": user.ID, "email": user.Email, "name": user.Name,
-		"roles": user.Roles, "isAdmin": user.IsAdmin(),
-	})
+	profile, err := h.profiles.Get(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, stdhttp.StatusOK, userResponse(user, profile))
 }
 
 func (h *AuthHandler) Logout(w stdhttp.ResponseWriter, r *stdhttp.Request) {

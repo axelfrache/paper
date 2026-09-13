@@ -88,6 +88,19 @@ type UserRepository interface {
 	SetRoles(ctx context.Context, id string, roles []string) error
 }
 
+type ProfileService interface {
+	Get(ctx context.Context) (domain.UserProfile, error)
+	SetDisplayName(ctx context.Context, name string) (domain.UserProfile, error)
+	SetAvatar(ctx context.Context, upload domain.ImageUpload) (domain.UserProfile, error)
+	RemoveAvatar(ctx context.Context) (domain.UserProfile, error)
+	OpenAvatar(ctx context.Context) (StoredImage, error)
+}
+
+type UserProfileRepository interface {
+	Get(ctx context.Context, userID string) (domain.UserProfile, error)
+	Upsert(ctx context.Context, profile domain.UserProfile) error
+}
+
 type SessionRepository interface {
 	Save(ctx context.Context, session domain.Session) error
 	Get(ctx context.Context, id string) (domain.Session, error)

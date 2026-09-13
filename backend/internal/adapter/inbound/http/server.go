@@ -8,9 +8,10 @@ import (
 	"github.com/axelfrache/paper/backend/internal/core/port"
 )
 
-func NewRouter(notes port.NoteService, images port.NoteImageService, auth port.AuthService, authConfig AuthHTTPConfig, rateConfig RateLimitConfig, allowedOrigins []string) stdhttp.Handler {
+func NewRouter(notes port.NoteService, images port.NoteImageService, auth port.AuthService, profiles port.ProfileService, authConfig AuthHTTPConfig, rateConfig RateLimitConfig, allowedOrigins []string) stdhttp.Handler {
 	handler := NewHandler(notes, images)
-	authHandler := NewAuthHandler(auth, authConfig)
+	authHandler := NewAuthHandler(auth, profiles, authConfig)
+	profileHandler := NewProfileHandler(profiles)
 
 	var authLimiter, aiLimiter, apiLimiter *rateLimiter
 	if rateConfig.Enabled {
@@ -32,6 +33,10 @@ func NewRouter(notes port.NoteService, images port.NoteImageService, auth port.A
 	mux.HandleFunc("GET /api/auth/callback", authHandler.Callback)
 	mux.HandleFunc("POST /api/auth/logout", authHandler.Logout)
 	mux.Handle("GET /api/auth/me", requireAuth(auth, stdhttp.HandlerFunc(authHandler.Me)))
+	mux.Handle("PATCH /api/profile", requireAuth(auth, stdhttp.HandlerFunc(profileHandler.Update)))
+	mux.Handle("POST /api/profile/avatar", requireAuth(auth, stdhttp.HandlerFunc(profileHandler.UploadAvatar)))
+	mux.Handle("DELETE /api/profile/avatar", requireAuth(auth, stdhttp.HandlerFunc(profileHandler.RemoveAvatar)))
+	mux.Handle("GET /api/profile/avatar", requireAuth(auth, stdhttp.HandlerFunc(profileHandler.Avatar)))
 	mux.Handle("GET /api/notes", requireAuth(auth, stdhttp.HandlerFunc(handler.ListNotes)))
 	mux.Handle("POST /api/notes", requireAuth(auth, stdhttp.HandlerFunc(handler.CreateNote)))
 	mux.Handle("GET /api/notes/{id}", requireAuth(auth, stdhttp.HandlerFunc(handler.GetNote)))

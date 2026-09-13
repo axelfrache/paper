@@ -1,5 +1,6 @@
 import { LogOut, ShieldCheck, UserRound, X } from "lucide-react";
 import { useRef, useState } from "react";
+import { APIError, removeAvatar, updateDisplayName, uploadAvatar } from "../lib/api";
 import type { AuthUser } from "../types/auth";
 
 type AccountMenuProps = {
@@ -9,16 +10,45 @@ type AccountMenuProps = {
 
 export function AccountMenu({ user, onLogout }: AccountMenuProps) {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [account, setAccount] = useState<AuthUser>(user);
+  const [nameDraft, setNameDraft] = useState(user.name);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>("");
-  const label = user.name || user.email || "Account";
+  const label = account.name || account.email || "Account";
+
+  const run = async (action: () => Promise<AuthUser>) => {
+    setBusy(true);
+    setError("");
+    try {
+      const next = await action();
+      setAccount(next);
+      setNameDraft(next.name);
+    } catch (caught) {
+      setError(caught instanceof APIError ? caught.message : "Something went wrong.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveName = () => {
+    if (nameDraft.trim() === account.name.trim()) {
+      return;
+    }
+    void run(() => updateDisplayName(nameDraft));
+  };
 
   return (
     <>
       <button className="account-trigger" type="button" onClick={() => dialogRef.current?.showModal()}>
-        <span>{initials(label)}</span>
+        {account.avatarUrl ? (
+          <img className="account-avatar" src={account.avatarUrl} alt="" />
+        ) : (
+          <span>{initials(label)}</span>
+        )}
         <div>
           <strong>{label}</strong>
-          <small>{user.email}</small>
+          <small>{account.email}</small>
         </div>
       </button>
 
@@ -31,20 +61,64 @@ export function AccountMenu({ user, onLogout }: AccountMenuProps) {
             <X size={15} />
           </button>
         </header>
-        <section>
-          <strong>{label}</strong>
-          <span>{user.email}</span>
-          {user.isAdmin ? (
+        <section className="account-profile">
+          <div className="account-avatar-edit">
+            {account.avatarUrl ? (
+              <img className="account-avatar account-avatar-lg" src={account.avatarUrl} alt="" />
+            ) : (
+              <span className="account-avatar-lg">{initials(label)}</span>
+            )}
+            <div className="account-avatar-actions">
+              <button type="button" disabled={busy} onClick={() => fileRef.current?.click()}>
+                {account.avatarUrl ? "Change photo" : "Add photo"}
+              </button>
+              {account.avatarUrl ? (
+                <button type="button" className="link-danger" disabled={busy} onClick={() => void run(removeAvatar)}>
+                  Remove
+                </button>
+              ) : null}
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/png,image/jpeg,image/gif,image/webp"
+                hidden
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (file) {
+                    void run(() => uploadAvatar(file));
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <label className="account-field">
+            <span>Display name</span>
+            <input
+              value={nameDraft}
+              disabled={busy}
+              onChange={(event) => setNameDraft(event.target.value)}
+              onBlur={saveName}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  event.currentTarget.blur();
+                }
+              }}
+            />
+          </label>
+          <span className="account-email">{account.email}</span>
+          {account.isAdmin ? (
             <em>
               <ShieldCheck size={13} /> Paper administrator
             </em>
           ) : null}
+          {error ? <div className="account-error">{error}</div> : null}
         </section>
         <footer>
           <button type="button" onClick={() => void onLogout().catch(() => setError("Could not sign out"))}>
             <LogOut size={14} /> Sign out
           </button>
-          {error ? <span>{error}</span> : null}
         </footer>
       </dialog>
     </>

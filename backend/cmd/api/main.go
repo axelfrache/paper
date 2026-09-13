@@ -127,7 +127,14 @@ func main() {
 	}
 	imageService := service.NewImage(notes, notes, imageStorage)
 
-	router := httpadapter.NewRouter(noteService, imageService, authService, httpadapter.AuthHTTPConfig{
+	profiles, err := postgres.NewUserProfileRepository(startupCtx, cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("profile database connection failed: %v", err)
+	}
+	defer profiles.Close()
+	profileService := service.NewProfile(profiles, imageStorage)
+
+	router := httpadapter.NewRouter(noteService, imageService, authService, profileService, httpadapter.AuthHTTPConfig{
 		CookieSecure: cfg.AuthCookieSecure,
 		AIEnabled:    aiEnabled,
 	}, httpadapter.RateLimitConfig{
