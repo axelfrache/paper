@@ -35,7 +35,7 @@ func userResponse(user domain.User, profile domain.UserProfile) map[string]any {
 	}
 	var avatarURL any
 	if profile.AvatarKey != "" {
-		avatarURL = "/api/profile/avatar?v=" + strconv.FormatInt(profile.UpdatedAt.Unix(), 10)
+		avatarURL = "/api/profile/avatar?v=" + strconv.FormatInt(profile.UpdatedAt.UnixNano(), 10)
 	}
 	return map[string]any{
 		"id": user.ID, "email": user.Email, "name": name,

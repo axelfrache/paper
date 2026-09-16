@@ -1,6 +1,11 @@
-import { LogOut, ShieldCheck, UserRound, X } from "lucide-react";
+import { LogOut, Pencil, ShieldCheck, UserRound, X } from "lucide-react";
 import { useRef, useState } from "react";
-import { APIError, removeAvatar, updateDisplayName, uploadAvatar } from "../lib/api";
+import {
+  APIError,
+  removeAvatar,
+  updateDisplayName,
+  uploadAvatar,
+} from "../lib/api";
 import type { AuthUser } from "../types/auth";
 
 type AccountMenuProps = {
@@ -25,7 +30,9 @@ export function AccountMenu({ user, onLogout }: AccountMenuProps) {
       setAccount(next);
       setNameDraft(next.name);
     } catch (caught) {
-      setError(caught instanceof APIError ? caught.message : "Something went wrong.");
+      setError(
+        caught instanceof APIError ? caught.message : "Something went wrong.",
+      );
     } finally {
       setBusy(false);
     }
@@ -40,7 +47,11 @@ export function AccountMenu({ user, onLogout }: AccountMenuProps) {
 
   return (
     <>
-      <button className="account-trigger" type="button" onClick={() => dialogRef.current?.showModal()}>
+      <button
+        className="account-trigger"
+        type="button"
+        onClick={() => dialogRef.current?.showModal()}
+      >
         {account.avatarUrl ? (
           <img className="account-avatar" src={account.avatarUrl} alt="" />
         ) : (
@@ -52,46 +63,67 @@ export function AccountMenu({ user, onLogout }: AccountMenuProps) {
         </div>
       </button>
 
-      <dialog className="account-dialog" ref={dialogRef} onClose={() => setError("")}>
+      <dialog
+        className="account-dialog"
+        ref={dialogRef}
+        onClose={() => setError("")}
+      >
         <header>
           <div className="account-dialog-icon">
             <UserRound size={17} strokeWidth={1.8} />
           </div>
-          <button type="button" onClick={() => dialogRef.current?.close()} aria-label="Close">
+          <button
+            type="button"
+            onClick={() => dialogRef.current?.close()}
+            aria-label="Close"
+          >
             <X size={15} />
           </button>
         </header>
         <section className="account-profile">
-          <div className="account-avatar-edit">
+          <div className="account-avatar-frame">
             {account.avatarUrl ? (
-              <img className="account-avatar account-avatar-lg" src={account.avatarUrl} alt="" />
+              <img
+                className="account-avatar-lg"
+                src={account.avatarUrl}
+                alt=""
+              />
             ) : (
               <span className="account-avatar-lg">{initials(label)}</span>
             )}
-            <div className="account-avatar-actions">
-              <button type="button" disabled={busy} onClick={() => fileRef.current?.click()}>
-                {account.avatarUrl ? "Change photo" : "Add photo"}
-              </button>
-              {account.avatarUrl ? (
-                <button type="button" className="link-danger" disabled={busy} onClick={() => void run(removeAvatar)}>
-                  Remove
-                </button>
-              ) : null}
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/png,image/jpeg,image/gif,image/webp"
-                hidden
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  event.target.value = "";
-                  if (file) {
-                    void run(() => uploadAvatar(file));
-                  }
-                }}
-              />
-            </div>
+            <button
+              type="button"
+              className="account-avatar-badge"
+              disabled={busy}
+              aria-label={account.avatarUrl ? "Change photo" : "Add photo"}
+              onClick={() => fileRef.current?.click()}
+            >
+              <Pencil size={13} strokeWidth={1.9} />
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) {
+                  void run(() => uploadAvatar(file));
+                }
+              }}
+            />
           </div>
+          {account.avatarUrl ? (
+            <button
+              type="button"
+              className="account-remove"
+              disabled={busy}
+              onClick={() => void run(removeAvatar)}
+            >
+              Remove photo
+            </button>
+          ) : null}
           <label className="account-field">
             <span>Display name</span>
             <input
@@ -116,7 +148,12 @@ export function AccountMenu({ user, onLogout }: AccountMenuProps) {
           {error ? <div className="account-error">{error}</div> : null}
         </section>
         <footer>
-          <button type="button" onClick={() => void onLogout().catch(() => setError("Could not sign out"))}>
+          <button
+            type="button"
+            onClick={() =>
+              void onLogout().catch(() => setError("Could not sign out"))
+            }
+          >
             <LogOut size={14} /> Sign out
           </button>
         </footer>
