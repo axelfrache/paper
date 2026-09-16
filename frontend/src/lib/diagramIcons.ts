@@ -1,5 +1,32 @@
 const isoIconBasePath = "/diagram-icons/cloud-native";
 const flatIconBasePath = "/diagram-icons/flat";
+const toneIconBasePath = "/diagram-icons/cloud-native/tones";
+
+export const diagramIconTones = [
+  "sapphire",
+  "lagoon",
+  "emeraude",
+  "banana",
+  "carrot",
+  "raspberry",
+  "grape",
+  "gray",
+] as const;
+
+export type DiagramIconTone = (typeof diagramIconTones)[number];
+
+export type DiagramToneFamily = "container" | "application-package" | "storage";
+
+export const diagramToneSwatch: Record<DiagramIconTone, string> = {
+  sapphire: "#0772c1",
+  lagoon: "#0dc0f3",
+  emeraude: "#6dc6cc",
+  banana: "#fcb129",
+  carrot: "#e97232",
+  raspberry: "#c9464b",
+  grape: "#8840f4",
+  gray: "#8a9099",
+};
 
 type DiagramIconDefinition = {
   label: string;
@@ -9,6 +36,7 @@ type DiagramIconDefinition = {
   w: number;
   h: number;
   visible?: boolean;
+  toneFamily?: DiagramToneFamily;
 };
 
 /**
@@ -16,9 +44,17 @@ type DiagramIconDefinition = {
  * megabyte as an SVG and ship as WebP instead; the flat set is genuine vector used as an
  * alpha mask, so it always keeps the .svg of the same name.
  */
-function icon(src: string, label: string, group: string, w = 92, h = 108, visible = true): DiagramIconDefinition {
+function icon(
+  src: string,
+  label: string,
+  group: string,
+  w = 92,
+  h = 108,
+  visible = true,
+  toneFamily?: DiagramToneFamily,
+): DiagramIconDefinition {
   const flatSrc = src.replace(/\.webp$/, ".svg");
-  return { isoSrc: `${isoIconBasePath}/${src}`, flatSrc: `${flatIconBasePath}/${flatSrc}`, label, group, w, h, visible };
+  return { isoSrc: `${isoIconBasePath}/${src}`, flatSrc: `${flatIconBasePath}/${flatSrc}`, label, group, w, h, visible, toneFamily };
 }
 
 export const diagramIcons = {
@@ -27,7 +63,7 @@ export const diagramIcons = {
   "virtual-machine": icon("virtual-machine.svg", "Virtual machine", "Core", 92, 108),
   service: icon("service.svg", "Service", "Core", 92, 108),
   client: icon("internet.svg", "Client", "Core", 96, 112),
-  container: icon("container.svg", "Container", "Core", 88, 104),
+  container: icon("container.svg", "Container", "Core", 88, 104, true, "container"),
   function: icon("function.svg", "Function", "Core", 88, 104),
 
   "k8s-node": icon("k8s-node.svg", "Node", "Kubernetes", 92, 108),
@@ -39,6 +75,7 @@ export const diagramIcons = {
   "k8s-configmap": icon("k8s-configmap.svg", "ConfigMap", "Kubernetes", 86, 102),
   "k8s-secret": icon("k8s-secret.svg", "Secret", "Kubernetes", 86, 102),
 
+  storage: icon("storage.svg", "Storage", "Data", 88, 104, true, "storage"),
   postgresql: icon("postgresql.webp", "PostgreSQL", "Data", 92, 108),
   redis: icon("redis.svg", "Redis", "Data", 92, 108),
   minio: icon("minio.webp", "MinIO", "Data", 92, 108),
@@ -55,6 +92,7 @@ export const diagramIcons = {
   gcp: icon("gcp.svg", "GCP", "Cloud", 104, 114),
 
   "container-registry": icon("container-registry.svg", "Container registry", "Delivery", 92, 108),
+  "application-package": icon("application-package.svg", "App package", "Delivery", 88, 104, true, "application-package"),
   "code-repository": icon("code-repository.svg", "Code repository", "Delivery", 92, 108),
   "deployment-pipeline": icon("deployment-pipeline.webp", "Deployment pipeline", "Delivery", 96, 112),
   terraform: icon("terraform.webp", "Terraform", "Delivery", 92, 108),
@@ -103,9 +141,27 @@ export const diagramIconDefinitions = Object.entries(diagramIcons).map(([id, def
 
 export const diagramIconCatalog = diagramIconDefinitions.filter((icon) => icon.visible !== false);
 
-export function diagramIconHref(kind: DiagramIconKind, mode: "flat" | "iso" = "iso") {
+export function diagramIconHref(kind: DiagramIconKind, mode: "flat" | "iso" = "iso", tone?: string | null) {
   const icon = diagramIcons[kind];
-  return mode === "flat" ? icon.flatSrc : icon.isoSrc;
+  if (mode === "flat") {
+    return icon.flatSrc;
+  }
+  if (icon.toneFamily && isDiagramIconTone(tone)) {
+    return `${toneIconBasePath}/${icon.toneFamily}/${tone}.svg`;
+  }
+  return icon.isoSrc;
+}
+
+export function diagramIconToneFamily(kind: DiagramIconKind): DiagramToneFamily | null {
+  return diagramIcons[kind].toneFamily ?? null;
+}
+
+export function diagramIconHasTones(kind: DiagramIconKind): boolean {
+  return Boolean(diagramIcons[kind].toneFamily);
+}
+
+export function isDiagramIconTone(value: unknown): value is DiagramIconTone {
+  return typeof value === "string" && (diagramIconTones as readonly string[]).includes(value);
 }
 
 export function diagramIconSize(kind: DiagramIconKind) {

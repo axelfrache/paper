@@ -28,6 +28,49 @@ describe("diagram system icons", () => {
     });
   });
 
+  it("renders the tone variant for a tone-capable iso icon", () => {
+    const html = diagramToSvgMarkup({
+      version: 1,
+      mode: "iso",
+      nodes: [{ id: "n1", kind: "container", x: 0, y: 0, label: "C", color: "blue", tone: "carrot" }],
+      edges: [],
+    });
+    expect(html).toContain("tones/container/carrot.svg");
+  });
+
+  it("keeps the base iso icon when no tone is set", () => {
+    const html = diagramToSvgMarkup({
+      version: 1,
+      mode: "iso",
+      nodes: [{ id: "n1", kind: "container", x: 0, y: 0, label: "C", color: "blue" }],
+      edges: [],
+    });
+    expect(html).toContain("cloud-native/container.svg");
+    expect(html).not.toContain("tones/container");
+  });
+
+  it("serializes and restores the icon tone, dropping unknown tones", () => {
+    const kept = parseDiagramMarker(
+      serializeDiagramMarker({
+        version: 1,
+        mode: "iso",
+        nodes: [{ id: "n1", kind: "container", x: 0, y: 0, label: "C", color: "blue", tone: "grape" }],
+        edges: [],
+      }),
+    )?.nodes[0];
+    expect(kept?.tone).toBe("grape");
+
+    const dropped = parseDiagramMarker(
+      serializeDiagramMarker({
+        version: 1,
+        mode: "iso",
+        nodes: [{ id: "n1", kind: "container", x: 0, y: 0, label: "C", color: "blue", tone: "bogus" } as never],
+        edges: [],
+      }),
+    )?.nodes[0];
+    expect(dropped?.tone).toBeUndefined();
+  });
+
   it("serializes and restores system icon nodes", () => {
     const diagram = {
       version: 1 as const,

@@ -23,7 +23,7 @@ import { generateAI } from "../lib/api";
 import { downloadDiagram } from "../lib/diagramExport";
 import type { DiagramExportBackground, DiagramExportFormat } from "../lib/diagramExport";
 import { addGeneratedDiagram, buildDiagramAdditionPrompt } from "../lib/diagramAi";
-import { diagramIconCatalog, diagramIconHref } from "../lib/diagramIcons";
+import { diagramIconCatalog, diagramIconHasTones, diagramIconHref, diagramIconTones, diagramToneSwatch } from "../lib/diagramIcons";
 import type {
   Diagram,
   DiagramColor,
@@ -36,7 +36,7 @@ import type {
   DiagramLayoutNode,
   DiagramNode,
 } from "../lib/diagram";
-import type { DiagramIconKind } from "../lib/diagramIcons";
+import type { DiagramIconKind, DiagramIconTone } from "../lib/diagramIcons";
 
 type DiagramTool = "select" | "pan" | "arrow" | DiagramKind;
 
@@ -162,6 +162,12 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
   const groupSelectionBox = selectedLayoutNodes.length > 1 ? boundsForLayoutNodes(selectedLayoutNodes) : null;
   const selectedEdge = liveDiagram.edges.find((edge) => edge.id === selectedEdgeId) ?? null;
   const selectedNodeIcon = selectedNode ? diagramIconForKind(selectedNode.kind) : null;
+  const selectedNodeHasTones = liveDiagram.mode === "iso" && selectedNodeIcon !== null && diagramIconHasTones(selectedNodeIcon);
+  const selectedNodeBoxed = selectedNode?.boxed === true;
+  const showToneSwatches = selectedNodeHasTones && !selectedNodeBoxed;
+  const colorAffectsSelectedNode =
+    selectedNode !== null && (liveDiagram.mode === "flat" || selectedNodeIcon === null || selectedNodeBoxed);
+  const showNodePalette = showToneSwatches || colorAffectsSelectedNode;
   const zoom = fitViewportRef.current.width / viewport.width;
   const gridLines = liveDiagram.mode === "iso" && showGrid ? isoGridLines(viewport) : [];
 
@@ -830,6 +836,17 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
     setColor(nextColor);
   };
 
+  const applyTone = (tone: DiagramIconTone) => {
+    if (!selectedIds.length) {
+      return;
+    }
+    const selected = new Set(selectedIds);
+    patchDiagram((current) => ({
+      ...current,
+      nodes: current.nodes.map((node) => (selected.has(node.id) ? { ...node, tone } : node)),
+    }));
+  };
+
   const setSelectedIconSize = (size: number) => {
     const selectedId = selectedNode?.id;
     if (!selectedId) {
@@ -1476,21 +1493,34 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
               onBlur={commitDiagram}
               onKeyDown={commitOnPlainEnter}
             />
+            {showNodePalette ? (
             <div className="diagram-inspector-style">
               <span>Color</span>
               <div className="diagram-inspector-swatches">
-                {colors.map((name) => (
-                  <button
-                    key={name}
-                    className={selectedNode.color === name ? "diagram-swatch active" : "diagram-swatch"}
-                    title={name}
-                    aria-label={name}
-                    style={{ backgroundColor: diagramPalette[name].stroke, color: diagramPalette[name].stroke }}
-                    onClick={() => applyColor(name)}
-                  />
-                ))}
+                {showToneSwatches
+                  ? diagramIconTones.map((tone) => (
+                      <button
+                        key={tone}
+                        className={(selectedNode.tone ?? "sapphire") === tone ? "diagram-swatch active" : "diagram-swatch"}
+                        title={tone}
+                        aria-label={tone}
+                        style={{ backgroundColor: diagramToneSwatch[tone], color: diagramToneSwatch[tone] }}
+                        onClick={() => applyTone(tone)}
+                      />
+                    ))
+                  : colors.map((name) => (
+                      <button
+                        key={name}
+                        className={selectedNode.color === name ? "diagram-swatch active" : "diagram-swatch"}
+                        title={name}
+                        aria-label={name}
+                        style={{ backgroundColor: diagramPalette[name].stroke, color: diagramPalette[name].stroke }}
+                        onClick={() => applyColor(name)}
+                      />
+                    ))}
               </div>
             </div>
+            ) : null}
             {selectedNodeIcon ? (
               <div className="diagram-inspector-style">
                 <span>Style</span>
@@ -1704,7 +1734,7 @@ function DiagramNodeIcon({ node, mode }: { node: DiagramLayoutNode; mode: Diagra
   if (!node.icon) {
     return null;
   }
-  const href = diagramIconHref(node.icon, mode);
+  const href = diagramIconHref(node.icon, mode, node.source.tone);
   if (mode === "flat") {
     const maskId = `diagram-editor-icon-mask-${safeSvgId(node.id)}`;
     return (

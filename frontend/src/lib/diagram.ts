@@ -1,4 +1,5 @@
-import { diagramIconDefinitions, diagramIconHref, isDiagramIconKind } from "./diagramIcons";
+import { diagramIconDefinitions, diagramIconHref, isDiagramIconKind, isDiagramIconTone } from "./diagramIcons";
+import type { DiagramIconTone } from "./diagramIcons";
 import type { DiagramIconKind } from "./diagramIcons";
 
 export type DiagramMode = "flat" | "iso";
@@ -25,6 +26,7 @@ export type DiagramNode = {
   shape?: "rect" | "ellipse";
   boxed?: boolean;
   labelBoxed?: boolean;
+  tone?: DiagramIconTone;
 };
 
 export type DiagramEdge = {
@@ -461,7 +463,7 @@ function nodeIconSvg(node: DiagramLayoutNode, mode: DiagramMode) {
   if (!node.icon) {
     return "";
   }
-  const href = escapeAttribute(diagramIconHref(node.icon, mode));
+  const href = escapeAttribute(diagramIconHref(node.icon, mode, node.source.tone));
   if (mode === "flat") {
     const maskId = escapeAttribute(`diagram-icon-mask-${safeSvgId(node.id)}`);
     return `<defs><mask id="${maskId}" maskUnits="userSpaceOnUse" x="${node.iconX}" y="${node.iconY}" width="${node.iconSize}" height="${node.iconSize}" style="mask-type:alpha;"><image href="${href}" x="${node.iconX}" y="${node.iconY}" width="${node.iconSize}" height="${node.iconSize}" preserveAspectRatio="xMidYMid meet"/></mask></defs><rect class="diagram-node-icon diagram-node-icon-mask" x="${node.iconX}" y="${node.iconY}" width="${node.iconSize}" height="${node.iconSize}" fill="${node.color}" mask="url(#${maskId})"/>`;
@@ -1204,6 +1206,7 @@ function normalizeNode(value: unknown): DiagramNode {
     shape: node.shape === "ellipse" ? "ellipse" : undefined,
     boxed: node.boxed === true ? true : undefined,
     labelBoxed: typeof node.labelBoxed === "boolean" ? node.labelBoxed : undefined,
+    tone: isDiagramIconTone(node.tone) ? node.tone : undefined,
   };
 }
 
