@@ -53,12 +53,12 @@ export function LoginPage({
             <div className="login-card">
               <a className="login-primary" href="/api/auth/login">
                 <KeyRound size={16} strokeWidth={1.8} />
-                {isDev ? "Continue locally" : "Continue with passkey"}
+                {isDev ? "Continue locally" : "Continue to sign in"}
               </a>
               <p>
                 {isDev
                   ? "Local development identity"
-                  : "Use your device or security key"}
+                  : "You'll be redirected to sign in securely"}
               </p>
             </div>
 
