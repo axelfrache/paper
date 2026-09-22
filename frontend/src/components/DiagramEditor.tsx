@@ -407,7 +407,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
         return;
       }
       if (pendingFromId !== nodeId) {
-        patchDiagram((current) => ({ ...current, edges: [...current.edges, createDiagramEdge(pendingFromId, nodeId, color)] }));
+        patchDiagram((current) => ({ ...current, edges: [...current.edges, { ...createDiagramEdge(pendingFromId, nodeId, color), route: "straight" }] }));
       }
       setPendingFromId(null);
       setTool("select");
