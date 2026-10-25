@@ -104,7 +104,7 @@ function resourceBlock(
   const surfaceStyle = width ? ` style="width:min(100%, ${width}px);"` : "";
   return [
     `<div data-line="${index}" data-resource-line="${index}" data-resource-kind="${kind}" data-source="${escapeAttribute(raw)}" contenteditable="false" class="markdown-editor-resource-line${selection}">`,
-    `<span data-deco="1" data-resource-surface="${index}"${kind === "diagram" ? ` data-diagram-line="${index}"` : ""} class="markdown-editor-resource-surface${surfaceClass}"${surfaceStyle}>${preview}<button type="button" data-resource-delete-line="${index}" class="markdown-editor-resource-delete" aria-label="Delete ${kind}" title="Delete">×</button></span>`,
+    `<span data-deco="1" data-resource-surface="${index}"${kind === "diagram" ? ` data-diagram-line="${index}"` : ""} class="markdown-editor-resource-surface${surfaceClass}"${surfaceStyle}>${preview}<button type="button" data-resource-copy-line="${index}" class="markdown-editor-resource-copy" aria-label="Copy ${kind}" title="Copy"></button><button type="button" data-resource-delete-line="${index}" class="markdown-editor-resource-delete" aria-label="Delete ${kind}" title="Delete">×</button></span>`,
     `<span data-resource-caret-line="${index}" contenteditable="true" class="markdown-editor-resource-caret"><br /></span>`,
     `</div>`,
   ].join("");

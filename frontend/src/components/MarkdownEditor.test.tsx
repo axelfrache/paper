@@ -3,7 +3,7 @@ import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
-import { createDefaultDiagram, serializeDiagramMarker } from "../lib/diagram";
+import { createDefaultDiagram, parseDiagramMarker, serializeDiagramMarker } from "../lib/diagram";
 import { placeCaret, placeSelection, getSelectionRange } from "../lib/markdown/dom";
 import type { NoteImage } from "../types/note";
 import { MarkdownEditor } from "./MarkdownEditor";
@@ -76,6 +76,32 @@ function selectResourceBlock(editor: Element, line: number) {
 function selectedResourceLine(editor: Element) {
   const selected = editor.querySelector(".markdown-editor-resource-line.is-selected");
   return selected ? Number(selected.getAttribute("data-resource-line")) : null;
+}
+
+function stubClipboard() {
+  if (typeof (globalThis as { ClipboardItem?: unknown }).ClipboardItem === "undefined") {
+    (globalThis as { ClipboardItem?: unknown }).ClipboardItem = class {
+      items: Record<string, Blob>;
+      constructor(items: Record<string, Blob>) {
+        this.items = items;
+      }
+    };
+  }
+  const write = vi.fn().mockResolvedValue(undefined);
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { write, writeText },
+  });
+  return { write, writeText };
+}
+
+function pasteText(editor: Element, text: string) {
+  const event = new Event("paste", { bubbles: true, cancelable: true }) as ClipboardEvent;
+  Object.defineProperty(event, "clipboardData", {
+    value: { getData: (type: string) => (type === "text/plain" ? text : ""), files: [] },
+  });
+  editor.dispatchEvent(event);
 }
 
 beforeEach(() => {
@@ -1104,5 +1130,143 @@ describe("MarkdownEditor integration", () => {
       start: { line: 0, col: 0 },
       end: { line: 1, col: "some text".length },
     });
+  });
+});
+
+describe("MarkdownEditor resource copy, cut, and paste", () => {
+  async function blobText(blob: Blob) {
+    return await blob.text();
+  }
+
+  it("copies a selected diagram as marker text and an HTML preview, leaving the note unchanged", async () => {
+    const marker = serializeDiagramMarker(createDefaultDiagram("flat"));
+    const host = mount(`${marker}\nAfter`);
+    const editor = editorFrom(host);
+    const { write } = stubClipboard();
+
+    act(() => {
+      selectResourceBlock(editor, 0);
+    });
+
+    await act(async () => {
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "c", ctrlKey: true, bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+
+    expect(write).toHaveBeenCalledOnce();
+    const item = write.mock.calls[0]?.[0]?.[0] as { items: Record<string, Blob> };
+    expect(await blobText(item.items["text/plain"])).toBe(marker);
+    expect(await blobText(item.items["text/html"])).toContain("data-paper-resource");
+    expect(valueFrom(host)).toBe(`${marker}\nAfter`);
+  });
+
+  it("cuts a selected image with Ctrl+X: writes it to the clipboard, then removes it", async () => {
+    const marker = "![Architecture](/api/images/0123456789abcdef0123456789abcdef.png)";
+    const host = mount(`${marker}\nAfter`);
+    const editor = editorFrom(host);
+    const { write } = stubClipboard();
+
+    act(() => {
+      selectResourceBlock(editor, 0);
+    });
+
+    await act(async () => {
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "x", ctrlKey: true, bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+
+    expect(write).toHaveBeenCalledOnce();
+    expect(valueFrom(host)).toBe("After");
+  });
+
+  it("copies a resource through its toolbar button, without the keyboard", async () => {
+    const marker = serializeDiagramMarker(createDefaultDiagram("iso"));
+    const host = mount(`${marker}\nAfter`);
+    const editor = editorFrom(host);
+    const { write } = stubClipboard();
+
+    act(() => {
+      selectResourceBlock(editor, 0);
+    });
+
+    await act(async () => {
+      editor.querySelector("[data-resource-copy-line='0']")?.dispatchEvent(new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+
+    expect(write).toHaveBeenCalledOnce();
+    expect(valueFrom(host)).toBe(`${marker}\nAfter`);
+  });
+
+  it("pastes a copied diagram as a new block with fresh node and edge ids", async () => {
+    const original = createDefaultDiagram("flat");
+    const marker = serializeDiagramMarker(original);
+    const host = mount("Before\nAfter");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 1, col: 0 });
+      pasteText(editor, marker);
+    });
+
+    const pastedLine = valueFrom(host).split("\n").find((line) => line.startsWith("![diagram:"));
+    expect(pastedLine).toBeDefined();
+    expect(pastedLine).not.toBe(marker);
+    const pasted = parseDiagramMarker(pastedLine ?? "");
+    expect(pasted?.nodes.map((node) => node.id)).not.toEqual(original.nodes.map((node) => node.id));
+    expect(pasted?.edges.every((edge) => pasted.nodes.some((node) => node.id === edge.from) && pasted.nodes.some((node) => node.id === edge.to))).toBe(true);
+  });
+
+  it("re-uploads a pasted image into the destination note instead of reusing the source note's URL", async () => {
+    const sourceUrl = "/api/images/0123456789abcdef0123456789abcdef.png";
+    const marker = `![Architecture](${sourceUrl})`;
+    const blob = new Blob(["image-bytes"], { type: "image/png" });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, blob: () => Promise.resolve(blob) });
+    vi.stubGlobal("fetch", fetchMock);
+    const upload = vi.fn(async () => ({
+      id: "new",
+      name: "Architecture.png",
+      contentType: "image/png",
+      size: blob.size,
+      url: "/api/images/fedcba9876543210fedcba9876543210.png",
+    }));
+    const host = mount("Before\nAfter", null, upload);
+    const editor = editorFrom(host);
+
+    await act(async () => {
+      editor.focus();
+      placeCaret(editor, { line: 1, col: 0 });
+      pasteText(editor, marker);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(sourceUrl);
+    expect(upload).toHaveBeenCalledOnce();
+    expect(valueFrom(host)).toContain("/api/images/fedcba9876543210fedcba9876543210.png");
+    expect(valueFrom(host)).not.toContain(sourceUrl);
+  });
+
+  it("keeps the original reference when re-uploading a pasted image fails", async () => {
+    const sourceUrl = "https://example.com/pic.png";
+    const marker = `![Pic](${sourceUrl})`;
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network error")));
+    const upload = vi.fn();
+    const host = mount("Before\nAfter", null, upload);
+    const editor = editorFrom(host);
+
+    await act(async () => {
+      editor.focus();
+      placeCaret(editor, { line: 1, col: 0 });
+      pasteText(editor, marker);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(upload).not.toHaveBeenCalled();
+    expect(valueFrom(host)).toContain(sourceUrl);
   });
 });

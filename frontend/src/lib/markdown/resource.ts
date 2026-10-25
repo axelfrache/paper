@@ -1,4 +1,4 @@
-import { parseDiagramMarker } from "../diagram";
+import { diagramToSvgMarkup, parseDiagramMarker } from "../diagram";
 import { parseInline } from "./inline";
 import type { MarkdownInline } from "./inline";
 import type { Caret } from "./edit";
@@ -81,4 +81,44 @@ export function insertLineBeforeResource(
   }
   lines.splice(line, 0, "");
   return { value: lines.join("\n"), caret: { line: line + 1, col: 0 } };
+}
+
+const CLIPBOARD_RESOURCE_ATTR = "data-paper-resource";
+const clipboardResourcePattern = new RegExp(`${CLIPBOARD_RESOURCE_ATTR}="([^"]*)"`);
+
+export function resourceClipboardHtml(line: string): string | null {
+  const diagram = parseDiagramMarker(line);
+  if (diagram) {
+    return `<div ${CLIPBOARD_RESOURCE_ATTR}="${encodeURIComponent(line)}">${diagramToSvgMarkup(diagram, 480)}</div>`;
+  }
+  const image = standaloneImage(line);
+  if (image?.safe) {
+    return `<div ${CLIPBOARD_RESOURCE_ATTR}="${encodeURIComponent(line)}"><img src="${escapeAttr(image.href)}" alt="${escapeAttr(image.alt)}" /></div>`;
+  }
+  return null;
+}
+
+export function resourceLineFromHtml(html: string): string | null {
+  if (!html) {
+    return null;
+  }
+  const match = clipboardResourcePattern.exec(html);
+  if (!match) {
+    return null;
+  }
+  try {
+    const line = decodeURIComponent(match[1]);
+    return isResourceLine(line) ? line : null;
+  } catch {
+    return null;
+  }
+}
+
+export function resourceLineFromPlainText(text: string): string | null {
+  const trimmed = text.trim();
+  return trimmed && !trimmed.includes("\n") && isResourceLine(trimmed) ? trimmed : null;
+}
+
+function escapeAttr(value: string) {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }

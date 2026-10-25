@@ -194,6 +194,22 @@ export function duplicateDiagramNode(node: DiagramNode, offset = 24): DiagramNod
   return { ...node, id: uniqueId("n"), x: node.x + offset, y: node.y + offset };
 }
 
+export function cloneDiagramWithFreshIds(diagram: Diagram): Diagram {
+  const idMap = new Map<string, string>();
+  const nodes = diagram.nodes.map((node) => {
+    const id = uniqueId("n");
+    idMap.set(node.id, id);
+    return { ...node, id };
+  });
+  const edges = diagram.edges.map((edge) => ({
+    ...edge,
+    id: uniqueId("e"),
+    from: idMap.get(edge.from) ?? edge.from,
+    to: idMap.get(edge.to) ?? edge.to,
+  }));
+  return { ...diagram, nodes, edges };
+}
+
 export function serializeDiagramMarker(diagram: Diagram) {
   return `![diagram:${encodeDiagram(diagram)}]`;
 }

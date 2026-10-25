@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, BrainCircuit, Boxes, CalendarDays, Code2, FileText, GitBranch, Heading1, Heading2, Heading3, Image, Italic, Link, List, ListChecks, ListTodo, Minus, Quote, Sparkles, Strikethrough, TextCursorInput, Underline, Wand2, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
+  cloneDiagramWithFreshIds,
   createDefaultDiagram,
   parseDiagramMarker,
   previewForDiagram,
@@ -45,6 +46,9 @@ import {
   isResourceLine,
   removeResourceAt,
   replaceResourceAt,
+  resourceClipboardHtml,
+  resourceLineFromHtml,
+  resourceLineFromPlainText,
   standaloneImage,
 } from "../lib/markdown/resource";
 import { prepareImageForUpload } from "../lib/imageUpload";
@@ -160,6 +164,24 @@ const slashItems: SlashItem[] = [
   { id: "ai-tasks", label: "Extract tasks", hint: "AI", icon: ListChecks, ai: "extract_tasks" },
   { id: "ai-title", label: "Suggest title", hint: "AI", icon: TextCursorInput, ai: "suggest_title" },
 ];
+
+async function writeResourceToClipboard(line: string) {
+  if (!navigator.clipboard) {
+    return;
+  }
+  try {
+    const html = resourceClipboardHtml(line);
+    const parts: Record<string, Blob> = { "text/plain": new Blob([line], { type: "text/plain" }) };
+    if (html) {
+      parts["text/html"] = new Blob([html], { type: "text/html" });
+    }
+    await navigator.clipboard.write([new ClipboardItem(parts)]);
+  } catch {
+    try {
+      await navigator.clipboard.writeText(line);
+    } catch {}
+  }
+}
 
 export function MarkdownEditor({
   value,
@@ -500,6 +522,11 @@ export function MarkdownEditor({
         });
         return;
       }
+      if (meta && !event.shiftKey && (event.key.toLowerCase() === "c" || event.key.toLowerCase() === "x")) {
+        event.preventDefault();
+        void copyOrCutResource(selectedResourceLine, event.key.toLowerCase() === "x");
+        return;
+      }
       handleResourceKey(event, selectedResourceLine, lineText);
       return;
     }
@@ -761,6 +788,16 @@ export function MarkdownEditor({
         return;
       }
     }
+    const copyTarget = target?.closest("[data-resource-copy-line]");
+    if (copyTarget) {
+      event.preventDefault();
+      const line = Number(copyTarget.getAttribute("data-resource-copy-line"));
+      if (!Number.isNaN(line)) {
+        void copyOrCutResource(line, false);
+      }
+      return;
+    }
+
     const deleteTarget = target?.closest("[data-resource-delete-line]");
     if (deleteTarget) {
       event.preventDefault();
@@ -896,25 +933,54 @@ export function MarkdownEditor({
     window.requestAnimationFrame(() => editorRef.current?.focus());
   };
 
+  const copyOrCutResource = async (line: number, cut: boolean) => {
+    const text = valueRef.current.split("\n")[line] ?? "";
+    if (!isResourceLine(text)) {
+      return;
+    }
+    await writeResourceToClipboard(text);
+    if (cut) {
+      removeResource(line);
+    }
+  };
+
   const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    const resourceSelected = selectedResourceLine !== null;
+    const caret = resourceSelected
+      ? { line: selectedResourceLine + 1, col: 0 }
+      : getCaret(editorRef.current) ?? { line: 0, col: 0 };
+
     const image = Array.from(event.clipboardData.files ?? []).find((file) => file.type.startsWith("image/"));
     if (image) {
       event.preventDefault();
       setSlash(null);
       setSelectionToolbar(null);
-      insertImageFile(image, getCaret(editorRef.current) ?? { line: 0, col: 0 });
+      setSelectedResourceLine(null);
+      insertImageFile(image, caret);
       return;
     }
+
+    const html = event.clipboardData.getData("text/html");
+    const plain = event.clipboardData.getData("text/plain");
+    const resourceLine = resourceLineFromHtml(html) ?? resourceLineFromPlainText(plain);
+    if (resourceLine) {
+      event.preventDefault();
+      setSlash(null);
+      setSelectionToolbar(null);
+      setSelectedResourceLine(null);
+      void insertPastedResource(resourceLine, caret);
+      return;
+    }
+
     event.preventDefault();
     setSlash(null);
     setSelectionToolbar(null);
-    const text = event.clipboardData.getData("text/plain");
-    const caret = getCaret(editorRef.current) ?? { line: 0, col: 0 };
-    const range = getSelectionRange(editorRef.current) ?? { start: caret, end: caret };
-    const trimmed = text.trim();
+    setSelectedResourceLine(null);
+    const range = resourceSelected ? { start: caret, end: caret } : getSelectionRange(editorRef.current) ?? { start: caret, end: caret };
+    const trimmed = plain.trim();
     const next = !isCollapsedRange(range) && safeHref(trimmed)
       ? wrapLinkWithHref(value, range, trimmed)
-      : insertText(value, range, text);
+      : insertText(value, range, plain);
     setSource(next.value, next.caret);
   };
 
@@ -1367,20 +1433,53 @@ export function MarkdownEditor({
     }
     try {
       const image = await onUploadImage(await prepareImageForUpload(file));
-      const lines = valueRef.current.split("\n");
-      const line = lines[caret.line] ?? "";
       const alt = image.name.replace(/\.[^.]+$/, "").replace(/[\[\]]/g, "");
-      const marker = `![${alt || "image"}](${image.url})`;
-      const before = line.slice(0, caret.col);
-      const after = line.slice(caret.col);
-      if (!before && !after) {
-        lines.splice(caret.line, 1, marker, "");
-      } else {
-        lines.splice(caret.line, 1, before, marker, after);
-      }
-      setSource(lines.join("\n"), { line: caret.line + 1, col: 0 });
+      insertResourceLine(`![${alt || "image"}](${image.url})`, caret);
     } catch {
       window.requestAnimationFrame(() => editorRef.current?.focus());
+    }
+  }
+
+  function insertResourceLine(marker: string, caret: Caret) {
+    const lines = valueRef.current.split("\n");
+    const line = lines[caret.line] ?? "";
+    const before = line.slice(0, caret.col);
+    const after = line.slice(caret.col);
+    if (!before && !after) {
+      lines.splice(caret.line, 1, marker, "");
+    } else {
+      lines.splice(caret.line, 1, before, marker, after);
+    }
+    setSource(lines.join("\n"), { line: caret.line + 1, col: 0 });
+  }
+
+  async function insertPastedResource(line: string, caret: Caret) {
+    const diagram = parseDiagramMarker(line);
+    if (diagram) {
+      insertResourceLine(serializeDiagramMarker(cloneDiagramWithFreshIds(diagram)), caret);
+      return;
+    }
+
+    const image = standaloneImage(line);
+    if (!image?.safe) {
+      return;
+    }
+    if (!onUploadImage) {
+      insertResourceLine(line, caret);
+      return;
+    }
+    try {
+      const response = await fetch(image.href);
+      if (!response.ok) {
+        throw new Error("fetch failed");
+      }
+      const blob = await response.blob();
+      const file = new File([blob], image.alt || "image", { type: blob.type });
+      const uploaded = await onUploadImage(await prepareImageForUpload(file));
+      const alt = uploaded.name.replace(/\.[^.]+$/, "").replace(/[\[\]]/g, "");
+      insertResourceLine(`![${alt || "image"}](${uploaded.url})`, caret);
+    } catch {
+      insertResourceLine(line, caret);
     }
   }
 
