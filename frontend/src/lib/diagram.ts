@@ -243,11 +243,6 @@ export function replaceDiagramMarkerAtLine(content: string, line: number, diagra
   return lines.join("\n");
 }
 
-export function diagramSummary(diagram: Diagram) {
-  const mode = diagram.mode === "iso" ? "isometric" : "flat";
-  return `${diagram.nodes.length} node${diagram.nodes.length === 1 ? "" : "s"} · ${mode}`;
-}
-
 export function previewForDiagram(diagram: Diagram, maxHeight = 340): DiagramPreview {
   const layout = layoutDiagram(diagram);
   const bounds = contentBounds(layout);

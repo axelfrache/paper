@@ -1,5 +1,5 @@
 import { codeLines } from "./fences";
-import { diagramSummary, diagramToSvgMarkup, parseDiagramMarker } from "../diagram";
+import { diagramToSvgMarkup, parseDiagramMarker } from "../diagram";
 import { parseInline } from "./inline";
 import type { MarkdownInline } from "./inline";
 import { defaultTextAlign, readAlign } from "./align";
@@ -102,7 +102,7 @@ export function renderEditableLine(rawLine: string, active: boolean, index: numb
     const preview = [
       `<span class="markdown-editor-diagram-header">`,
       `<span class="markdown-diagram-title-slot"><button type="button" data-diagram-title-line="${index}" class="markdown-diagram-title-button${diagram.title ? "" : " is-empty"}" aria-label="${diagram.title ? "Edit diagram title" : "Add diagram title"}" title="${escapeAttribute(diagram.title || "Add a title")}">${escapeHtml(diagram.title || "Add a title…")}</button></span>`,
-      `<span class="markdown-editor-diagram-meta"><span>${escapeHtml(diagramSummary(diagram))}</span><button type="button" class="markdown-editor-diagram-edit" data-diagram-edit-line="${index}">Edit diagram</button><button type="button" data-diagram-export-line="${index}" class="markdown-editor-diagram-export" aria-label="Download diagram" title="Download PNG"></button></span>`,
+      `<span class="markdown-editor-diagram-meta"><button type="button" data-diagram-edit-line="${index}" class="markdown-editor-diagram-edit" aria-label="Edit diagram" title="Edit diagram"></button><button type="button" data-diagram-export-line="${index}" class="markdown-editor-diagram-export" aria-label="Download diagram" title="Download PNG"></button><button type="button" data-resource-copy-line="${index}" class="markdown-editor-diagram-copy" aria-label="Copy diagram" title="Copy"></button><button type="button" data-resource-delete-line="${index}" class="markdown-editor-diagram-delete" aria-label="Delete diagram" title="Delete"></button></span>`,
       `</span>`,
       `<span class="markdown-editor-diagram-preview">${svg}</span>`,
       `<span data-diagram-resize-line="${index}" class="markdown-editor-diagram-resize" aria-hidden="true"></span>`,
@@ -138,9 +138,15 @@ function resourceBlock(
   const selection = selected ? " is-selected" : "";
   const surfaceClass = kind === "diagram" ? " markdown-editor-diagram-card" : " markdown-editor-image-card";
   const surfaceStyle = width ? ` style="width:min(100%, ${width}px);"` : "";
+  // Diagram cards carry their own copy/delete buttons inside the header meta row (see above);
+  // floating them here too would overlap the header's edit/download controls.
+  const floatingActions =
+    kind === "image"
+      ? `<button type="button" data-resource-copy-line="${index}" class="markdown-editor-resource-copy" aria-label="Copy ${kind}" title="Copy"></button><button type="button" data-resource-delete-line="${index}" class="markdown-editor-resource-delete" aria-label="Delete ${kind}" title="Delete">×</button>`
+      : "";
   return [
     `<div data-line="${index}" data-resource-line="${index}" data-resource-kind="${kind}" data-source="${escapeAttribute(raw)}" contenteditable="false" class="markdown-editor-resource-line${selection}">`,
-    `<span data-deco="1" data-resource-surface="${index}"${kind === "diagram" ? ` data-diagram-line="${index}"` : ""} class="markdown-editor-resource-surface${surfaceClass}"${surfaceStyle}>${preview}<button type="button" data-resource-copy-line="${index}" class="markdown-editor-resource-copy" aria-label="Copy ${kind}" title="Copy"></button><button type="button" data-resource-delete-line="${index}" class="markdown-editor-resource-delete" aria-label="Delete ${kind}" title="Delete">×</button></span>`,
+    `<span data-deco="1" data-resource-surface="${index}"${kind === "diagram" ? ` data-diagram-line="${index}"` : ""} class="markdown-editor-resource-surface${surfaceClass}"${surfaceStyle}>${preview}${floatingActions}</span>`,
     `<span data-resource-caret-line="${index}" contenteditable="true" class="markdown-editor-resource-caret"><br /></span>`,
     `</div>`,
   ].join("");

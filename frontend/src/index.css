@@ -10,6 +10,8 @@
 :root {
   --icon-download: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/%3E%3Cpolyline points='7 10 12 15 17 10'/%3E%3Cline x1='12' y1='15' x2='12' y2='3'/%3E%3C/svg%3E");
   --icon-copy: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='9' y='9' width='13' height='13' rx='2'/%3E%3Cpath d='M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'/%3E%3C/svg%3E");
+  --icon-edit: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z'/%3E%3Cpath d='m15 5 4 4'/%3E%3C/svg%3E");
+  --icon-x: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6 6 18'/%3E%3Cpath d='m6 6 12 12'/%3E%3C/svg%3E");
   color: #16181b;
   background: #f6f7f8;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
@@ -1917,13 +1919,13 @@ span.account-avatar-lg {
   font-size: 10.5px;
 }
 
-.markdown-editor-diagram-meta em {
-  color: var(--accent);
-  cursor: pointer;
-  font-style: normal;
-}
-
-.markdown-editor-diagram-export {
+.markdown-editor-diagram-edit,
+.markdown-editor-diagram-export,
+.markdown-editor-diagram-copy,
+.markdown-editor-diagram-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 22px;
   height: 22px;
   border: 0;
@@ -1935,31 +1937,61 @@ span.account-avatar-lg {
   transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
 }
 
-.markdown-editor-diagram-export::before {
+.markdown-editor-diagram-edit::before,
+.markdown-editor-diagram-export::before,
+.markdown-editor-diagram-copy::before,
+.markdown-editor-diagram-delete::before {
   content: "";
   display: block;
   width: 14px;
   height: 14px;
   margin: 0 auto;
   background: currentColor;
+}
+
+.markdown-editor-diagram-edit::before {
+  -webkit-mask: var(--icon-edit) center / contain no-repeat;
+  mask: var(--icon-edit) center / contain no-repeat;
+}
+
+.markdown-editor-diagram-export::before {
   -webkit-mask: var(--icon-download) center / contain no-repeat;
   mask: var(--icon-download) center / contain no-repeat;
 }
 
-.markdown-editor-resource-line:hover .markdown-editor-diagram-export {
+.markdown-editor-diagram-copy::before {
+  -webkit-mask: var(--icon-copy) center / contain no-repeat;
+  mask: var(--icon-copy) center / contain no-repeat;
+}
+
+.markdown-editor-diagram-delete::before {
+  -webkit-mask: var(--icon-x) center / contain no-repeat;
+  mask: var(--icon-x) center / contain no-repeat;
+}
+
+.markdown-editor-resource-line:hover .markdown-editor-diagram-edit,
+.markdown-editor-resource-line:hover .markdown-editor-diagram-export,
+.markdown-editor-resource-line:hover .markdown-editor-diagram-copy,
+.markdown-editor-resource-line:hover .markdown-editor-diagram-delete,
+.markdown-editor-resource-line.is-selected .markdown-editor-diagram-edit,
+.markdown-editor-resource-line.is-selected .markdown-editor-diagram-export,
+.markdown-editor-resource-line.is-selected .markdown-editor-diagram-copy,
+.markdown-editor-resource-line.is-selected .markdown-editor-diagram-delete {
   opacity: 1;
 }
 
-.markdown-editor-diagram-export:hover {
+.markdown-editor-diagram-edit:hover,
+.markdown-editor-diagram-export:hover,
+.markdown-editor-diagram-copy:hover {
   color: var(--accent);
   background: var(--surface-sunken);
 }
 
-.markdown-editor-diagram-meta small {
-  margin-left: auto;
-  color: var(--faint);
-  font-size: 10.5px;
+.markdown-editor-diagram-delete:hover {
+  color: var(--danger);
+  background: var(--surface-sunken);
 }
+
 
 .markdown-editor-diagram-resize,
 .markdown-editor-image-resize {
@@ -2380,13 +2412,6 @@ span.account-avatar-lg {
   margin: 16px 0;
 }
 
-.markdown-diagram-summary {
-  flex: none;
-  margin-left: auto;
-  color: var(--subtle);
-  font-size: 10.5px;
-}
-
 .diagram-editor {
   position: fixed;
   z-index: 70;
@@ -2428,28 +2453,6 @@ span.account-avatar-lg {
   font-size: 12.5px;
   font-weight: 550;
 }
-.diagram-editor-mode {
-  flex: none;
-  height: 20px;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 8px;
-  border-radius: 5px;
-  background: var(--surface-sunken);
-  color: var(--muted-strong);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.diagram-editor-count {
-  flex: none;
-  color: var(--faint);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
 .diagram-editor-actions {
   display: flex;
   align-items: center;
@@ -2463,20 +2466,6 @@ span.account-avatar-lg {
   height: 20px;
   margin: 0 6px;
   background: var(--line);
-}
-
-.diagram-editor-mode {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  height: 25px;
-  border: 1px solid var(--line-button);
-  border-radius: 6px;
-  background: var(--surface);
-  padding: 0 9px;
-  color: var(--muted-strong);
-  font-size: 11px;
-  font-weight: 550;
 }
 
 .diagram-editor-body {
@@ -3753,14 +3742,6 @@ span.account-avatar-lg {
   white-space: pre-wrap;
 }
 .markdown-view p { white-space: pre-wrap; }
-
-.markdown-editor-diagram-edit {
-  color: var(--accent);
-  background: transparent;
-  border: 0;
-  font: inherit;
-  cursor: pointer;
-}
 
 
 .markdown-diagram-title {

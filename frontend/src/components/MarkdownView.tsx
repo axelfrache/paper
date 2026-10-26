@@ -1,6 +1,6 @@
 import { readAlign } from "../lib/markdown/align";
 import type { ReactNode } from "react";
-import { diagramSummary, diagramToSvgMarkup } from "../lib/diagram";
+import { diagramToSvgMarkup } from "../lib/diagram";
 import { parseBlocks, parseInline } from "../lib/markdown/render";
 import type { MarkdownBlock, MarkdownInline } from "../lib/markdown/render";
 
@@ -50,10 +50,11 @@ function renderBlock(block: MarkdownBlock, index: number) {
   if (block.type === "diagram") {
     return (
       <figure key={index} className="markdown-diagram-card">
-        <div className="markdown-diagram-header">
-          {block.diagram.title ? <span className="markdown-diagram-title">{block.diagram.title}</span> : null}
-          <span className="markdown-diagram-summary">{diagramSummary(block.diagram)}</span>
-        </div>
+        {block.diagram.title ? (
+          <div className="markdown-diagram-header">
+            <span className="markdown-diagram-title">{block.diagram.title}</span>
+          </div>
+        ) : null}
         <div dangerouslySetInnerHTML={{ __html: diagramToSvgMarkup(block.diagram, 320) }} />
       </figure>
     );

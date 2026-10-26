@@ -1079,10 +1079,6 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
               }}
             />
           </div>
-          <span className="diagram-editor-mode">{liveDiagram.mode === "iso" ? "Isometric" : "Flat"}</span>
-          <span className="diagram-editor-count">
-            {liveDiagram.nodes.length} {liveDiagram.nodes.length === 1 ? "node" : "nodes"}
-          </span>
         </div>
         <div className="diagram-editor-actions">
           {aiEnabled ? (
