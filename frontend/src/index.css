@@ -2543,6 +2543,23 @@ span.account-avatar-lg {
   fill: var(--bg);
 }
 
+.diagram-group-region {
+  cursor: grab;
+}
+
+.diagram-group-label-plate {
+  fill: var(--surface-soft);
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.diagram-group-label {
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
 .diagram-canvas {
   position: absolute;
   inset: 0;

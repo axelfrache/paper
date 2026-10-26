@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultDiagram, serializeDiagramMarker } from "./diagram";
+import { createDefaultDiagram, createDiagramGroup, serializeDiagramMarker } from "./diagram";
 import type { Diagram, DiagramMode } from "./diagram";
 import { buildStandaloneSvg, clampScale, exportFileName, svgPixelSize } from "./diagramExport";
 
@@ -51,6 +51,16 @@ describe("standalone diagram SVG", () => {
     expect(white).toContain('fill="#ffffff" stroke="#e4e6e9"');
     expect(clear).toContain('fill="#ffffff" stroke="#e4e6e9"');
     expect(flat).not.toContain('stroke="#e4e6e9"');
+  });
+
+  it("renders a group's region and name with concrete colours", async () => {
+    const diagram = withIcons("iso");
+    const grouped = { ...diagram, groups: [{ ...createDiagramGroup(["a", "b"], "violet"), name: "Core" }] };
+    const svg = await buildStandaloneSvg(grouped, undefined, fakeIcon);
+
+    expect(svg).toContain("<polygon");
+    expect(svg).toContain(">Core<");
+    expect(svg).not.toContain("var(--");
   });
 
   it("carries real pixel dimensions", async () => {

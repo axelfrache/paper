@@ -3,7 +3,9 @@ import { ArrowRight, Box, ChevronDown, Copy, Download, Grid3x3, Hand, Maximize, 
 import type { LucideIcon } from "lucide-react";
 import {
   createDiagramEdge,
+  createDiagramGroup,
   createDiagramNode,
+  defaultGroupPadding,
   diagramIconForKind,
   diagramKinds,
   diagramPalette,
@@ -14,6 +16,8 @@ import {
   edgeLabelPlate,
   labelLines,
   layoutDiagram,
+  minGroupPadding,
+  pointInPolygon,
   resolveLabelBoxed,
   screenToDiagramPoint,
 } from "../lib/diagram";
@@ -33,7 +37,9 @@ import type {
   DiagramEdgeEnd,
   DiagramEdgeRoute,
   DiagramEdgeWidth,
+  DiagramGroup,
   DiagramKind,
+  DiagramLayoutGroup,
   DiagramLayoutNode,
   DiagramNode,
 } from "../lib/diagram";
@@ -164,6 +170,10 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
   const selectedNodes = selectedIds.length ? liveDiagram.nodes.filter((node) => selectedIds.includes(node.id)) : [];
   const selectedLayoutNodes = selectedIds.length ? layout.nodes.filter((node) => selectedIds.includes(node.id)) : [];
   const groupSelectionBox = selectedLayoutNodes.length > 1 ? boundsForLayoutNodes(selectedLayoutNodes) : null;
+  const selectedGroup =
+    liveDiagram.groups?.find(
+      (group) => group.members.length === selectedIds.length && group.members.every((id) => selectedIds.includes(id)),
+    ) ?? null;
   const selectedEdge = liveDiagram.edges.find((edge) => edge.id === selectedEdgeId) ?? null;
   const selectedNodeIcon = selectedNode ? diagramIconForKind(selectedNode.kind) : null;
   const selectedNodeHasTones = liveDiagram.mode === "iso" && selectedNodeIcon !== null && diagramIconHasTones(selectedNodeIcon);
@@ -249,6 +259,11 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
         pasteClipboard();
         return;
       }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "g" && liveDiagram.mode === "iso" && selectedIds.length > 1 && !isTypingTarget(event.target)) {
+        event.preventDefault();
+        groupSelected();
+        return;
+      }
       const nudge = nudgeVectors[event.key];
       if (nudge && selectedIds.length && !event.metaKey && !event.ctrlKey && !isTypingTarget(event.target)) {
         event.preventDefault();
@@ -318,6 +333,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
       nudgeCommitRef.current = null;
       setGuides([]);
       setSpacing([]);
+      resolveGroupMembershipAfterDrag(selectedIds);
       commitDiagram();
     }, 400);
   };
@@ -392,7 +408,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
     setElementMenuOpen(false);
   };
 
-  const handleNodePointerDown = (event: React.PointerEvent<SVGGElement>, nodeId: string) => {
+  const handleNodePointerDown = (event: React.PointerEvent<SVGGElement>, nodeId: string, forceIds?: string[]) => {
     event.preventDefault();
     event.stopPropagation();
 
@@ -427,7 +443,8 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
       return;
     }
 
-    const movingIds = selectedIds.includes(nodeId) ? selectedIds : [nodeId];
+    const clickedIds = forceIds ?? [nodeId];
+    const movingIds = clickedIds.every((id) => selectedIds.includes(id)) ? selectedIds : clickedIds;
     setSelectedIds(movingIds);
     setSelectedEdgeId(null);
     const svg = svgRef.current;
@@ -483,6 +500,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
       window.removeEventListener("pointerup", up);
       setGuides([]);
       setSpacing([]);
+      resolveGroupMembershipAfterDrag(movingIds);
       commitDiagram();
     };
 
@@ -518,6 +536,46 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
         (current) => ({
           ...current,
           nodes: current.nodes.map((item) => (item.id === nodeId ? { ...item, w: width, h: height } : item)),
+        }),
+        { commit: false },
+      );
+    };
+
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      commitDiagram();
+    };
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+  const handleGroupResizePointerDown = (event: React.PointerEvent<SVGRectElement>, groupId: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const svg = svgRef.current;
+    const group = diagramRef.current.groups?.find((item) => item.id === groupId);
+    if (!svg || !group) {
+      return;
+    }
+
+    const start = screenToDiagramPoint(event, svg, diagramRef.current);
+    const basePadding = Math.max(minGroupPadding, group.padding ?? defaultGroupPadding);
+
+    const move = (moveEvent: PointerEvent) => {
+      const currentSvg = svgRef.current;
+      if (!currentSvg) {
+        return;
+      }
+      const point = screenToDiagramPoint(moveEvent, currentSvg, diagramRef.current);
+      const delta = (point.x - start.x + (point.y - start.y)) / 2;
+      const padding = Math.max(minGroupPadding, Math.round(basePadding + delta));
+      patchDiagram(
+        (current) => ({
+          ...current,
+          groups: current.groups?.map((item) => (item.id === groupId ? { ...item, padding } : item)),
         }),
         { commit: false },
       );
@@ -686,9 +744,101 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
       ...current,
       nodes: current.nodes.filter((node) => !selected.has(node.id)),
       edges: current.edges.filter((edge) => !selected.has(edge.from) && !selected.has(edge.to)),
+      groups: current.groups
+        ?.map((group) => ({ ...group, members: group.members.filter((id) => !selected.has(id)) }))
+        .filter((group) => group.members.length >= 2),
     }));
     setSelectedIds([]);
     setPendingFromId(null);
+  };
+
+  const groupSelected = () => {
+    if (liveDiagram.mode !== "iso" || selectedIds.length < 2) {
+      return;
+    }
+    const members = [...selectedIds];
+    const nextColor = colors[(diagramRef.current.groups?.length ?? 0) % colors.length];
+    patchDiagram((current) => {
+      const groups = (current.groups ?? [])
+        .map((group) => ({ ...group, members: group.members.filter((id) => !members.includes(id)) }))
+        .filter((group) => group.members.length >= 2);
+      return { ...current, groups: [...groups, createDiagramGroup(members, nextColor)] };
+    });
+    setSelectedIds(members);
+  };
+
+  const ungroupSelected = () => {
+    if (!selectedGroup) {
+      return;
+    }
+    const groupId = selectedGroup.id;
+    patchDiagram((current) => ({ ...current, groups: current.groups?.filter((group) => group.id !== groupId) }));
+  };
+
+  const renameGroup = (name: string) => {
+    if (!selectedGroup) {
+      return;
+    }
+    const groupId = selectedGroup.id;
+    patchDiagram((current) => ({
+      ...current,
+      groups: current.groups?.map((group) => (group.id === groupId ? { ...group, name: name || undefined } : group)),
+    }));
+  };
+
+  const applyGroupColor = (nextColor: DiagramColor) => {
+    if (!selectedGroup) {
+      return;
+    }
+    const groupId = selectedGroup.id;
+    patchDiagram((current) => ({
+      ...current,
+      groups: current.groups?.map((group) => (group.id === groupId ? { ...group, color: nextColor } : group)),
+    }));
+  };
+
+  const resolveGroupMembershipAfterDrag = (movedIds: string[]) => {
+    const diagram = diagramRef.current;
+    const groups = diagram.groups ?? [];
+    if (diagram.mode !== "iso" || !movedIds.length || !groups.length) {
+      return;
+    }
+    const wholeGroupDrag = groups.some(
+      (group) => group.members.length === movedIds.length && group.members.every((id) => movedIds.includes(id)),
+    );
+    if (wholeGroupDrag) {
+      return;
+    }
+    const layout = layoutDiagram(diagram);
+    const layoutById = new Map(layout.nodes.map((node) => [node.id, node]));
+    let nextGroups = groups;
+    let changed = false;
+    for (const nodeId of movedIds) {
+      const laidOut = layoutById.get(nodeId);
+      if (!laidOut) {
+        continue;
+      }
+      const currentGroupId = nextGroups.find((group) => group.members.includes(nodeId))?.id;
+      const target = layout.groups.find(
+        (group) => group.id !== currentGroupId && pointInPolygon(laidOut.cx, laidOut.cy, group.points),
+      );
+      if (!target) {
+        continue;
+      }
+      changed = true;
+      nextGroups = nextGroups
+        .map((group) =>
+          group.id === currentGroupId
+            ? { ...group, members: group.members.filter((id) => id !== nodeId) }
+            : group.id === target.id
+            ? { ...group, members: [...group.members, nodeId] }
+            : group,
+        )
+        .filter((group) => group.members.length >= 2);
+    }
+    if (changed) {
+      patchDiagram((current) => ({ ...current, groups: nextGroups }));
+    }
   };
 
   const duplicateSelected = () => {
@@ -1201,6 +1351,31 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
             </g>
           ) : null}
 
+          {layout.groups.map((group) => {
+            const palette = diagramPalette[group.color] ?? diagramPalette.slate;
+            const active = selectedGroup?.id === group.id;
+            return (
+              <g key={group.id}>
+                <polygon
+                  className="diagram-group-region"
+                  points={group.points}
+                  fill={palette.fill}
+                  stroke={palette.stroke}
+                  strokeWidth={active ? 2.2 : 1.4}
+                  strokeDasharray={active ? undefined : "6 5"}
+                  onPointerDown={(event) => handleNodePointerDown(event, group.source.members[0], group.source.members)}
+                />
+                {group.name ? (
+                  <foreignObject x={group.labelX - 100} y={group.labelY - 14} width="200" height="28" style={{ overflow: "visible", pointerEvents: "none" }}>
+                    <div className="diagram-node-label bare">
+                      <span style={{ color: palette.stroke, borderColor: palette.stroke }}>{group.name}</span>
+                    </div>
+                  </foreignObject>
+                ) : null}
+              </g>
+            );
+          })}
+
           {layout.edges.map((edge) => (
             <g
               key={edge.id}
@@ -1349,6 +1524,23 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
               ) : null}
             </g>
           ))}
+
+          {selectedGroup && tool !== "pan"
+            ? (() => {
+                const activeGroup = layout.groups.find((group) => group.id === selectedGroup.id);
+                return activeGroup ? (
+                  <rect
+                    className="diagram-resize-handle"
+                    x={activeGroup.hx + activeGroup.hw - 7}
+                    y={activeGroup.hy + activeGroup.hh - 7}
+                    width="14"
+                    height="14"
+                    rx="4"
+                    onPointerDown={(event) => handleGroupResizePointerDown(event, activeGroup.id)}
+                  />
+                ) : null;
+              })()
+            : null}
 
           {/* Guides and measurements are already in the space the SVG is drawn in. */}
           {guides.map((guide, index) => (
@@ -1603,6 +1795,37 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
               Delete node
             </button>
           </aside>
+        ) : selectedGroup ? (
+          <aside className="diagram-inspector">
+            <strong>Group</strong>
+            <div className="diagram-inspector-meta">{selectedGroup.members.length} nodes</div>
+            <textarea
+              className="diagram-inspector-label"
+              value={selectedGroup.name ?? ""}
+              aria-label="Group name"
+              placeholder="Name"
+              rows={1}
+              onChange={(event) => renameGroup(event.target.value)}
+              onBlur={commitDiagram}
+              onKeyDown={commitOnPlainEnter}
+            />
+            <div className="diagram-inspector-style">
+              <span>Color</span>
+              <div className="diagram-inspector-swatches">
+                {colors.map((name) => (
+                  <button
+                    key={name}
+                    className={selectedGroup.color === name ? "diagram-swatch active" : "diagram-swatch"}
+                    title={name}
+                    aria-label={name}
+                    style={{ backgroundColor: diagramPalette[name].stroke, color: diagramPalette[name].stroke }}
+                    onClick={() => applyGroupColor(name)}
+                  />
+                ))}
+              </div>
+            </div>
+            <button onClick={ungroupSelected}>Ungroup</button>
+          </aside>
         ) : selectedNodes.length > 1 ? (
           <aside className="diagram-inspector">
             <strong>Selected</strong>
@@ -1639,6 +1862,9 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
                 </button>
               </div>
             </div>
+            {liveDiagram.mode === "iso" ? (
+              <button onClick={groupSelected}>Group</button>
+            ) : null}
             <button onClick={duplicateSelected}>
               <Copy size={14} strokeWidth={1.9} />
               Duplicate

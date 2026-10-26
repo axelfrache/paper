@@ -2,6 +2,7 @@ import { act, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { DiagramEditor } from "./DiagramEditor";
+import { createDiagramGroup, defaultGroupPadding } from "../lib/diagram";
 import type { Diagram, DiagramMode } from "../lib/diagram";
 import type { Root } from "react-dom/client";
 
@@ -303,5 +304,215 @@ describe("diagram titles", () => {
     }
     act(() => input.blur());
     expect(editor.value().nodes).toEqual(initial.nodes);
+  });
+});
+
+describe("node groups", () => {
+  function shiftSelect(host: HTMLElement, index: number) {
+    act(() => {
+      host.querySelectorAll(".diagram-node")[index]?.dispatchEvent(
+        new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true, shiftKey: true }),
+      );
+      window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+    });
+  }
+
+  function findButton(host: HTMLElement, text: string) {
+    return Array.from(host.querySelectorAll(".diagram-inspector button")).find(
+      (button) => button.textContent === text,
+    ) as HTMLButtonElement | undefined;
+  }
+
+  function clickRegion(host: HTMLElement) {
+    act(() => {
+      host.querySelector(".diagram-group-region")?.dispatchEvent(
+        new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true }),
+      );
+      window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+    });
+  }
+
+  it("creates a group from the selection with Cmd/Ctrl+G", () => {
+    const editor = mount(rowOfThree("iso"));
+    editor.select(0);
+    shiftSelect(editor.host, 1);
+
+    editor.press("g", { metaKey: true });
+
+    expect(editor.value().groups).toHaveLength(1);
+    expect(editor.value().groups?.[0].members.slice().sort()).toEqual(["left", "middle"]);
+    expect(editor.host.querySelector(".diagram-inspector strong")?.textContent).toBe("Group");
+  });
+
+  it("does nothing for a single node, or outside isometric mode", () => {
+    const flatEditor = mount(rowOfThree("flat"));
+    flatEditor.select(0);
+    shiftSelect(flatEditor.host, 1);
+    flatEditor.press("g", { metaKey: true });
+    expect(flatEditor.value().groups ?? []).toHaveLength(0);
+
+    const isoEditor = mount(rowOfThree("iso"));
+    isoEditor.select(0);
+    isoEditor.press("g", { metaKey: true });
+    expect(isoEditor.value().groups ?? []).toHaveLength(0);
+  });
+
+  it("selects every member when clicking the group's region, and moves them together", () => {
+    const editor = mount(rowOfThree("iso"));
+    editor.select(0);
+    shiftSelect(editor.host, 1);
+    editor.press("g", { metaKey: true });
+
+    clickRegion(editor.host);
+    expect(editor.host.querySelector(".diagram-inspector strong")?.textContent).toBe("Group");
+
+    const leftBefore = editor.x("left");
+    const middleBefore = editor.x("middle");
+    editor.press("ArrowRight");
+    expect(editor.x("left")).toBeGreaterThan(leftBefore);
+    expect(editor.x("left") - leftBefore).toBeCloseTo(editor.x("middle") - middleBefore, 5);
+  });
+
+  it("selects just that one node on a fresh click into a member, not the whole group", () => {
+    const diagram: Diagram = {
+      version: 1,
+      mode: "iso",
+      nodes: [node("a", 0), node("b", 200)],
+      edges: [],
+      groups: [createDiagramGroup(["a", "b"], "blue")],
+    };
+    const editor = mount(diagram);
+
+    editor.select(0);
+
+    expect(editor.host.querySelector(".diagram-inspector-meta")?.textContent).toBe("Box");
+  });
+
+  it("ungroups without touching the nodes", () => {
+    const editor = mount(rowOfThree("iso"));
+    editor.select(0);
+    shiftSelect(editor.host, 1);
+    editor.press("g", { metaKey: true });
+
+    act(() => {
+      findButton(editor.host, "Ungroup")?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(editor.value().groups ?? []).toHaveLength(0);
+    expect(editor.value().nodes).toHaveLength(3);
+  });
+
+  it("renames a group", () => {
+    const editor = mount(rowOfThree("iso"));
+    editor.select(0);
+    shiftSelect(editor.host, 1);
+    editor.press("g", { metaKey: true });
+
+    const input = editor.host.querySelector<HTMLTextAreaElement>('[aria-label="Group name"]')!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, "Core");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(editor.value().groups?.[0].name).toBe("Core");
+  });
+
+  it("dissolves a group when a member node is deleted, leaving under 2 members", () => {
+    const editor = mount(rowOfThree("iso"));
+    editor.select(0);
+    shiftSelect(editor.host, 1);
+    editor.press("g", { metaKey: true });
+
+    editor.select(2);
+    shiftSelect(editor.host, 2);
+    shiftSelect(editor.host, 0);
+    editor.press("Delete");
+
+    expect(editor.value().nodes.map((item) => item.id)).toEqual(["middle", "right"]);
+    expect(editor.value().groups ?? []).toHaveLength(0);
+  });
+
+  it("joins an ungrouped node to an existing group once it's moved into the region", () => {
+    const diagram: Diagram = {
+      version: 1,
+      mode: "iso",
+      nodes: [node("a", 0), node("b", 200), { ...node("c", 220), y: 50 }],
+      edges: [],
+      groups: [createDiagramGroup(["a", "b"], "blue")],
+    };
+    const editor = mount(diagram);
+
+    editor.select(2);
+    editor.press("ArrowRight");
+
+    expect(editor.value().groups?.[0].members.slice().sort()).toEqual(["a", "b", "c"]);
+  });
+
+  it("moves every member together when dragging the region, keeping membership", () => {
+    const diagram: Diagram = {
+      version: 1,
+      mode: "iso",
+      nodes: [node("a", 0), node("b", 200)],
+      edges: [],
+      groups: [createDiagramGroup(["a", "b"], "blue")],
+    };
+    const editor = mount(diagram);
+
+    const aBefore = editor.x("a");
+    const bBefore = editor.x("b");
+    clickRegion(editor.host);
+    editor.press("ArrowRight");
+
+    expect(editor.x("a")).toBeGreaterThan(aBefore);
+    expect(editor.x("a") - aBefore).toBeCloseTo(editor.x("b") - bBefore, 5);
+    expect(editor.value().groups).toHaveLength(1);
+    expect(editor.value().groups?.[0].members.slice().sort()).toEqual(["a", "b"]);
+  });
+
+  it("moves a single member within its group without dragging the rest", () => {
+    const diagram: Diagram = {
+      version: 1,
+      mode: "iso",
+      nodes: [node("a", 0), node("b", 200)],
+      edges: [],
+      groups: [createDiagramGroup(["a", "b"], "blue")],
+    };
+    const editor = mount(diagram);
+
+    const bBefore = editor.x("b");
+    editor.select(0);
+    editor.press("ArrowRight");
+
+    expect(editor.x("a")).toBeGreaterThan(0);
+    expect(editor.x("b")).toBe(bBefore);
+    expect(editor.value().groups).toHaveLength(1);
+    expect(editor.value().groups?.[0].members.slice().sort()).toEqual(["a", "b"]);
+  });
+
+  it("only shows a resize handle for the selected group, and dragging it changes padding", () => {
+    const diagram: Diagram = {
+      version: 1,
+      mode: "iso",
+      nodes: [node("a", 0), node("b", 200)],
+      edges: [],
+      groups: [createDiagramGroup(["a", "b"], "blue")],
+    };
+    const editor = mount(diagram);
+
+    expect(editor.host.querySelector(".diagram-resize-handle")).toBeNull();
+    clickRegion(editor.host);
+    const handle = editor.host.querySelector<SVGRectElement>(".diagram-resize-handle");
+    expect(handle).not.toBeNull();
+
+    act(() => {
+      handle!.dispatchEvent(
+        new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true, clientX: 300, clientY: 300 }),
+      );
+      window.dispatchEvent(new MouseEvent("pointermove", { bubbles: true, clientX: 380, clientY: 380 }));
+      window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+    });
+
+    expect(editor.value().groups?.[0].padding).not.toBeUndefined();
+    expect(editor.value().groups?.[0].padding).not.toBe(defaultGroupPadding);
   });
 });

@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  createDiagramGroup,
   createDiagramNode,
   cloneDiagramWithFreshIds,
   createDefaultDiagram,
+  defaultGroupPadding,
   diagramIconForKind,
   diagramKinds,
   diagramToSvgMarkup,
   edgeLabelHalo,
   layoutDiagram,
+  minGroupPadding,
   parseDiagramMarker,
+  pointInPolygon,
   serializeDiagramMarker,
 } from "./diagram";
 import type { Diagram, DiagramEdgeRoute } from "./diagram";
@@ -394,6 +398,108 @@ describe("node label badge", () => {
 
     const boxed = diagramToSvgMarkup({ version: 1, mode: "flat", nodes: [node({ labelBoxed: true })], edges: [] });
     expect(boxed).toContain('class="diagram-node-label-plate"');
+  });
+});
+
+describe("node groups", () => {
+  const twoNodeDiagram = (groups?: Diagram["groups"]): Diagram => ({
+    version: 1,
+    mode: "iso",
+    nodes: [
+      { id: "a", kind: "server", x: 0, y: 0, label: "A", color: "blue" },
+      { id: "b", kind: "server", x: 200, y: 0, label: "B", color: "blue" },
+    ],
+    edges: [],
+    groups,
+  });
+
+  it("computes a projected region behind the group's members", () => {
+    const group = createDiagramGroup(["a", "b"], "violet");
+    const layout = layoutDiagram(twoNodeDiagram([group]));
+    expect(layout.groups).toHaveLength(1);
+    const points = layout.groups[0].points.split(" ");
+    expect(points).toHaveLength(4);
+    for (const point of points) {
+      expect(point).toMatch(/^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/);
+    }
+  });
+
+  it("grows the region with an explicit padding, and clamps a too-small one", () => {
+    const base = layoutDiagram(twoNodeDiagram([createDiagramGroup(["a", "b"], "violet")])).groups[0];
+    const wider = layoutDiagram(
+      twoNodeDiagram([{ ...createDiagramGroup(["a", "b"], "violet"), padding: defaultGroupPadding + 100 }]),
+    ).groups[0];
+    const clamped = layoutDiagram(
+      twoNodeDiagram([{ ...createDiagramGroup(["a", "b"], "violet"), padding: 1 }]),
+    ).groups[0];
+
+    expect(wider.hw * wider.hh).toBeGreaterThan(base.hw * base.hh);
+    expect(clamped.hw).toBeCloseTo(
+      layoutDiagram(
+        twoNodeDiagram([{ ...createDiagramGroup(["a", "b"], "violet"), padding: minGroupPadding }]),
+      ).groups[0].hw,
+      1,
+    );
+  });
+
+  it("drops a group once membership falls below 2, including an unknown member id", () => {
+    const solo = createDiagramGroup(["a"], "violet");
+    expect(layoutDiagram(twoNodeDiagram([solo])).groups).toHaveLength(0);
+
+    const withUnknown = createDiagramGroup(["a", "missing"], "violet");
+    expect(layoutDiagram(twoNodeDiagram([withUnknown])).groups).toHaveLength(0);
+  });
+
+  it("parses fine when a diagram carries no groups at all", () => {
+    expect(() => layoutDiagram(twoNodeDiagram(undefined))).not.toThrow();
+    expect(layoutDiagram(twoNodeDiagram(undefined)).groups).toHaveLength(0);
+  });
+
+  it("round-trips a valid group through serialization, and drops one left under 2 members", () => {
+    const group = { ...createDiagramGroup(["a", "b"], "amber"), name: "Core" };
+    const saved = parseDiagramMarker(serializeDiagramMarker(twoNodeDiagram([group])));
+    expect(saved?.groups).toHaveLength(1);
+    expect(saved?.groups?.[0]).toMatchObject({ name: "Core", color: "amber", members: ["a", "b"] });
+
+    const underMembered = { ...createDiagramGroup(["a", "ghost"], "amber") };
+    const droppedResult = parseDiagramMarker(serializeDiagramMarker(twoNodeDiagram([underMembered])));
+    expect(droppedResult?.groups ?? []).toHaveLength(0);
+  });
+
+  it("round-trips an explicit padding, clamping an invalid one", () => {
+    const resized = { ...createDiagramGroup(["a", "b"], "amber"), padding: 120 };
+    const saved = parseDiagramMarker(serializeDiagramMarker(twoNodeDiagram([resized])));
+    expect(saved?.groups?.[0].padding).toBe(120);
+
+    const tooSmall = { ...createDiagramGroup(["a", "b"], "amber"), padding: 1 };
+    const clamped = parseDiagramMarker(serializeDiagramMarker(twoNodeDiagram([tooSmall])));
+    expect(clamped?.groups?.[0].padding).toBe(minGroupPadding);
+  });
+
+  it("remaps a group's members through cloneDiagramWithFreshIds", () => {
+    const group = createDiagramGroup(["a", "b"], "slate");
+    const cloned = cloneDiagramWithFreshIds(twoNodeDiagram([group]));
+    const clonedGroup = cloned.groups?.[0];
+    const clonedNodeIds = cloned.nodes.map((node) => node.id);
+    expect(clonedGroup?.id).not.toBe(group.id);
+    expect(clonedGroup?.members).toEqual(clonedNodeIds);
+    expect(clonedGroup?.members).not.toEqual(group.members);
+  });
+});
+
+describe("pointInPolygon", () => {
+  const square = "0,0 10,0 10,10 0,10";
+
+  it("is true inside and false outside a simple square", () => {
+    expect(pointInPolygon(5, 5, square)).toBe(true);
+    expect(pointInPolygon(20, 20, square)).toBe(false);
+    expect(pointInPolygon(-5, 5, square)).toBe(false);
+  });
+
+  it("works for the diamond a group's own region forms", () => {
+    const diamond = "50,0 100,25 50,50 0,25";
+    expect(pointInPolygon(50, 25, diamond)).toBe(true);
+    expect(pointInPolygon(0, 0, diamond)).toBe(false);
   });
 });
 

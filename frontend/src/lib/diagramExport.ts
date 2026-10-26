@@ -8,7 +8,7 @@ import {
   nodeLabelPlate,
   resolveLabelBoxed,
 } from "./diagram";
-import type { Diagram, DiagramLayout, DiagramLayoutEdge, DiagramLayoutNode, DiagramMode } from "./diagram";
+import type { Diagram, DiagramLayout, DiagramLayoutEdge, DiagramLayoutGroup, DiagramLayoutNode, DiagramMode } from "./diagram";
 
 export type DiagramExportFormat = "svg" | "png";
 export type DiagramExportBackground = "white" | "transparent";
@@ -101,6 +101,7 @@ export async function buildStandaloneSvg(
 }
 
 function renderBody(layout: DiagramLayout, mode: DiagramMode, iconHref: (n: DiagramLayoutNode) => string, halo: string) {
+  const groups = layout.groups.map((group) => groupMarkup(group, halo)).join("");
   const edges = layout.edges
     .map((edge) => {
       const cap = edge.markerStart || edge.markerEnd ? "butt" : "round";
@@ -132,7 +133,23 @@ function renderBody(layout: DiagramLayout, mode: DiagramMode, iconHref: (n: Diag
       return `${faces}${cap}${icon}${plateSvg}<text text-anchor="middle"${baseline} font-size="${size}" font-weight="${boxed ? 500 : 530}" fill="${fill}">${label}</text>`;
     })
     .join("");
-  return `${edges}${edgeLabels}${nodes}`;
+  return `${groups}${edges}${edgeLabels}${nodes}`;
+}
+
+function groupMarkup(group: DiagramLayoutGroup, halo: string) {
+  const palette = diagramPalette[group.color] ?? diagramPalette.slate;
+  const region = `<polygon points="${group.points}" fill="${palette.fill}" stroke="${palette.stroke}"/>`;
+  if (!group.name) {
+    return region;
+  }
+  const fontSize = 11;
+  const lineHeight = fontSize * 1.25;
+  const plate = nodeLabelPlate(group.name, group.labelX, group.labelY, fontSize, lineHeight);
+  const plateSvg = plate
+    ? `<rect x="${plate.x}" y="${plate.y}" width="${plate.width}" height="${plate.height}" rx="${plate.rx}" fill="${halo}" stroke="${palette.stroke}" stroke-width="1"/>`
+    : "";
+  const label = tspans(group.name, group.labelX, group.labelY, lineHeight, true);
+  return `${region}${plateSvg}<text text-anchor="middle" dominant-baseline="central" font-size="${fontSize}" font-weight="700" letter-spacing="0.3" fill="${palette.stroke}">${label}</text>`;
 }
 
 function edgeLabel(edge: DiagramLayoutEdge) {

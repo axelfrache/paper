@@ -51,12 +51,24 @@ export type DiagramPreview = {
   height: number;
 };
 
+export type DiagramGroup = {
+  id: string;
+  name?: string;
+  color: DiagramColor;
+  members: string[];
+  padding?: number;
+};
+
+export const minGroupPadding = 24;
+export const defaultGroupPadding = 56;
+
 export type Diagram = {
   version: 1;
   title?: string;
   mode: DiagramMode;
   nodes: DiagramNode[];
   edges: DiagramEdge[];
+  groups?: DiagramGroup[];
   preview?: DiagramPreview;
 };
 
@@ -97,9 +109,24 @@ export type DiagramLayoutEdge = {
   labelY: number;
 };
 
+export type DiagramLayoutGroup = {
+  id: string;
+  source: DiagramGroup;
+  name: string;
+  color: DiagramColor;
+  points: string;
+  labelX: number;
+  labelY: number;
+  hx: number;
+  hy: number;
+  hw: number;
+  hh: number;
+};
+
 export type DiagramLayout = {
   nodes: DiagramLayoutNode[];
   edges: DiagramLayoutEdge[];
+  groups: DiagramLayoutGroup[];
   viewBox: string;
 };
 
@@ -191,6 +218,10 @@ export function createDiagramEdge(from: string, to: string, color: DiagramColor)
   return { id: uniqueId("e"), from, to, color };
 }
 
+export function createDiagramGroup(members: string[], color: DiagramColor): DiagramGroup {
+  return { id: uniqueId("g"), color, members };
+}
+
 export function duplicateDiagramNode(node: DiagramNode, offset = 24): DiagramNode {
   return { ...node, id: uniqueId("n"), x: node.x + offset, y: node.y + offset };
 }
@@ -208,7 +239,12 @@ export function cloneDiagramWithFreshIds(diagram: Diagram): Diagram {
     from: idMap.get(edge.from) ?? edge.from,
     to: idMap.get(edge.to) ?? edge.to,
   }));
-  return { ...diagram, nodes, edges };
+  const groups = diagram.groups?.map((group) => ({
+    ...group,
+    id: uniqueId("g"),
+    members: group.members.map((id) => idMap.get(id) ?? id),
+  }));
+  return { ...diagram, nodes, edges, groups };
 }
 
 export function serializeDiagramMarker(diagram: Diagram) {
@@ -339,15 +375,88 @@ export function layoutDiagram(diagram: Diagram): DiagramLayout {
     ];
   });
 
+  const groups = (diagram.groups ?? [])
+    .map((group) => layoutGroup(group, diagram.nodes, diagram.mode))
+    .filter((group): group is DiagramLayoutGroup => group !== null);
+
   const pad = 44;
-  const xs = nodes.flatMap((node) => [node.hx, node.hx + node.hw]).concat([0]);
-  const ys = nodes.flatMap((node) => [node.hy, node.hy + node.hh]).concat([0]);
+  const groupPoints = groups.flatMap((group) => parsePoints(group.points));
+  const xs = nodes.flatMap((node) => [node.hx, node.hx + node.hw]).concat(groupPoints.map((p) => p.x), [0]);
+  const ys = nodes.flatMap((node) => [node.hy, node.hy + node.hh]).concat(groupPoints.map((p) => p.y), [0]);
   const minX = Math.min(...xs) - pad;
   const minY = Math.min(...ys) - pad;
   const width = Math.max(Math.max(...xs) - minX + pad, 320);
   const height = Math.max(Math.max(...ys) - minY + pad, 200);
 
-  return { nodes, edges, viewBox: `${minX} ${minY} ${width} ${height}` };
+  return { nodes, edges, groups, viewBox: `${minX} ${minY} ${width} ${height}` };
+}
+
+function layoutGroup(group: DiagramGroup, diagramNodes: DiagramNode[], mode: DiagramMode): DiagramLayoutGroup | null {
+  const members = diagramNodes.filter((node) => group.members.includes(node.id));
+  if (members.length < 2) {
+    return null;
+  }
+  const groupPad = Math.max(minGroupPadding, group.padding ?? defaultGroupPadding);
+  const xs = members.flatMap((node) => {
+    const { w } = sizeForNode(node);
+    return [node.x, node.x + w];
+  });
+  const ys = members.flatMap((node) => {
+    const { h } = sizeForNode(node);
+    return [node.y, node.y + h];
+  });
+  const minX = Math.min(...xs) - groupPad;
+  const maxX = Math.max(...xs) + groupPad;
+  const minY = Math.min(...ys) - groupPad;
+  const maxY = Math.max(...ys) + groupPad;
+  const corners = [
+    { x: minX, y: minY },
+    { x: maxX, y: minY },
+    { x: maxX, y: maxY },
+    { x: minX, y: maxY },
+  ].map((corner) => diagramToLayoutPoint(mode, corner.x, corner.y));
+  const bottom = corners.reduce((a, b) => (b.y > a.y ? b : a));
+  const cornerXs = corners.map((p) => p.x);
+  const cornerYs = corners.map((p) => p.y);
+  const hx = Math.min(...cornerXs);
+  const hy = Math.min(...cornerYs);
+  const hw = Math.max(...cornerXs) - hx;
+  const hh = Math.max(...cornerYs) - hy;
+  return {
+    id: group.id,
+    source: group,
+    name: (group.name ?? "").trim(),
+    color: group.color,
+    hx,
+    hy,
+    hw,
+    hh,
+    points: corners.map((p) => `${Math.round(p.x * 10) / 10},${Math.round(p.y * 10) / 10}`).join(" "),
+    labelX: Math.round(bottom.x * 10) / 10,
+    labelY: Math.round((bottom.y - 10) * 10) / 10,
+  };
+}
+
+function parsePoints(points: string) {
+  return points.split(" ").map((pair) => {
+    const [x, y] = pair.split(",").map(Number);
+    return { x, y };
+  });
+}
+
+export function pointInPolygon(x: number, y: number, points: string): boolean {
+  const poly = parsePoints(points);
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x;
+    const yi = poly[i].y;
+    const xj = poly[j].x;
+    const yj = poly[j].y;
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
 }
 
 export function diagramToSvgMarkup(diagram: Diagram, maxHeight = 340) {
@@ -357,6 +466,7 @@ export function diagramToSvgMarkup(diagram: Diagram, maxHeight = 340) {
   const viewBoxHeight = Math.max(90, bounds.height);
   const displayHeight = Math.max(120, Math.min(640, diagram.preview?.height ?? Math.min(maxHeight, viewBoxHeight)));
   const body = [
+    ...layout.groups.map((group) => groupSvg(group)),
     ...layout.edges.map((edge) => {
       const lineCap = edge.markerStart || edge.markerEnd ? "butt" : "round";
       return `<path d="${edge.d}" fill="none" stroke="${edge.color}" stroke-width="${edge.width}" stroke-linecap="${lineCap}" stroke-linejoin="round"${edge.markerStart ? ` marker-start="${edge.markerStart}"` : ""}${edge.markerEnd ? ` marker-end="${edge.markerEnd}"` : ""}${edge.dashed ? ' stroke-dasharray="7 6"' : ""}/>`;
@@ -489,6 +599,22 @@ function edgeLabelSvg(edge: DiagramLayoutEdge) {
   return `${backing}<text class="diagram-edge-label" text-anchor="middle" dominant-baseline="central" stroke-width="${edgeLabelHalo(edge.width)}">${body}</text>`;
 }
 
+function groupSvg(group: DiagramLayoutGroup) {
+  const palette = diagramPalette[group.color] ?? diagramPalette.slate;
+  const region = `<polygon class="diagram-group-region" points="${group.points}" fill="${palette.fill}" stroke="${palette.stroke}"/>`;
+  if (!group.name) {
+    return region;
+  }
+  const fontSize = 11;
+  const lineHeight = fontSize * 1.25;
+  const plate = nodeLabelPlate(group.name, group.labelX, group.labelY, fontSize, lineHeight);
+  const plateSvg = plate
+    ? `<rect class="diagram-group-label-plate" x="${plate.x}" y="${plate.y}" width="${plate.width}" height="${plate.height}" rx="${plate.rx}" stroke="${palette.stroke}"/>`
+    : "";
+  const labelBody = labelTspans(group.name, group.labelX, group.labelY, lineHeight, true);
+  return `${region}${plateSvg}<text class="diagram-group-label" text-anchor="middle" dominant-baseline="central" font-size="${fontSize}" fill="${palette.stroke}">${labelBody}</text>`;
+}
+
 function contentBounds(layout: DiagramLayout) {
   if (!layout.nodes.length) {
     const [x, y, width, height] = layout.viewBox.split(/\s+/).map(Number);
@@ -496,10 +622,11 @@ function contentBounds(layout: DiagramLayout) {
   }
 
   const pad = 20;
-  const minX = Math.min(...layout.nodes.map((node) => node.hx)) - pad;
-  const minY = Math.min(...layout.nodes.map((node) => node.hy)) - pad;
-  const maxX = Math.max(...layout.nodes.map((node) => node.hx + node.hw)) + pad;
-  const maxY = Math.max(...layout.nodes.map((node) => node.hy + node.hh)) + pad;
+  const groupPoints = layout.groups.flatMap((group) => parsePoints(group.points));
+  const minX = Math.min(...layout.nodes.map((node) => node.hx), ...groupPoints.map((p) => p.x)) - pad;
+  const minY = Math.min(...layout.nodes.map((node) => node.hy), ...groupPoints.map((p) => p.y)) - pad;
+  const maxX = Math.max(...layout.nodes.map((node) => node.hx + node.hw), ...groupPoints.map((p) => p.x)) + pad;
+  const maxY = Math.max(...layout.nodes.map((node) => node.hy + node.hh), ...groupPoints.map((p) => p.y)) + pad;
   return {
     x: minX,
     y: minY,
@@ -1229,12 +1356,18 @@ function normalizeDiagram(value: unknown): Diagram {
   const source = typeof value === "object" && value ? (value as Partial<Diagram>) : {};
   const nodes = Array.isArray(source.nodes) ? source.nodes : [];
   const edges = Array.isArray(source.edges) ? source.edges : [];
+  const normalizedNodes = nodes.map(normalizeNode);
+  const nodeIds = new Set(normalizedNodes.map((node) => node.id));
+  const groups = (Array.isArray(source.groups) ? source.groups : [])
+    .map((group) => normalizeGroup(group, nodeIds))
+    .filter((group): group is DiagramGroup => group !== null);
   return {
     version: 1,
     mode: source.mode === "iso" ? "iso" : "flat",
     title: typeof source.title === "string" ? source.title.replace(/\s+/g, " ").trim().slice(0, 160) || undefined : undefined,
-    nodes: nodes.map(normalizeNode),
+    nodes: normalizedNodes,
     edges: edges.map(normalizeEdge),
+    groups: groups.length ? groups : undefined,
     preview: normalizePreview(source.preview),
   };
 }
@@ -1274,6 +1407,23 @@ function normalizeEdge(value: unknown): DiagramEdge {
     end: isDiagramEdgeEnd(edge.end) ? edge.end : undefined,
     width: isDiagramEdgeWidth(edge.width) ? edge.width : undefined,
     label: typeof edge.label === "string" && edge.label.trim() ? edge.label.trim() : undefined,
+  };
+}
+
+function normalizeGroup(value: unknown, nodeIds: Set<string>): DiagramGroup | null {
+  const group = typeof value === "object" && value ? (value as Partial<DiagramGroup>) : {};
+  const members = Array.isArray(group.members)
+    ? group.members.filter((id): id is string => typeof id === "string" && nodeIds.has(id))
+    : [];
+  if (members.length < 2) {
+    return null;
+  }
+  return {
+    id: typeof group.id === "string" && group.id ? group.id : uniqueId("g"),
+    name: typeof group.name === "string" && group.name.replace(/\s+/g, " ").trim() ? group.name.replace(/\s+/g, " ").trim().slice(0, 80) : undefined,
+    color: isDiagramColor(group.color) ? group.color : "slate",
+    members,
+    padding: typeof group.padding === "number" ? Math.max(minGroupPadding, Math.round(group.padding)) : undefined,
   };
 }
 
