@@ -1,3 +1,12 @@
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-400.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
   --icon-download: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/%3E%3Cpolyline points='7 10 12 15 17 10'/%3E%3Cline x1='12' y1='15' x2='12' y2='3'/%3E%3C/svg%3E");
   --icon-copy: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='9' y='9' width='13' height='13' rx='2'/%3E%3Cpath d='M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'/%3E%3C/svg%3E");
@@ -6,6 +15,7 @@
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   --bg: #f6f7f8;
   --sidebar: #f2f3f5;
   --panel: #fafbfb;
@@ -564,6 +574,7 @@ kbd,
   border-radius: 5px;
   padding: 2px 6px;
   color: var(--placeholder);
+  font-family: var(--font-mono);
   background: var(--surface);
   font-size: 10.5px;
   font-style: normal;
@@ -1882,15 +1893,26 @@ span.account-avatar-lg {
   background: var(--surface-sunken);
 }
 
+.markdown-editor-diagram-header,
+.markdown-diagram-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: -16px -16px 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
 .markdown-editor-diagram-preview {
   display: block;
 }
 
 .markdown-editor-diagram-meta {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 8px;
-  margin-top: 7px;
+  margin-left: auto;
   color: var(--subtle);
   font-size: 10.5px;
 }
@@ -2358,8 +2380,9 @@ span.account-avatar-lg {
   margin: 16px 0;
 }
 
-.markdown-diagram-card figcaption {
-  margin-top: 7px;
+.markdown-diagram-summary {
+  flex: none;
+  margin-left: auto;
   color: var(--subtle);
   font-size: 10.5px;
 }
@@ -3742,12 +3765,15 @@ span.account-avatar-lg {
 
 .markdown-diagram-title {
   display: block;
-  margin-bottom: 12px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
   color: var(--text);
   font-size: 14px;
   font-weight: 600;
   line-height: 1.5;
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .diagram-editor-topbar {
@@ -3811,8 +3837,9 @@ span.account-avatar-lg {
 
 .markdown-diagram-title-slot {
   display: block;
-  margin: -4px 60px 8px -6px;
-  min-height: 28px;
+  flex: 1;
+  min-width: 0;
+  min-height: 20px;
 }
 
 .markdown-diagram-title-button,
