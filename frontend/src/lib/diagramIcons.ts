@@ -33,7 +33,7 @@ export const diagramIconPaletteColors = ["slate", "blue", "green", "amber", "vio
 
 export type DiagramIconPaletteColor = (typeof diagramIconPaletteColors)[number];
 
-export type DiagramPaletteFamily = "proxmox" | "grafana" | "server" | "vm";
+export type DiagramPaletteFamily = "proxmox" | "grafana" | "server" | "vm" | "prometheus";
 
 type DiagramIconDefinition = {
   label: string;
@@ -128,7 +128,7 @@ export const diagramIcons = {
   terraform: icon("terraform.webp", "Terraform", "Delivery", 92, 108),
   helm: icon("helm.svg", "Helm", "Delivery", 92, 108),
 
-  prometheus: icon("prometheus.svg", "Prometheus", "Observability", 92, 108),
+  prometheus: paletteIcon("prometheus", "amber", "prometheus.svg", "Prometheus", "Observability", 92, 108),
   grafana: paletteIcon("grafana", "amber", "grafana.svg", "Grafana", "Observability", 92, 108),
   alertmanager: icon("alertmanager.svg", "Alertmanager", "Observability", 92, 108),
 

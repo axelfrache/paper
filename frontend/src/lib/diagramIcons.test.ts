@@ -54,6 +54,7 @@ describe("diagram icon palette", () => {
     expect(diagramIconHref("grafana", "iso", null, "violet")).toBe("/diagram-icons/cloud-native/palette/grafana/violet.svg");
     expect(diagramIconHref("server", "iso", null, "green")).toBe("/diagram-icons/cloud-native/palette/server/green.svg");
     expect(diagramIconHref("virtual-machine", "iso", null, "amber")).toBe("/diagram-icons/cloud-native/palette/vm/amber.svg");
+    expect(diagramIconHref("prometheus", "iso", null, "slate")).toBe("/diagram-icons/cloud-native/palette/prometheus/slate.svg");
   });
 
   it("falls back to the default color without a color or with an unknown color", () => {
@@ -61,6 +62,7 @@ describe("diagram icon palette", () => {
     expect(diagramIconHref("grafana", "iso")).toBe("/diagram-icons/cloud-native/palette/grafana/amber.svg");
     expect(diagramIconHref("server", "iso")).toBe("/diagram-icons/cloud-native/palette/server/blue.svg");
     expect(diagramIconHref("virtual-machine", "iso")).toBe("/diagram-icons/cloud-native/palette/vm/blue.svg");
+    expect(diagramIconHref("prometheus", "iso")).toBe("/diagram-icons/cloud-native/palette/prometheus/amber.svg");
     expect(diagramIconHref("proxmox", "iso", null, "bogus")).toBe("/diagram-icons/cloud-native/palette/proxmox/blue.svg");
   });
 
@@ -69,6 +71,7 @@ describe("diagram icon palette", () => {
     expect(diagramIconHref("grafana", "flat", null, "green")).toBe("/diagram-icons/flat/grafana.svg");
     expect(diagramIconHref("server", "flat", null, "green")).toBe("/diagram-icons/flat/server.svg");
     expect(diagramIconHref("virtual-machine", "flat", null, "green")).toBe("/diagram-icons/flat/virtual-machine.svg");
+    expect(diagramIconHref("prometheus", "flat", null, "green")).toBe("/diagram-icons/flat/prometheus.svg");
   });
 
   it("only marks palette families as palette-capable", () => {
@@ -76,6 +79,7 @@ describe("diagram icon palette", () => {
     expect(diagramIconHasPalette("grafana")).toBe(true);
     expect(diagramIconHasPalette("server")).toBe(true);
     expect(diagramIconHasPalette("virtual-machine")).toBe(true);
+    expect(diagramIconHasPalette("prometheus")).toBe(true);
     expect(diagramIconHasPalette("server-rack")).toBe(false);
   });
 
