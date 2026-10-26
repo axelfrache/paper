@@ -2527,6 +2527,14 @@ span.account-avatar-lg {
   pointer-events: none;
 }
 
+/* Badge behind a "boxed" node label, so it stays legible over a connector or the grid. */
+.diagram-node-label-plate {
+  fill: var(--surface-soft);
+  stroke: var(--line);
+  stroke-width: 1;
+  pointer-events: none;
+}
+
 .diagram-canvas .diagram-edge-label {
   stroke: var(--bg);
 }

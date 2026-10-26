@@ -5,6 +5,8 @@ import {
   edgeLabelPlate,
   labelLines,
   layoutDiagram,
+  nodeLabelPlate,
+  resolveLabelBoxed,
 } from "./diagram";
 import type { Diagram, DiagramLayout, DiagramLayoutEdge, DiagramLayoutNode, DiagramMode } from "./diagram";
 
@@ -22,6 +24,7 @@ export const defaultExportOptions: DiagramExportOptions = { background: "white",
 const exportColors = {
   label: "#16181b",
   labelBare: "#4c5259",
+  labelPlateStroke: "#e4e6e9",
   edgeLabel: "#4c5259",
   white: "#ffffff",
   fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
@@ -114,10 +117,19 @@ function renderBody(layout: DiagramLayout, mode: DiagramMode, iconHref: (n: Diag
         ? `<text x="${node.cx}" y="${node.capY}" text-anchor="middle" font-size="8.5" letter-spacing="1" font-weight="700" fill="${node.color}">${escapeText(node.cap)}</text>`
         : "";
       const icon = nodeIcon(node, mode, iconHref(node));
-      const size = node.bare ? 11.5 : 13;
-      const fill = node.bare ? exportColors.labelBare : exportColors.label;
-      const label = tspans(node.label, node.cx, node.labelY, size * 1.25);
-      return `${faces}${cap}${icon}<text text-anchor="middle" font-size="${size}" font-weight="${node.bare ? 500 : 530}" fill="${fill}">${label}</text>`;
+      const boxed = resolveLabelBoxed(node.source.labelBoxed, mode);
+      const size = boxed ? 12 : 13;
+      const fill = boxed ? exportColors.labelBare : exportColors.label;
+      const lineHeight = size * 1.25;
+      const plate = boxed ? nodeLabelPlate(node.label, node.cx, node.labelY, size, lineHeight) : null;
+      const plateSvg = plate
+        ? `<rect x="${plate.x}" y="${plate.y}" width="${plate.width}" height="${plate.height}" rx="${plate.rx}" fill="${halo}" stroke="${exportColors.labelPlateStroke}" stroke-width="1"/>`
+        : "";
+      const label = boxed
+        ? tspans(node.label, node.cx, node.labelY, lineHeight, true)
+        : tspans(node.label, node.cx, node.labelY, lineHeight);
+      const baseline = boxed ? ` dominant-baseline="central"` : "";
+      return `${faces}${cap}${icon}${plateSvg}<text text-anchor="middle"${baseline} font-size="${size}" font-weight="${boxed ? 500 : 530}" fill="${fill}">${label}</text>`;
     })
     .join("");
   return `${edges}${edgeLabels}${nodes}`;

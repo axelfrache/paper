@@ -370,11 +370,22 @@ export function diagramToSvgMarkup(diagram: Diagram, maxHeight = 340) {
         ? `<text x="${node.cx}" y="${node.capY}" text-anchor="middle" font-size="8.5" letter-spacing="1" font-weight="700" fill="${node.color}">${escapeHtml(node.cap)}</text>`
         : "";
       const icon = nodeIconSvg(node, diagram.mode);
-      const labelSize = node.bare ? "11.5" : "13";
-      const labelWeight = node.bare ? "500" : "530";
-      const labelFill = node.bare ? "var(--muted-strong)" : "var(--text)";
-      const labelBody = labelTspans(node.label, node.cx, node.labelY, Number(labelSize) * 1.25);
-      return `${faces}${cap}${icon}<text text-anchor="middle" font-size="${labelSize}" font-weight="${labelWeight}" fill="${labelFill}">${labelBody}</text>`;
+      const boxed = resolveLabelBoxed(node.source.labelBoxed, diagram.mode);
+      const labelSize = boxed ? 12 : 13;
+      const labelWeight = boxed ? 500 : 530;
+      const labelFill = boxed ? "var(--muted-strong)" : "var(--text)";
+      const lineHeight = labelSize * 1.25;
+      const plate = boxed ? nodeLabelPlate(node.label, node.cx, node.labelY, labelSize, lineHeight) : null;
+      const plateSvg = plate
+        ? `<rect class="diagram-node-label-plate" x="${plate.x}" y="${plate.y}" width="${plate.width}" height="${plate.height}" rx="${plate.rx}"/>`
+        : "";
+      // Boxed labels centre on the plate (dominant-baseline="central"); plain labels keep
+      // their original baseline-anchored position so existing diagrams don't shift.
+      const labelBody = boxed
+        ? labelTspans(node.label, node.cx, node.labelY, lineHeight, true)
+        : labelTspans(node.label, node.cx, node.labelY, lineHeight);
+      const baseline = boxed ? ` dominant-baseline="central"` : "";
+      return `${faces}${cap}${icon}${plateSvg}<text text-anchor="middle"${baseline} font-size="${labelSize}" font-weight="${labelWeight}" fill="${labelFill}">${labelBody}</text>`;
     }),
   ].join("");
 
@@ -432,6 +443,32 @@ export function edgeLabelPlate(label: string, x: number, y: number, fontSize = 1
 
 export function edgeLabelHalo(strokeWidth: number) {
   return Math.round((strokeWidth + 4.5) * 10) / 10;
+}
+
+/**
+ * The pill painted behind a node label when it's "boxed", so it stays legible sitting
+ * over an isometric node's connectors or the canvas grid instead of resting directly on
+ * them. Sized the same way as `edgeLabelPlate`, with `rx` half the height for a full pill.
+ */
+export function nodeLabelPlate(label: string, x: number, y: number, fontSize = 12, lineHeight = 15) {
+  const lines = label.split("\n");
+  if (!label.trim()) {
+    return null;
+  }
+  const width = Math.max(...lines.map((line) => line.length)) * fontSize * 0.56 + 16;
+  const height = (lines.length - 1) * lineHeight + fontSize * 1.2 + 8;
+  return {
+    x: Math.round((x - width / 2) * 10) / 10,
+    y: Math.round((y - height / 2) * 10) / 10,
+    width: Math.round(width * 10) / 10,
+    height: Math.round(height * 10) / 10,
+    rx: Math.round((height / 2) * 10) / 10,
+  };
+}
+
+/** Whether a node's label gets its plate: an explicit per-node choice, else boxed by default in iso mode. */
+export function resolveLabelBoxed(labelBoxed: boolean | undefined, mode: DiagramMode): boolean {
+  return labelBoxed ?? mode === "iso";
 }
 
 /**

@@ -43,6 +43,16 @@ describe("standalone diagram SVG", () => {
     expect(svg).toContain(">reads</tspan>");
   });
 
+  it("boxes node labels by default in iso mode, matching the export background", async () => {
+    const white = await buildStandaloneSvg(withIcons("iso"), { background: "white", padding: 24, scale: 2 }, fakeIcon);
+    const clear = await buildStandaloneSvg(withIcons("iso"), { background: "transparent", padding: 24, scale: 2 }, fakeIcon);
+    const flat = await buildStandaloneSvg(withIcons("flat"), undefined, fakeIcon);
+
+    expect(white).toContain('fill="#ffffff" stroke="#e4e6e9"');
+    expect(clear).toContain('fill="#ffffff" stroke="#e4e6e9"');
+    expect(flat).not.toContain('stroke="#e4e6e9"');
+  });
+
   it("carries real pixel dimensions", async () => {
     const svg = await buildStandaloneSvg(withIcons("iso"), undefined, fakeIcon);
     const size = svgPixelSize(svg);

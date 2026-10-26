@@ -14,6 +14,7 @@ import {
   edgeLabelPlate,
   labelLines,
   layoutDiagram,
+  resolveLabelBoxed,
   screenToDiagramPoint,
 } from "../lib/diagram";
 import { guidesAt, snapToGuides, stepWithMagnet } from "../lib/diagramGuides";
@@ -1318,7 +1319,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
                   height="28"
                   style={{ overflow: "visible", pointerEvents: "none" }}
                 >
-                  <div className={(node.source.labelBoxed ?? (liveDiagram.mode === "iso" && node.bare)) ? "diagram-node-label bare" : "diagram-node-label"}>
+                  <div className={resolveLabelBoxed(node.source.labelBoxed, liveDiagram.mode) ? "diagram-node-label bare" : "diagram-node-label"}>
                     <span>{node.label}</span>
                   </div>
                 </foreignObject>
@@ -1580,13 +1581,13 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
               <span>Label</span>
               <div>
                 <button
-                  className={!(selectedNode.labelBoxed ?? (liveDiagram.mode === "iso" && selectedLayoutNodes[0]?.bare)) ? "active" : ""}
+                  className={!resolveLabelBoxed(selectedNode.labelBoxed, liveDiagram.mode) ? "active" : ""}
                   onClick={() => setSelectedNodeLabelBoxed(false)}
                 >
                   Plain
                 </button>
                 <button
-                  className={(selectedNode.labelBoxed ?? (liveDiagram.mode === "iso" && selectedLayoutNodes[0]?.bare)) ? "active" : ""}
+                  className={resolveLabelBoxed(selectedNode.labelBoxed, liveDiagram.mode) ? "active" : ""}
                   onClick={() => setSelectedNodeLabelBoxed(true)}
                 >
                   Badge

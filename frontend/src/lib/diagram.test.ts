@@ -367,6 +367,36 @@ describe("edge labels", () => {
 });
 
 
+describe("node label badge", () => {
+  const node = (overrides: Partial<Diagram["nodes"][number]> = {}) => ({
+    id: "n1",
+    kind: "server" as const,
+    x: 0,
+    y: 0,
+    label: "API",
+    color: "blue" as const,
+    ...overrides,
+  });
+
+  it("boxes a label by default in iso mode, even on an icon node", () => {
+    const svg = diagramToSvgMarkup({ version: 1, mode: "iso", nodes: [node()], edges: [] });
+    expect(svg).toContain('class="diagram-node-label-plate"');
+  });
+
+  it("leaves a label plain by default in flat mode", () => {
+    const svg = diagramToSvgMarkup({ version: 1, mode: "flat", nodes: [node()], edges: [] });
+    expect(svg).not.toContain('class="diagram-node-label-plate"');
+  });
+
+  it("honours an explicit choice over the mode default", () => {
+    const plain = diagramToSvgMarkup({ version: 1, mode: "iso", nodes: [node({ labelBoxed: false })], edges: [] });
+    expect(plain).not.toContain('class="diagram-node-label-plate"');
+
+    const boxed = diagramToSvgMarkup({ version: 1, mode: "flat", nodes: [node({ labelBoxed: true })], edges: [] });
+    expect(boxed).toContain('class="diagram-node-label-plate"');
+  });
+});
+
 it("preserves optional diagram titles through serialization and duplication", () => {
   const original = { ...createDefaultDiagram(), title: "Architecture — été" };
   const saved = parseDiagramMarker(serializeDiagramMarker(original))!;
