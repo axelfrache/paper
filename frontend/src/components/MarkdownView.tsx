@@ -50,6 +50,7 @@ function renderBlock(block: MarkdownBlock, index: number) {
   if (block.type === "diagram") {
     return (
       <figure key={index} className="markdown-diagram-card">
+        {block.diagram.title ? <div className="markdown-diagram-title">{block.diagram.title}</div> : null}
         <div dangerouslySetInnerHTML={{ __html: diagramToSvgMarkup(block.diagram, 320) }} />
         <figcaption>{diagramSummary(block.diagram)}</figcaption>
       </figure>

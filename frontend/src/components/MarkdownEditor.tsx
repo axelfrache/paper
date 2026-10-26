@@ -996,7 +996,7 @@ export function MarkdownEditor({
       const line = Number(exportTarget.getAttribute("data-diagram-export-line"));
       const diagram = parseDiagramMarker(value.split("\n")[line] ?? "");
       if (!Number.isNaN(line) && diagram) {
-        void downloadDiagram(diagram, "png", exportTitle ?? "diagram");
+        void downloadDiagram(diagram, "png", diagram.title || exportTitle || "diagram");
       }
       return;
     }

@@ -53,6 +53,7 @@ export type DiagramPreview = {
 
 export type Diagram = {
   version: 1;
+  title?: string;
   mode: DiagramMode;
   nodes: DiagramNode[];
   edges: DiagramEdge[];
@@ -1199,6 +1200,7 @@ function normalizeDiagram(value: unknown): Diagram {
   return {
     version: 1,
     mode: source.mode === "iso" ? "iso" : "flat",
+    title: typeof source.title === "string" ? source.title.replace(/\s+/g, " ").trim().slice(0, 160) || undefined : undefined,
     nodes: nodes.map(normalizeNode),
     edges: edges.map(normalizeEdge),
     preview: normalizePreview(source.preview),

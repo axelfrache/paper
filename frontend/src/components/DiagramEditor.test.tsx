@@ -61,6 +61,8 @@ function mount(initial: Diagram, canvasWidth = 400) {
   return {
     /** Diagram units per screen pixel, the scale every distance is expressed through. */
     unitsPerPixel: viewBoxWidth / canvasWidth,
+    host,
+    value: () => latest,
     select(index: number) {
       act(() => {
         host.querySelectorAll(".diagram-node")[index]?.dispatchEvent(
@@ -199,5 +201,53 @@ describe("the isometric placement grid", () => {
     });
 
     expect(host.querySelector(".diagram-grid")).toBeNull();
+  });
+});
+
+
+describe("diagram titles", () => {
+  function editTitle(host: HTMLElement, text: string) {
+    const input = host.querySelector<HTMLInputElement>('[aria-label="Diagram title"]')!;
+    act(() => input.focus());
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, text);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    return input;
+  }
+
+  it("saves a trimmed title on Enter without changing diagram contents", () => {
+    const initial = rowOfThree();
+    const editor = mount(initial);
+    const input = editTitle(editor.host, "  Payment architecture  ");
+    expect(editor.value().title).toBeUndefined();
+    act(() => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    expect(editor.value()).toEqual({ ...initial, title: "Payment architecture" });
+  });
+
+  it("cancels on Escape, saves on blur and permits removing a title", () => {
+    const editor = mount({ ...rowOfThree(), title: "Original" });
+    let input = editTitle(editor.host, "Discard this");
+    act(() => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(editor.value().title).toBe("Original");
+    expect(input.value).toBe("Original");
+    input = editTitle(editor.host, "Updated");
+    act(() => input.blur());
+    expect(editor.value().title).toBe("Updated");
+    input = editTitle(editor.host, "   ");
+    act(() => input.blur());
+    expect(editor.value().title).toBeUndefined();
+  });
+
+  it("does not move or delete selected nodes while typing a title", () => {
+    const initial = rowOfThree();
+    const editor = mount(initial);
+    editor.select(1);
+    const input = editTitle(editor.host, "Title");
+    for (const key of ["ArrowLeft", "ArrowRight", "Delete", "Backspace"]) {
+      act(() => input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })));
+    }
+    act(() => input.blur());
+    expect(editor.value().nodes).toEqual(initial.nodes);
   });
 });

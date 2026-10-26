@@ -134,6 +134,9 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
   const [showGrid, setShowGrid] = useState(true);
   const [viewport, setViewportState] = useState(defaultViewport);
   const [liveDiagram, setLiveDiagram] = useState(diagram);
+  const [titleDraft, setTitleDraft] = useState<string | null>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const cancelTitleEditRef = useRef(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportBackground, setExportBackground] = useState<DiagramExportBackground>("white");
   const [exportBusy, setExportBusy] = useState(false);
@@ -215,6 +218,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.target === titleInputRef.current) return;
       if (event.key === "Escape") {
         event.preventDefault();
         if (editingId) {
@@ -328,7 +332,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
   const runExport = async (format: DiagramExportFormat) => {
     setExportBusy(true);
     try {
-      await downloadDiagram(liveDiagram, format, title ?? "diagram", {
+      await downloadDiagram(liveDiagram, format, liveDiagram.title || title || "diagram", {
         background: exportBackground,
         padding: 24,
         scale: 2,
@@ -1044,11 +1048,36 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
     <div className="diagram-editor" role="dialog" aria-modal="true" aria-label="Diagram editor" onPointerDownCapture={handleEditorPointerDownCapture}>
       <header className="diagram-editor-topbar">
         <div className="diagram-editor-crumb">
-          {title ? (
-            <span className="diagram-editor-note" title={title}>
-              {title}
-            </span>
-          ) : null}
+          <div className="diagram-editor-identity">
+            {title ? <span className="diagram-editor-note" title={title}>{title}</span> : null}
+            <input
+              ref={titleInputRef}
+              className="diagram-editor-title"
+              aria-label="Diagram title"
+              placeholder="Add a title…"
+              maxLength={160}
+              value={titleDraft ?? liveDiagram.title ?? ""}
+              onFocus={() => { cancelTitleEditRef.current = false; setTitleDraft(diagramRef.current.title ?? ""); }}
+              onChange={(event) => setTitleDraft(event.target.value)}
+              onBlur={(event) => {
+                const nextTitle = event.target.value.replace(/\s+/g, " ").trim() || undefined;
+                if (!cancelTitleEditRef.current && nextTitle !== diagramRef.current.title) {
+                  patchDiagram((current) => ({ ...current, title: nextTitle }));
+                }
+                cancelTitleEditRef.current = false;
+                setTitleDraft(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+                if (event.key === "Enter" || event.key === "Escape") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  cancelTitleEditRef.current = event.key === "Escape";
+                  event.currentTarget.blur();
+                }
+              }}
+            />
+          </div>
           <span className="diagram-editor-mode">{liveDiagram.mode === "iso" ? "Isometric" : "Flat"}</span>
           <span className="diagram-editor-count">
             {liveDiagram.nodes.length} {liveDiagram.nodes.length === 1 ? "node" : "nodes"}

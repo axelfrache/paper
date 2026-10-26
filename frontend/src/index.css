@@ -3738,3 +3738,72 @@ span.account-avatar-lg {
   font: inherit;
   cursor: pointer;
 }
+
+
+.markdown-diagram-title {
+  display: block;
+  margin-bottom: 12px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.diagram-editor-topbar {
+  height: auto;
+  min-height: 58px;
+  flex-wrap: wrap;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.diagram-editor-crumb {
+  flex: 1 1 240px;
+}
+
+.diagram-editor-identity {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 200px;
+  min-width: 100px;
+  max-width: 200px;
+}
+
+.diagram-editor-identity .diagram-editor-note {
+  font-size: 10px;
+  padding-left: 6px;
+}
+
+.diagram-editor-title {
+  width: 100%;
+  min-width: 0;
+  padding: 3px 5px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  text-overflow: ellipsis;
+}
+
+.diagram-editor-title::placeholder {
+  color: var(--subtle);
+  font-weight: 400;
+}
+
+.diagram-editor-title:hover {
+  border-color: var(--line);
+}
+
+.diagram-editor-title:focus {
+  border-color: var(--line-control);
+  background: var(--surface-soft);
+}
+
+.diagram-editor-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

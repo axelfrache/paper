@@ -211,3 +211,15 @@ describe("source fidelity", () => {
     expect(host.querySelector("img")?.getAttribute("alt")).toBe("");
   });
 });
+
+
+it("renders titles as escaped text without changing the diagram's Markdown source", () => {
+  const title = '<img src=x onerror="alert(1)"> & architecture';
+  const marker = serializeDiagramMarker({ ...createDefaultDiagram(), title });
+  const host = render(renderEditableMarkdown(marker, -1));
+  expect(host.querySelector(".markdown-diagram-title")?.textContent).toBe(title);
+  expect(host.querySelector(".markdown-diagram-title img")).toBeNull();
+  expect(readSource(host as HTMLDivElement)).toBe(marker + "\n");
+  const untitled = render(renderEditableMarkdown(serializeDiagramMarker(createDefaultDiagram()), -1));
+  expect(untitled.querySelector(".markdown-diagram-title")).toBeNull();
+});

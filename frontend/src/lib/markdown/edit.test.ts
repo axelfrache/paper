@@ -290,3 +290,35 @@ describe("Unicode and literal editing regressions", () => {
     expect(insertLineBreak("```\n- code\n```", { line: 1, col: 6 }).value).toBe("```\n- code\n\n```");
   });
 });
+
+it.each([
+  ["**salut la team**", "team", "**salut la** team"],
+  ["**salut la team**", "salut", "salut **la team**"],
+  ["**salut la team**", "la", "**salut** la **team**"],
+  ["**salut la team**", "alu", "**s**alu**t la team**"],
+  ["***salut la team***", "team", "***salut la*** *team*"],
+  ["**salut *la team* ici**", "team", "**salut *la*** *team* **ici**"],
+  ["**salut [la team](https://example.com) ici**", "team", "**salut [la](https://example.com)** [team](https://example.com) **ici**"],
+])("removes bold only from the selected substring of %s", (source, selected, expected) => {
+  const start = source.indexOf(selected);
+  const result = toggleSelection(source, { start: { line: 0, col: start }, end: { line: 0, col: start + selected.length } }, "**");
+  expect(result.value).toBe(expected);
+});
+
+it.each([["*", "*"], ["~~", "~~"], ["`", "`"], ["<u>", "</u>"]])("removes only the selected word from %s formatting", (open, close) => {
+  const source = `${open}salut la team${close}`;
+  const start = source.indexOf("team");
+  expect(toggleSelection(source, { start: { line: 0, col: start }, end: { line: 0, col: start + 4 } }, open, close).value).toBe(`${open}salut la${close} team`);
+});
+
+it("removes bold across multiple runs while preserving unselected text", () => {
+  const source = "**one two** and **three four**";
+  const result = toggleSelection(source, { start: { line: 0, col: source.indexOf("two") }, end: { line: 0, col: source.indexOf(" four") } }, "**");
+  expect(result.value).toBe("**one** two and three **four**");
+});
+
+it("keeps code contents literal when splitting nested formatting", () => {
+  const source = "**hello `*literal*` world**";
+  const start = source.indexOf("ter");
+  expect(toggleSelection(source, { start: { line: 0, col: start }, end: { line: 0, col: start + 3 } }, "**").value).toBe("**hello `*li`**`ter`**`al*` world**");
+});

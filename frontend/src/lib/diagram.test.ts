@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createDiagramNode,
+  cloneDiagramWithFreshIds,
   createDefaultDiagram,
   diagramIconForKind,
   diagramKinds,
@@ -363,4 +364,14 @@ describe("edge labels", () => {
     expect(parseDiagramMarker(serializeDiagramMarker(diagram))?.edges[0].label).toBe("pulls");
     expect(parseDiagramMarker(serializeDiagramMarker(build("straight", "  ")))?.edges[0].label).toBeUndefined();
   });
+});
+
+
+it("preserves optional diagram titles through serialization and duplication", () => {
+  const original = { ...createDefaultDiagram(), title: "Architecture — été" };
+  const saved = parseDiagramMarker(serializeDiagramMarker(original))!;
+  expect(saved.title).toBe(original.title);
+  expect(cloneDiagramWithFreshIds(saved).title).toBe(original.title);
+  expect(parseDiagramMarker(serializeDiagramMarker(createDefaultDiagram()))?.title).toBeUndefined();
+  expect(parseDiagramMarker(serializeDiagramMarker({ ...original, title: "  " }))?.title).toBeUndefined();
 });

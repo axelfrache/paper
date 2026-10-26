@@ -61,10 +61,61 @@ export function toggleSelection(value: string, range: TextRange, mark: string, c
   if (!wrapper) {
     return wrapSelection(value, normalizeRangeForInlineWrap(value, range), mark, closingMark);
   }
+  if (!isCollapsedRange(range)) {
+    const line = value.split("\n")[range.start.line] ?? "";
+    const wrappers = wrapperSpans(line, mark, closingMark).filter((span) =>
+      range.start.col < span.contentEnd && range.end.col > span.contentStart,
+    );
+    let result = { value, caret: range.end };
+    for (const span of wrappers.reverse()) {
+      const start = Math.max(0, range.start.col - span.contentStart);
+      const end = Math.min(span.text.length, range.end.col - span.contentStart);
+      const slice = (from: number, to: number) => mark === "`" ? span.text.slice(from, to) : sliceFormatted(span.text, from, to);
+      const before = wrapNonWhitespace(slice(0, start), mark, closingMark);
+      const selected = slice(start, end);
+      const after = wrapNonWhitespace(slice(end, span.text.length), mark, closingMark);
+      result = replaceRange(result.value, {
+        start: { line: range.start.line, col: span.start },
+        end: { line: range.start.line, col: span.end },
+      }, before + selected + after, before.length + selected.length);
+    }
+    return result;
+  }
   return replaceRange(value, {
     start: { line: range.start.line, col: wrapper.start },
     end: { line: range.start.line, col: wrapper.end },
   }, wrapper.text);
+}
+
+function wrapNonWhitespace(text: string, open: string, close: string) {
+  const [, leading, content, trailing] = /^(\s*)([\s\S]*?)(\s*)$/.exec(text)!;
+  return content ? leading + open + content + close + trailing : text;
+}
+
+/** Slice source text while keeping any other formatting and links balanced. */
+function sliceFormatted(text: string, start: number, end: number): string {
+  if (start >= end) return "";
+  if (start <= 0 && end >= text.length) return text;
+  const spans = [
+    ...["**", "*", "~~", "`", "<u>"].flatMap((mark) => wrapperSpans(text, mark, mark === "<u>" ? "</u>" : mark)),
+    ...linkSpans(text).map((link) => ({ ...link, contentStart: link.labelStart, contentEnd: link.labelEnd, text: link.label })),
+  ].sort((a, b) => a.start - b.start || b.end - a.end);
+  let result = "", cursor = 0;
+  for (const span of spans) {
+    if (span.start < cursor) continue;
+    result += text.slice(Math.max(cursor, start), Math.max(Math.max(cursor, start), Math.min(span.start, end)));
+    if (start <= span.start && end >= span.end) {
+      result += text.slice(span.start, span.end);
+    } else if (start < span.contentEnd && end > span.contentStart) {
+      const open = text.slice(span.start, span.contentStart);
+      const from = Math.max(0, start - span.contentStart);
+      const to = Math.min(span.text.length, end - span.contentStart);
+      const content = open === "`" ? span.text.slice(from, to) : sliceFormatted(span.text, from, to);
+      result += wrapNonWhitespace(content, open, text.slice(span.contentEnd, span.end));
+    }
+    cursor = span.end;
+  }
+  return result + text.slice(Math.max(cursor, start), Math.max(Math.max(cursor, start), end));
 }
 
 export function wrapLink(value: string, range: TextRange) {

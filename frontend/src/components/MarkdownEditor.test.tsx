@@ -1791,3 +1791,26 @@ it("updates link syntax on line crossings while preserving unrelated DOM", () =>
   expect(editor.children[3]).toBe(code);
   expect(code.textContent).toBe("**literal**");
 });
+
+it.each(["toolbar", "shortcut"])("removes bold from only the selected word using the %s", (method) => {
+  const host = mount("**salut la team**"), editor = editorFrom(host);
+  act(() => {
+    editor.focus();
+    const text = editor.querySelector("strong")!.firstChild!;
+    const range = document.createRange();
+    range.setStart(text, 9);
+    range.setEnd(text, 13);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    editor.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  });
+  act(() => {
+    if (method === "toolbar") {
+      host.querySelector(".selection-toolbar button[aria-label='Bold']")!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    } else {
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "b", ctrlKey: true, bubbles: true, cancelable: true }));
+    }
+  });
+  expect(valueFrom(host)).toBe("**salut la** team");
+  expect(editor.querySelector("strong")!.textContent).toBe("salut la");
+});
