@@ -100,7 +100,7 @@ export function renderEditableLine(rawLine: string, active: boolean, index: numb
       diagramPreviewCache.set(raw, svg);
     }
     const preview = [
-      diagram.title ? `<span class="markdown-diagram-title">${escapeHtml(diagram.title)}</span>` : "",
+      `<span class="markdown-diagram-title-slot"><button type="button" data-diagram-title-line="${index}" class="markdown-diagram-title-button${diagram.title ? "" : " is-empty"}" aria-label="${diagram.title ? "Edit diagram title" : "Add diagram title"}" title="${escapeAttribute(diagram.title || "Add a title")}">${escapeHtml(diagram.title || "Add a title…")}</button></span>`,
       `<span class="markdown-editor-diagram-preview">${svg}</span>`,
       `<span class="markdown-editor-diagram-meta"><span>${escapeHtml(diagramSummary(diagram))}</span><button type="button" class="markdown-editor-diagram-edit" data-diagram-edit-line="${index}">Edit diagram</button><button type="button" data-diagram-export-line="${index}" class="markdown-editor-diagram-export" aria-label="Download diagram" title="Download PNG"></button></span>`,
       `<span data-diagram-resize-line="${index}" class="markdown-editor-diagram-resize" aria-hidden="true"></span>`,

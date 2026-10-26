@@ -3807,3 +3807,49 @@ span.account-avatar-lg {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+
+
+.markdown-diagram-title-slot {
+  display: block;
+  margin: -4px 60px 8px -6px;
+  min-height: 28px;
+}
+
+.markdown-diagram-title-button,
+.markdown-diagram-title-input {
+  display: block;
+  width: 100%;
+  max-width: 260px;
+  min-width: 0;
+  padding: 3px 5px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.markdown-diagram-title-button { cursor: text; }
+.markdown-diagram-title-button.is-empty {
+  color: var(--subtle);
+  font-size: 13px;
+  font-weight: 400;
+}
+.markdown-diagram-title-button:hover { border-color: var(--line-control); }
+.markdown-diagram-title-input {
+  background: var(--surface-soft);
+  border-color: var(--accent);
+}
+.markdown-diagram-title-button:focus-visible,
+.markdown-diagram-title-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.markdown-diagram-title-slot:has(input) > button { display: none; }

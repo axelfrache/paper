@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { codeLines } from "../lib/markdown/fences";
 import { remapCaret } from "../lib/markdown/anchor";
 import { useLayoutEffect, useRef, useState } from "react";
@@ -237,6 +238,10 @@ export function MarkdownEditor({
   changeRef.current = onChange;
   const pendingUploadsRef = useRef(new Set<Caret>());
   const disposedRef = useRef(false);
+  const [previewTitle, setPreviewTitle] = useState<{ line: number; source: string; title: string; slot: Element } | null>(null);
+  useLayoutEffect(() => {
+    if (previewTitle && value.split("\n")[previewTitle.line] !== previewTitle.source) setPreviewTitle(null);
+  }, [value, previewTitle]);
   const [uploadCount, setUploadCount] = useState(0);
   const [editorMessage, setEditorMessage] = useState("");
   const [slash, setSlash] = useState<SlashState | null>(null);
@@ -970,6 +975,25 @@ export function MarkdownEditor({
         return;
       }
     }
+    const titleTarget = target?.closest("[data-diagram-title-line]");
+    if (titleTarget) {
+      event.preventDefault();
+      // Switching directly between diagram titles also commits the previous draft.
+      const activeInput = editorRef.current?.querySelector<HTMLInputElement>(".markdown-diagram-title-input");
+      activeInput?.blur();
+      const line = Number(titleTarget.getAttribute("data-diagram-title-line"));
+      const source = valueRef.current.split("\n")[line] ?? "";
+      const diagram = parseDiagramMarker(source);
+      if (diagram && titleTarget.parentElement) {
+        focusedRef.current = false;
+        caretRef.current = null;
+        setSlash(null);
+        setSelectionToolbar(null);
+        setPreviewTitle({ line, source, title: diagram.title ?? "", slot: titleTarget.parentElement });
+      }
+      return;
+    }
+
     const copyTarget = target?.closest("[data-resource-copy-line]");
     if (copyTarget) {
       event.preventDefault();
@@ -1201,6 +1225,7 @@ export function MarkdownEditor({
     const editor = editorRef.current;
     if (!editor) return;
     const beforeInput = (event: InputEvent) => {
+      if (event.target instanceof HTMLInputElement) return;
       if (event.isComposing || composingRef.current || !event.cancelable) return;
       const historyAction = event.inputType === "historyUndo" ? onUndo : event.inputType === "historyRedo" ? onRedo : null;
       if (historyAction) {
@@ -1250,6 +1275,24 @@ export function MarkdownEditor({
 
   return (
     <div ref={wrapRef} className="markdown-editor-wrap">
+      {previewTitle && createPortal(
+        <DiagramPreviewTitleInput
+          initialTitle={previewTitle.title}
+          onFinish={(title, returnFocus) => {
+            setPreviewTitle(null);
+            const current = valueRef.current;
+            if (current.split("\n")[previewTitle.line] !== previewTitle.source) return;
+            if (title !== null && title !== previewTitle.title) {
+              const diagram = parseDiagramMarker(previewTitle.source)!;
+              setSource(replaceDiagramMarkerAtLine(current, previewTitle.line, { ...diagram, title: title || undefined }), null);
+            }
+            if (returnFocus) window.requestAnimationFrame(() => {
+              editorRef.current?.querySelector<HTMLButtonElement>(`[data-diagram-title-line="${previewTitle.line}"]`)?.focus();
+            });
+          }}
+        />,
+        previewTitle.slot,
+      )}
       <div
         ref={editorRef}
         className="markdown-editor"
@@ -2024,6 +2067,12 @@ function renderMarkdown(el: HTMLDivElement | null, value: string, activeLine: nu
   const desired = Array.from(template.children);
   desired.forEach((line, index) => {
     const current = el.children[index];
+    // A title input is managed by its React portal, not the Markdown renderer.
+    // Preserve it when another line changes (e.g. committing the previous title).
+    if (current?.querySelector(".markdown-diagram-title-input") && current.getAttribute("data-source") === line.getAttribute("data-source")) {
+      current.className = line.className;
+      return;
+    }
     if (!current) el.appendChild(line);
     else if (!current.isEqualNode(line)) current.replaceWith(line);
   });
@@ -2166,4 +2215,42 @@ function scrollParent(el: HTMLElement | null) {
     current = current.parentElement;
   }
   return null;
+}
+
+
+function DiagramPreviewTitleInput({ initialTitle, onFinish }: {
+  initialTitle: string;
+  onFinish: (title: string | null, returnFocus: boolean) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const finished = useRef(false);
+  useLayoutEffect(() => {
+    inputRef.current?.focus({ preventScroll: true });
+    inputRef.current?.select();
+  }, []);
+  const finish = (cancel: boolean, returnFocus: boolean) => {
+    if (finished.current) return;
+    finished.current = true;
+    onFinish(cancel ? null : (inputRef.current?.value ?? "").replace(/\s+/g, " ").trim(), returnFocus);
+  };
+  return <input
+    ref={inputRef}
+    className="markdown-diagram-title-input"
+    aria-label="Diagram title"
+    placeholder="Add a title…"
+    defaultValue={initialTitle}
+    maxLength={160}
+    onPointerDown={(event) => event.stopPropagation()}
+    onClick={(event) => event.stopPropagation()}
+    onKeyDown={(event) => {
+      event.stopPropagation();
+      if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+      if (event.key === "Enter" || event.key === "Escape") {
+        event.preventDefault();
+        finish(event.key === "Escape", true);
+      }
+    }}
+    onKeyUp={(event) => event.stopPropagation()}
+    onBlur={() => finish(false, false)}
+  />;
 }

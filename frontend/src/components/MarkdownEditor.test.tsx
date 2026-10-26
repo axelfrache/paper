@@ -1814,3 +1814,48 @@ it.each(["toolbar", "shortcut"])("removes bold from only the selected word using
   expect(valueFrom(host)).toBe("**salut la** team");
   expect(editor.querySelector("strong")!.textContent).toBe("salut la");
 });
+
+it.each(["Enter", "blur", "Escape"])("edits a preview title with %s without changing diagram contents", (action) => {
+  const original = { ...createDefaultDiagram(), title: "API" };
+  const host = mount(`${serializeDiagramMarker(original)}\nAfter`), editor = editorFrom(host);
+  act(() => selectResourceBlock(editor, 0));
+  act(() => editor.querySelector("[data-diagram-title-line='0']")!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })));
+  const input = editor.querySelector<HTMLInputElement>('[aria-label="Diagram title"]')!;
+  expect(document.activeElement).toBe(input);
+  act(() => {
+    input.value = "  Payment API  ";
+    // Mobile text entry must not replace the selected diagram resource.
+    const event = new InputEvent("beforeinput", { inputType: "insertText", data: "X", bubbles: true, cancelable: true });
+    input.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    if (action === "blur") input.blur();
+    else input.dispatchEvent(new KeyboardEvent("keydown", { key: action, bubbles: true, cancelable: true }));
+  });
+  const [marker, trailing] = valueFrom(host).split("\n");
+  expect(parseDiagramMarker(marker)).toEqual({ ...original, title: action === "Escape" ? "API" : "Payment API" });
+  expect(trailing).toBe("After");
+  expect(editor.querySelector(".markdown-diagram-title-input")).toBeNull();
+});
+
+it("adds and removes a title from the preview", () => {
+  const host = mount(serializeDiagramMarker(createDefaultDiagram())), editor = editorFrom(host);
+  for (const title of ["API", ""]) {
+    act(() => editor.querySelector("[data-diagram-title-line='0']")!.dispatchEvent(new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true })));
+    const input = editor.querySelector<HTMLInputElement>('[aria-label="Diagram title"]')!;
+    act(() => {
+      input.value = title;
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    });
+    expect(parseDiagramMarker(valueFrom(host).split("\n")[0])?.title).toBe(title || undefined);
+  }
+});
+
+it("saves the previous draft when switching directly between preview titles", () => {
+  const marker = serializeDiagramMarker(createDefaultDiagram());
+  const host = mount(`${marker}\n${marker}`), editor = editorFrom(host);
+  act(() => editor.querySelector("[data-diagram-title-line='0']")!.dispatchEvent(new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true })));
+  editor.querySelector<HTMLInputElement>(".markdown-diagram-title-input")!.value = "First";
+  act(() => editor.querySelector("[data-diagram-title-line='1']")!.dispatchEvent(new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true })));
+  expect(parseDiagramMarker(valueFrom(host).split("\n")[0])?.title).toBe("First");
+  expect(editor.querySelector("[data-line='1'] input")).toBe(document.activeElement);
+});
