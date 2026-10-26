@@ -1,6 +1,7 @@
 const isoIconBasePath = "/diagram-icons/cloud-native";
 const flatIconBasePath = "/diagram-icons/flat";
 const toneIconBasePath = "/diagram-icons/cloud-native/tones";
+const paletteIconBasePath = "/diagram-icons/cloud-native/palette";
 
 export const diagramIconTones = [
   "sapphire",
@@ -28,6 +29,12 @@ export const diagramToneSwatch: Record<DiagramIconTone, string> = {
   gray: "#8a9099",
 };
 
+export const diagramIconPaletteColors = ["slate", "blue", "green", "amber", "violet"] as const;
+
+export type DiagramIconPaletteColor = (typeof diagramIconPaletteColors)[number];
+
+export type DiagramPaletteFamily = "proxmox" | "grafana" | "server" | "vm";
+
 type DiagramIconDefinition = {
   label: string;
   group: string;
@@ -37,6 +44,7 @@ type DiagramIconDefinition = {
   h: number;
   visible?: boolean;
   toneFamily?: DiagramToneFamily;
+  paletteFamily?: DiagramPaletteFamily;
 };
 
 /**
@@ -57,10 +65,32 @@ function icon(
   return { isoSrc: `${isoIconBasePath}/${src}`, flatSrc: `${flatIconBasePath}/${flatSrc}`, label, group, w, h, visible, toneFamily };
 }
 
+function paletteIcon(
+  family: DiagramPaletteFamily,
+  defaultColor: DiagramIconPaletteColor,
+  flatSrc: string,
+  label: string,
+  group: string,
+  w = 92,
+  h = 108,
+): DiagramIconDefinition {
+  return {
+    isoSrc: `${paletteIconBasePath}/${family}/${defaultColor}.svg`,
+    flatSrc: `${flatIconBasePath}/${flatSrc}`,
+    label,
+    group,
+    w,
+    h,
+    visible: true,
+    paletteFamily: family,
+  };
+}
+
 export const diagramIcons = {
-  server: icon("server.svg", "Server", "Core", 92, 108),
+  server: paletteIcon("server", "blue", "server.svg", "Server", "Core", 92, 108),
   "server-rack": icon("server-rack.svg", "Server rack", "Core", 92, 108),
-  "virtual-machine": icon("virtual-machine.svg", "Virtual machine", "Core", 92, 108),
+  proxmox: paletteIcon("proxmox", "blue", "server.svg", "Proxmox", "Core", 92, 108),
+  "virtual-machine": paletteIcon("vm", "blue", "virtual-machine.svg", "Virtual machine", "Core", 92, 108),
   service: icon("service.svg", "Service", "Core", 92, 108),
   client: icon("internet.svg", "Client", "Core", 96, 112),
   container: icon("container.svg", "Container", "Core", 88, 104, true, "container"),
@@ -99,7 +129,7 @@ export const diagramIcons = {
   helm: icon("helm.svg", "Helm", "Delivery", 92, 108),
 
   prometheus: icon("prometheus.svg", "Prometheus", "Observability", 92, 108),
-  grafana: icon("grafana.svg", "Grafana", "Observability", 92, 108),
+  grafana: paletteIcon("grafana", "amber", "grafana.svg", "Grafana", "Observability", 92, 108),
   alertmanager: icon("alertmanager.svg", "Alertmanager", "Observability", 92, 108),
 
   cluster: icon("kubernetes.svg", "Cluster", "Cloud", 104, 114, false),
@@ -141,13 +171,21 @@ export const diagramIconDefinitions = Object.entries(diagramIcons).map(([id, def
 
 export const diagramIconCatalog = diagramIconDefinitions.filter((icon) => icon.visible !== false);
 
-export function diagramIconHref(kind: DiagramIconKind, mode: "flat" | "iso" = "iso", tone?: string | null) {
+export function diagramIconHref(
+  kind: DiagramIconKind,
+  mode: "flat" | "iso" = "iso",
+  tone?: string | null,
+  color?: string | null,
+) {
   const icon = diagramIcons[kind];
   if (mode === "flat") {
     return icon.flatSrc;
   }
   if (icon.toneFamily && isDiagramIconTone(tone)) {
     return `${toneIconBasePath}/${icon.toneFamily}/${tone}.svg`;
+  }
+  if (icon.paletteFamily && isDiagramIconPaletteColor(color)) {
+    return `${paletteIconBasePath}/${icon.paletteFamily}/${color}.svg`;
   }
   return icon.isoSrc;
 }
@@ -158,6 +196,14 @@ export function diagramIconToneFamily(kind: DiagramIconKind): DiagramToneFamily 
 
 export function diagramIconHasTones(kind: DiagramIconKind): boolean {
   return Boolean(diagramIcons[kind].toneFamily);
+}
+
+export function diagramIconHasPalette(kind: DiagramIconKind): boolean {
+  return Boolean(diagramIcons[kind].paletteFamily);
+}
+
+export function isDiagramIconPaletteColor(value: unknown): value is DiagramIconPaletteColor {
+  return typeof value === "string" && (diagramIconPaletteColors as readonly string[]).includes(value);
 }
 
 export function isDiagramIconTone(value: unknown): value is DiagramIconTone {

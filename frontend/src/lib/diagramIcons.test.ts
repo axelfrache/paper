@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  diagramIconHasPalette,
   diagramIconHasTones,
   diagramIconHref,
+  diagramIconPaletteColors,
   diagramIconTones,
   diagramToneSwatch,
+  isDiagramIconPaletteColor,
   isDiagramIconTone,
 } from "./diagramIcons";
 
@@ -42,5 +45,45 @@ describe("diagram icon tones", () => {
     expect(isDiagramIconTone("carrot")).toBe(true);
     expect(isDiagramIconTone("bogus")).toBe(false);
     expect(isDiagramIconTone(null)).toBe(false);
+  });
+});
+
+describe("diagram icon palette", () => {
+  it("resolves the palette file for a palette-capable iso icon", () => {
+    expect(diagramIconHref("proxmox", "iso", null, "slate")).toBe("/diagram-icons/cloud-native/palette/proxmox/slate.svg");
+    expect(diagramIconHref("grafana", "iso", null, "violet")).toBe("/diagram-icons/cloud-native/palette/grafana/violet.svg");
+    expect(diagramIconHref("server", "iso", null, "green")).toBe("/diagram-icons/cloud-native/palette/server/green.svg");
+    expect(diagramIconHref("virtual-machine", "iso", null, "amber")).toBe("/diagram-icons/cloud-native/palette/vm/amber.svg");
+  });
+
+  it("falls back to the default color without a color or with an unknown color", () => {
+    expect(diagramIconHref("proxmox", "iso")).toBe("/diagram-icons/cloud-native/palette/proxmox/blue.svg");
+    expect(diagramIconHref("grafana", "iso")).toBe("/diagram-icons/cloud-native/palette/grafana/amber.svg");
+    expect(diagramIconHref("server", "iso")).toBe("/diagram-icons/cloud-native/palette/server/blue.svg");
+    expect(diagramIconHref("virtual-machine", "iso")).toBe("/diagram-icons/cloud-native/palette/vm/blue.svg");
+    expect(diagramIconHref("proxmox", "iso", null, "bogus")).toBe("/diagram-icons/cloud-native/palette/proxmox/blue.svg");
+  });
+
+  it("ignores colors in flat mode", () => {
+    expect(diagramIconHref("proxmox", "flat", null, "green")).toBe("/diagram-icons/flat/server.svg");
+    expect(diagramIconHref("grafana", "flat", null, "green")).toBe("/diagram-icons/flat/grafana.svg");
+    expect(diagramIconHref("server", "flat", null, "green")).toBe("/diagram-icons/flat/server.svg");
+    expect(diagramIconHref("virtual-machine", "flat", null, "green")).toBe("/diagram-icons/flat/virtual-machine.svg");
+  });
+
+  it("only marks palette families as palette-capable", () => {
+    expect(diagramIconHasPalette("proxmox")).toBe(true);
+    expect(diagramIconHasPalette("grafana")).toBe(true);
+    expect(diagramIconHasPalette("server")).toBe(true);
+    expect(diagramIconHasPalette("virtual-machine")).toBe(true);
+    expect(diagramIconHasPalette("server-rack")).toBe(false);
+  });
+
+  it("validates palette color names", () => {
+    for (const color of diagramIconPaletteColors) {
+      expect(isDiagramIconPaletteColor(color)).toBe(true);
+    }
+    expect(isDiagramIconPaletteColor("bogus")).toBe(false);
+    expect(isDiagramIconPaletteColor(null)).toBe(false);
   });
 });

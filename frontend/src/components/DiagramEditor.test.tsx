@@ -205,6 +205,60 @@ describe("the isometric placement grid", () => {
 });
 
 
+describe("palette-family icon colors", () => {
+  function mountWithProxmox() {
+    const diagram: Diagram = {
+      version: 1,
+      mode: "iso",
+      nodes: [{ id: "px", kind: "proxmox", label: "px", color: "blue", x: 0, y: 0 }],
+      edges: [],
+    };
+    const host = document.createElement("div");
+    document.body.replaceChildren(host);
+    root = createRoot(host);
+    let latest = diagram;
+    act(() => {
+      root?.render(<Harness initial={diagram} onValue={(next) => { latest = next; }} />);
+    });
+    const svg = host.querySelector<SVGSVGElement>("svg.diagram-canvas")!;
+    vi.spyOn(svg, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 400, 300));
+    act(() => {
+      host.querySelector(".diagram-node")?.dispatchEvent(
+        new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true }),
+      );
+      window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+    });
+    return { host, value: () => latest };
+  }
+
+  it("shows the standard swatches, not tone swatches, for a palette-family icon", () => {
+    const { host } = mountWithProxmox();
+    const icon = host.querySelector<SVGImageElement>(".diagram-node-icon");
+    expect(icon?.getAttribute("href")).toBe("/diagram-icons/cloud-native/palette/proxmox/blue.svg");
+    const swatches = host.querySelectorAll(".diagram-inspector-swatches .diagram-swatch");
+    expect(Array.from(swatches).map((swatch) => swatch.getAttribute("aria-label"))).toEqual([
+      "slate",
+      "blue",
+      "green",
+      "amber",
+      "violet",
+    ]);
+  });
+
+  it("switches the icon file and the node color together when a swatch is clicked", () => {
+    const { host, value } = mountWithProxmox();
+    const greenSwatch = Array.from(host.querySelectorAll(".diagram-inspector-swatches .diagram-swatch")).find(
+      (swatch) => swatch.getAttribute("aria-label") === "green",
+    )!;
+    act(() => {
+      greenSwatch.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+    expect(value().nodes[0].color).toBe("green");
+    const icon = host.querySelector<SVGImageElement>(".diagram-node-icon");
+    expect(icon?.getAttribute("href")).toBe("/diagram-icons/cloud-native/palette/proxmox/green.svg");
+  });
+});
+
 describe("diagram titles", () => {
   function editTitle(host: HTMLElement, text: string) {
     const input = host.querySelector<HTMLInputElement>('[aria-label="Diagram title"]')!;

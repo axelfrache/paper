@@ -23,7 +23,7 @@ import { generateAI } from "../lib/api";
 import { downloadDiagram } from "../lib/diagramExport";
 import type { DiagramExportBackground, DiagramExportFormat } from "../lib/diagramExport";
 import { addGeneratedDiagram, buildDiagramAdditionPrompt } from "../lib/diagramAi";
-import { diagramIconCatalog, diagramIconHasTones, diagramIconHref, diagramIconTones, diagramToneSwatch } from "../lib/diagramIcons";
+import { diagramIconCatalog, diagramIconHasPalette, diagramIconHasTones, diagramIconHref, diagramIconTones, diagramToneSwatch } from "../lib/diagramIcons";
 import type {
   Diagram,
   DiagramColor,
@@ -166,10 +166,11 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
   const selectedEdge = liveDiagram.edges.find((edge) => edge.id === selectedEdgeId) ?? null;
   const selectedNodeIcon = selectedNode ? diagramIconForKind(selectedNode.kind) : null;
   const selectedNodeHasTones = liveDiagram.mode === "iso" && selectedNodeIcon !== null && diagramIconHasTones(selectedNodeIcon);
+  const selectedNodeHasPalette = liveDiagram.mode === "iso" && selectedNodeIcon !== null && diagramIconHasPalette(selectedNodeIcon);
   const selectedNodeBoxed = selectedNode?.boxed === true;
   const showToneSwatches = selectedNodeHasTones && !selectedNodeBoxed;
   const colorAffectsSelectedNode =
-    selectedNode !== null && (liveDiagram.mode === "flat" || selectedNodeIcon === null || selectedNodeBoxed);
+    selectedNode !== null && (liveDiagram.mode === "flat" || selectedNodeIcon === null || selectedNodeBoxed || selectedNodeHasPalette);
   const showNodePalette = showToneSwatches || colorAffectsSelectedNode;
   const zoom = fitViewportRef.current.width / viewport.width;
   const gridLines = liveDiagram.mode === "iso" && showGrid ? isoGridLines(viewport) : [];
@@ -1763,7 +1764,7 @@ function DiagramNodeIcon({ node, mode }: { node: DiagramLayoutNode; mode: Diagra
   if (!node.icon) {
     return null;
   }
-  const href = diagramIconHref(node.icon, mode, node.source.tone);
+  const href = diagramIconHref(node.icon, mode, node.source.tone, node.source.color);
   if (mode === "flat") {
     const maskId = `diagram-editor-icon-mask-${safeSvgId(node.id)}`;
     return (

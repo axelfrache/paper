@@ -68,13 +68,14 @@ export async function buildStandaloneSvg(
     layout.nodes
       .filter((node) => node.icon)
       .map(async (node) => {
-        const url = diagramIconHref(node.icon!, diagram.mode, node.source.tone);
+        const url = diagramIconHref(node.icon!, diagram.mode, node.source.tone, node.source.color);
         if (!icons.has(url)) {
           icons.set(url, await resolveIcon(url).catch(() => ""));
         }
       }),
   );
-  const iconHref = (node: DiagramLayoutNode) => icons.get(diagramIconHref(node.icon!, diagram.mode, node.source.tone)) ?? "";
+  const iconHref = (node: DiagramLayoutNode) =>
+    icons.get(diagramIconHref(node.icon!, diagram.mode, node.source.tone, node.source.color)) ?? "";
 
   const halo = options.background === "transparent" ? exportColors.white : backgroundColor(options.background);
   const body = renderBody(layout, diagram.mode, iconHref, halo);

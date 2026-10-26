@@ -480,7 +480,7 @@ function nodeIconSvg(node: DiagramLayoutNode, mode: DiagramMode) {
   if (!node.icon) {
     return "";
   }
-  const href = escapeAttribute(diagramIconHref(node.icon, mode, node.source.tone));
+  const href = escapeAttribute(diagramIconHref(node.icon, mode, node.source.tone, node.source.color));
   if (mode === "flat") {
     const maskId = escapeAttribute(`diagram-icon-mask-${safeSvgId(node.id)}`);
     return `<defs><mask id="${maskId}" maskUnits="userSpaceOnUse" x="${node.iconX}" y="${node.iconY}" width="${node.iconSize}" height="${node.iconSize}" style="mask-type:alpha;"><image href="${href}" x="${node.iconX}" y="${node.iconY}" width="${node.iconSize}" height="${node.iconSize}" preserveAspectRatio="xMidYMid meet"/></mask></defs><rect class="diagram-node-icon diagram-node-icon-mask" x="${node.iconX}" y="${node.iconY}" width="${node.iconSize}" height="${node.iconSize}" fill="${node.color}" mask="url(#${maskId})"/>`;
