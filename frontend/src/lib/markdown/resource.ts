@@ -1,3 +1,4 @@
+import { codeLines } from "./fences";
 import { diagramToSvgMarkup, parseDiagramMarker } from "../diagram";
 import { parseInline } from "./inline";
 import type { MarkdownInline } from "./inline";
@@ -32,8 +33,9 @@ export function isResourceLine(line: string) {
 }
 
 export function resourceLineAt(value: string, line: number) {
-  const raw = value.split("\n")[line];
-  return raw !== undefined && isResourceLine(raw) ? raw : null;
+  const lines = value.split("\n");
+  const raw = lines[line];
+  return raw !== undefined && isResourceLine(raw) && !codeLines(lines)[line] ? raw : null;
 }
 
 /** Removes the resource line entirely, keeping at least one (empty) line. */

@@ -7,6 +7,7 @@ import { Sidebar, type ViewKey } from "../components/Sidebar";
 import { Toast } from "../components/Toast";
 import { NoteEditor, type AIResult } from "../features/NoteEditor";
 import { askNotes, assistNote, createNote, deleteNote, listNotes, searchNotes, updateNote, uploadNoteImage } from "../lib/api";
+import { recordDraft, historyLimit, type NoteHistory } from "../lib/noteHistory";
 import { matchesFilter } from "../lib/notesFilter";
 import { useShortcuts } from "../lib/useShortcuts";
 import type { AIAction, AskAnswer, Note, NoteDraft } from "../types/note";
@@ -15,11 +16,6 @@ import type { AuthUser } from "../types/auth";
 type Theme = "light" | "dark";
 type MobilePane = "notes" | "editor";
 type ResizableColumn = "navigation" | "notes";
-
-type NoteHistory = {
-  undo: NoteDraft[];
-  redo: NoteDraft[];
-};
 
 type DeletedNotesAction = {
   notes: Note[];
@@ -35,8 +31,6 @@ type ContentFocusRequest = {
   noteId: string;
   token: number;
 };
-
-const historyLimit = 120;
 
 const emptyDraft: NoteDraft = {
   title: "",
@@ -102,6 +96,10 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
     query.addEventListener("change", handleChange);
     return () => query.removeEventListener("change", handleChange);
   }, []);
+
+  useEffect(() => {
+    for (const history of historyRef.current.values()) history.group = undefined;
+  }, [activeId]);
 
   useEffect(() => {
     if (activeId && !navPinned && !matchesCompactNavigation()) {
@@ -268,17 +266,9 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
     saveTimers.current.set(note.id, timer);
   }, [flash]);
 
-  const pushUndo = useCallback((note: Note) => {
+  const pushUndo = useCallback((note: Note, next: Note) => {
     const history = historyRef.current.get(note.id) ?? { undo: [], redo: [] };
-    const draft = toDraft(note);
-    if (sameDraft(history.undo[history.undo.length - 1], draft)) {
-      return;
-    }
-    history.undo.push(draft);
-    if (history.undo.length > historyLimit) {
-      history.undo.shift();
-    }
-    history.redo = [];
+    recordDraft(history, toDraft(note), toDraft(next));
     historyRef.current.set(note.id, history);
     deletedHistoryRef.current.redo = [];
   }, []);
@@ -292,7 +282,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       if (sameDraft(toDraft(activeNote), toDraft(nextNote))) {
         return;
       }
-      pushUndo(activeNote);
+      pushUndo(activeNote, nextNote);
       setNotes((current) => current.map((note) => (note.id === nextNote.id ? nextNote : note)));
       persist(nextNote);
     },
@@ -371,6 +361,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       return;
     }
     const history = historyRef.current.get(activeNote.id);
+    if (history) history.group = undefined;
     const previous = history?.undo.pop();
     if (!history || !previous) {
       flash("Nothing to undo");
@@ -386,6 +377,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       return;
     }
     const history = historyRef.current.get(activeNote.id);
+    if (history) history.group = undefined;
     const next = history?.redo.pop();
     if (!history || !next) {
       flash("Nothing to redo");

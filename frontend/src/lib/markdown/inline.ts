@@ -1,4 +1,5 @@
 export type MarkdownInline =
+  | { type: "escape"; text: string }
   | { type: "text"; text: string }
   | { type: "link"; text: MarkdownInline[]; href: string; source: string; title?: string; safe: boolean }
   | { type: "image"; alt: string; href: string; source: string; safe: boolean; width?: number }
@@ -31,6 +32,12 @@ export function parseInline(text: string): MarkdownInline[] {
   };
 
   while (index < text.length) {
+    if (text[index] === "\\" && /[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/.test(text[index + 1] ?? "")) {
+      pushBuffer();
+      nodes.push({ type: "escape", text: text[index + 1] });
+      index += 2;
+      continue;
+    }
     const image = parseImage(text, index);
     if (image) {
       pushBuffer();
@@ -48,7 +55,7 @@ export function parseInline(text: string): MarkdownInline[] {
     }
 
     if (text.startsWith("***", index)) {
-      const end = text.indexOf("***", index + 3);
+      const end = findUnescaped(text, "***", index + 3);
       if (end > index + 3) {
         pushBuffer();
         nodes.push({
@@ -71,7 +78,7 @@ export function parseInline(text: string): MarkdownInline[] {
     }
 
     if (text.startsWith("~~", index)) {
-      const end = text.indexOf("~~", index + 2);
+      const end = findUnescaped(text, "~~", index + 2);
       if (end > index + 2) {
         pushBuffer();
         nodes.push({ type: "strike", children: parseInline(text.slice(index + 2, end)) });
@@ -91,7 +98,7 @@ export function parseInline(text: string): MarkdownInline[] {
     }
 
     if (text.startsWith("**", index)) {
-      const end = text.indexOf("**", index + 2);
+      const end = findUnescaped(text, "**", index + 2);
       if (end > index + 2) {
         pushBuffer();
         nodes.push({ type: "strong", children: parseInline(text.slice(index + 2, end)) });
@@ -152,7 +159,7 @@ function parseImage(text: string, start: number): ParsedLink | null {
     return null;
   }
   const labelEnd = findUnescaped(text, "]", start + 2);
-  if (labelEnd <= start + 2 || text[labelEnd + 1] !== "(") {
+  if (labelEnd < start + 2 || text[labelEnd + 1] !== "(") {
     return null;
   }
   const hrefEnd = findClosingLinkParen(text, labelEnd + 2);
@@ -301,7 +308,7 @@ function findUnescaped(value: string, needle: string, from: number) {
       index += 1;
       continue;
     }
-    if (value[index] === needle) {
+    if (value.startsWith(needle, index)) {
       return index;
     }
   }
@@ -343,6 +350,7 @@ function findClosingLinkParen(value: string, from: number) {
 
 function findClosingSingleStar(value: string, from: number) {
   for (let index = from; index < value.length; index += 1) {
+    if (value[index] === "\\") { index += 1; continue; }
     if (value[index] === "*" && value[index - 1] !== "*" && value[index + 1] !== "*") {
       return index;
     }

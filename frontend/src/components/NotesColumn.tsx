@@ -346,7 +346,7 @@ function renderHighlighted(text: string, query: string): ReactNode {
 
 function renderInlineNodes(nodes: MarkdownInline[], query: string): ReactNode {
   return nodes.map((node, index) => {
-    if (node.type === "text") {
+    if (node.type === "text" || node.type === "escape") {
       return <span key={index}>{renderHighlighted(node.text, query)}</span>;
     }
     if (node.type === "code") {

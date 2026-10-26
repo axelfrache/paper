@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultDiagram, serializeDiagramMarker } from "../diagram";
 import { readSource } from "./dom";
-import { renderEditableLine, renderEditableMarkdown } from "./editorRender";
+import { hiddenPrefixLength, renderEditableLine, renderEditableMarkdown } from "./editorRender";
 
 function render(html: string) {
   const host = document.createElement("div");
@@ -20,19 +20,48 @@ describe("editable markdown renderer", () => {
     expect(host.querySelector("code")?.textContent).toBe("code");
   });
 
-  it("keeps syntax markers visible on the active line", () => {
+  it("never reveals inline syntax markers, even while the line is active", () => {
+    const host = render(renderEditableMarkdown("Use **bold** text.", 0));
+    const marker = host.querySelector("strong")?.previousElementSibling;
+
+    expect(marker?.textContent).toBe("**");
+    expect(marker?.getAttribute("style")).toContain("display:none");
+    expect(readSource(host as HTMLDivElement)).toBe("Use **bold** text.");
+  });
+
+  it("always hides the heading marker while keeping the heading styling, even while active", () => {
     const host = render(renderEditableMarkdown("# Title", 0));
     const line = host.querySelector("[data-line='0']");
 
-    expect(line?.textContent).toBe("# Title");
-    expect(line?.querySelector("span")?.getAttribute("style")).toContain("color:#a7acb2;");
+    expect(line?.getAttribute("style")).toContain("font-weight:640");
+    expect(line?.querySelector("span")?.getAttribute("style")).toContain("display:none");
+    expect(readSource(host as HTMLDivElement)).toBe("# Title");
   });
 
-  it("hides syntax markers on inactive headings", () => {
-    const host = render(renderEditableMarkdown("# Title", -1));
-    const marker = host.querySelector("[data-line='0'] span");
+  it("always shows the bullet decoration instead of the raw dash, even while active", () => {
+    const host = render(renderEditableMarkdown("- Item", 0));
+    const line = host.querySelector("[data-line='0']");
 
-    expect(marker?.getAttribute("style")).toContain("display:none;");
+    expect(line?.querySelector("[data-deco='1']")?.textContent).toBe("•");
+    expect(readSource(host as HTMLDivElement)).toBe("- Item");
+  });
+
+  it("reveals a link's href while its line is active, so it stays editable", () => {
+    const host = render(renderEditableMarkdown("[Paper](https://)", 0));
+    const line = host.querySelector("[data-line='0']");
+    const hrefMark = line?.querySelector("a")?.nextElementSibling;
+
+    expect(hrefMark?.textContent).toBe("](https://)");
+    expect(hrefMark?.getAttribute("style")).not.toContain("display:none");
+    expect(readSource(host as HTMLDivElement)).toBe("[Paper](https://)");
+  });
+
+  it("hides a link's href once its line is no longer active", () => {
+    const host = render(renderEditableMarkdown("[Paper](https://)", -1));
+    const line = host.querySelector("[data-line='0']");
+
+    expect(line?.querySelector("a")?.nextElementSibling?.getAttribute("style")).toContain("display:none");
+    expect(readSource(host as HTMLDivElement)).toBe("[Paper](https://)");
   });
 
   it("renders safe and unsafe links", () => {
@@ -134,5 +163,51 @@ describe("editable markdown renderer", () => {
     const host = render(renderEditableMarkdown(marker, -1));
 
     expect(host.querySelector("[data-line='1']")?.innerHTML).toContain("<br>");
+  });
+});
+
+describe("hiddenPrefixLength", () => {
+  it("measures the hidden prefix of a heading", () => {
+    expect(hiddenPrefixLength("## Title")).toBe("## ".length);
+  });
+
+  it("measures the hidden prefix of a checkbox before a plain bullet", () => {
+    expect(hiddenPrefixLength("- [x] Done")).toBe("- [x] ".length);
+  });
+
+  it("measures the hidden prefix of a bullet", () => {
+    expect(hiddenPrefixLength("- Item")).toBe("- ".length);
+  });
+
+  it("measures the hidden prefix of a blockquote", () => {
+    expect(hiddenPrefixLength("> Quote")).toBe("> ".length);
+  });
+
+  it("finds no hidden prefix on a plain line", () => {
+    expect(hiddenPrefixLength("Plain text")).toBe(0);
+  });
+});
+
+describe("source fidelity", () => {
+  it.each(["# Title", "- item", "1. item", "- [x] task", "> quote"])("retains alignment for %s", (text) => {
+    const source = `${text}{align=center}`;
+    expect(readSource(render(renderEditableMarkdown(source, -1)))).toBe(source);
+  });
+  it("renders fenced content literally and preserves its source", () => {
+    const source = "````md\n# Title\n- [ ] task\n![image](/image.png)\n```\n````";
+    const host = render(renderEditableMarkdown(source, 2));
+    expect(host.querySelector("img, [data-check], strong")).toBeNull();
+    expect(host.querySelectorAll(".markdown-editor-code")).toHaveLength(6);
+    expect(readSource(host)).toBe(source);
+  });
+  it("preserves escapes while hiding their syntax", () => {
+    const source = "\\*literal\\* and \\_text\\_";
+    const host = render(renderEditableMarkdown(source, -1));
+    expect(host.querySelector("em")).toBeNull();
+    expect(readSource(host)).toBe(source);
+  });
+  it("renders images with empty alternative text", () => {
+    const host = render(renderEditableMarkdown("![](/image.png)", -1));
+    expect(host.querySelector("img")?.getAttribute("alt")).toBe("");
   });
 });

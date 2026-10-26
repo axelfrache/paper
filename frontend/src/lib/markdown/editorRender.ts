@@ -1,3 +1,4 @@
+import { codeLines } from "./fences";
 import { diagramSummary, diagramToSvgMarkup, parseDiagramMarker } from "../diagram";
 import { parseInline } from "./inline";
 import type { MarkdownInline } from "./inline";
@@ -5,17 +6,42 @@ import { defaultTextAlign, readAlign } from "./align";
 import { isDivider } from "./render";
 import { isResourceLine, standaloneImage } from "./resource";
 
-const syntaxColor = "#a7acb2";
+const syntaxColor = "var(--muted)";
+const diagramPreviewCache = new Map<string, string>();
 
 export function renderEditableMarkdown(value: string, activeLine: number, selectedResourceLine = -1) {
   const lines = value.split("\n");
+  const contexts = codeLines(lines);
   const html = lines
-    .map((line, index) => renderEditableLine(line, index === activeLine, index, index === selectedResourceLine))
+    .map((line, index) => contexts[index]
+      ? `<div data-line="${index}" class="markdown-editor-code${contexts[index] === "fence" ? " markdown-editor-code-fence" : ""}" style="min-height:1.75em;">${escapeHtml(line) || "<br />"}</div>`
+      : renderEditableLine(line, index === activeLine, index, index === selectedResourceLine))
     .join("");
   // Only a resource needs an extra line: the caret cannot sit inside an image or a
   // diagram, whereas a divider line holds it fine. The extra line is not part of the source.
   const lastLine = lines[lines.length - 1] ?? "";
-  return isResourceLine(lastLine) ? `${html}${renderEditableLine("", false, lines.length)}` : html;
+  return !contexts[lines.length - 1] && isResourceLine(lastLine) ? `${html}${renderEditableLine("", false, lines.length)}` : html;
+}
+
+export function hiddenPrefixLength(rawLine: string) {
+  const { text: raw } = readAlign(rawLine);
+  let match = /^#{1,6}\s+/.exec(raw);
+  if (match) {
+    return match[0].length;
+  }
+  match = /^-\s\[[ xX]\]\s+/.exec(raw);
+  if (match) {
+    return match[0].length;
+  }
+  match = /^(?:[-*]|\d+[.)])\s+/.exec(raw);
+  if (match) {
+    return match[0].length;
+  }
+  match = /^>\s+/.exec(raw);
+  if (match) {
+    return match[0].length;
+  }
+  return 0;
 }
 
 export function renderEditableLine(rawLine: string, active: boolean, index: number, selectedResource = false) {
@@ -26,49 +52,56 @@ export function renderEditableLine(rawLine: string, active: boolean, index: numb
   const alignMark =
     align === defaultTextAlign ? "" : `<span data-deco="1" data-source="{align=${align}}"></span>`;
   const base = `min-height:1.75em;${alignStyle}`;
-  const syn = (text: string) =>
-    `<span style="color:${syntaxColor};${active ? "" : "display:none;"}">${escapeHtml(text)}</span>`;
-  const deco = (html: string) => `<span data-deco="1" style="color:#b0b5bb;">${html}</span>`;
+  const deco = (html: string) => `<span data-deco="1" style="color:var(--muted);">${html}</span>`;
   let match: RegExpExecArray | null;
 
-  match = /^(#{1,3})(\s+)(.*)$/.exec(raw);
+  match = /^(#{1,6})(\s+)(.*)$/.exec(raw);
   if (match) {
-    const sizes = ["22px", "18px", "15.5px"];
+    const sizes = ["22px", "18px", "15.5px", "15px", "14.5px", "14px"];
     const level = match[1].length;
     const margin = level === 1 ? "18px 0 4px" : "14px 0 2px";
-    return `<div data-line="${index}" style="${base}font-size:${sizes[level - 1]};font-weight:640;letter-spacing:0;line-height:1.45;margin:${margin};">${syn(match[1] + match[2])}${inlineMarkdown(match[3], active)}</div>`;
+    return `<div data-line="${index}" style="${base}font-size:${sizes[level - 1]};font-weight:640;letter-spacing:0;line-height:1.45;margin:${margin};">${syntaxMark(match[1] + match[2])}${inlineMarkdown(match[3], active)}${alignMark}</div>`;
   }
 
   match = /^(-\s\[([ xX])\])(\s+)(.*)$/.exec(raw);
   if (match) {
     const done = match[2].toLowerCase() === "x";
-    const check = `${deco(`<span data-check="${index}" style="cursor:pointer;font-size:13px;margin-right:8px;color:${done ? "#3f7d58" : "#aeb4ba"};">${done ? "☑" : "☐"}</span>`)}${syn(match[1] + match[3])}`;
-    return `<div data-line="${index}" style="${base}display:flex;align-items:baseline;">${check}<span style="${done ? "color:#a2a8ae;text-decoration:line-through;" : ""}">${inlineMarkdown(match[4], active)}</span></div>`;
+    const check = `${deco(`<button type="button" role="checkbox" aria-checked="${done}" aria-label="Toggle task" contenteditable="false" data-check="${index}" style="cursor:pointer;font-size:13px;margin-right:8px;color:${done ? "var(--accent)" : "var(--muted)"};">${done ? "☑" : "☐"}</button>`)}${syntaxMark(match[1] + match[3])}`;
+    return `<div data-line="${index}" style="${base}display:flex;align-items:baseline;">${check}<span style="flex:1;min-width:0;${done ? "color:var(--muted);text-decoration:line-through;" : ""}">${inlineMarkdown(match[4], active)}</span>${alignMark}</div>`;
   }
 
   if (isDivider(raw)) {
-    // Styled like any other line (`base`, no margin or padding) so the divider always
-    // occupies exactly one line and does not grow when the caret lands on it and
-    // reveals the `---`. The rule must be a direct flex child for `flex: 1` to stretch it.
-    return `<div data-line="${index}" class="markdown-editor-divider" style="${base}display:flex;align-items:center;gap:10px;">${syn(raw)}<span data-deco="1" class="markdown-editor-divider-rule"></span></div>`;
+    // The rule must be a direct flex child for `flex: 1` to stretch it.
+    return `<div data-line="${index}" class="markdown-editor-divider" style="${base}display:flex;align-items:center;gap:10px;">${dividerMark(raw)}<span data-deco="1" class="markdown-editor-divider-rule"></span></div>`;
+  }
+
+  match = /^(\d+[.)])(\s+)(.*)$/.exec(raw);
+  if (match) {
+    return `<div data-line="${index}" style="${base}display:flex;align-items:baseline;gap:8px;">${deco(escapeHtml(match[1]))}${syntaxMark(match[1] + match[2])}<span style="flex:1;min-width:0;">${inlineMarkdown(match[3], active)}</span>${alignMark}</div>`;
   }
 
   match = /^(-|\*)(\s+)(.*)$/.exec(raw);
   if (match) {
-    const bullet = active ? syn(match[1] + match[2]) : `${deco('<span style="margin-right:8px;">•</span>')}${syn(match[1] + match[2])}`;
-    return `<div data-line="${index}" style="${base}display:flex;align-items:baseline;padding-left:2px;">${bullet}<span>${inlineMarkdown(match[3], active)}</span></div>`;
+    const bullet = `${deco('<span style="margin-right:8px;">•</span>')}${syntaxMark(match[1] + match[2])}`;
+    return `<div data-line="${index}" style="${base}display:flex;align-items:baseline;padding-left:2px;">${bullet}<span style="flex:1;min-width:0;">${inlineMarkdown(match[3], active)}</span>${alignMark}</div>`;
   }
 
   match = /^(>)(\s+)(.*)$/.exec(raw);
   if (match) {
-    return `<div data-line="${index}" style="${base}border-left:2px solid #dfe2e6;padding-left:12px;color:#6f757c;">${syn(match[1] + match[2])}${inlineMarkdown(match[3], active)}</div>`;
+    return `<div data-line="${index}" style="${base}border-left:2px solid var(--line);padding-left:12px;color:var(--muted);">${syntaxMark(match[1] + match[2])}${inlineMarkdown(match[3], active)}${alignMark}</div>`;
   }
 
   const diagram = parseDiagramMarker(raw);
   if (diagram) {
+    let svg = diagramPreviewCache.get(raw);
+    if (!svg) {
+      svg = diagramToSvgMarkup(diagram, 320);
+      if (diagramPreviewCache.size >= 32) diagramPreviewCache.delete(diagramPreviewCache.keys().next().value!);
+      diagramPreviewCache.set(raw, svg);
+    }
     const preview = [
-      `<span class="markdown-editor-diagram-preview">${diagramToSvgMarkup(diagram, 320)}</span>`,
-      `<span class="markdown-editor-diagram-meta"><span>${escapeHtml(diagramSummary(diagram))}</span><em data-diagram-edit-line="${index}">Edit diagram</em><button type="button" data-diagram-export-line="${index}" class="markdown-editor-diagram-export" aria-label="Download diagram" title="Download PNG"></button></span>`,
+      `<span class="markdown-editor-diagram-preview">${svg}</span>`,
+      `<span class="markdown-editor-diagram-meta"><span>${escapeHtml(diagramSummary(diagram))}</span><button type="button" class="markdown-editor-diagram-edit" data-diagram-edit-line="${index}">Edit diagram</button><button type="button" data-diagram-export-line="${index}" class="markdown-editor-diagram-export" aria-label="Download diagram" title="Download PNG"></button></span>`,
       `<span data-diagram-resize-line="${index}" class="markdown-editor-diagram-resize" aria-hidden="true"></span>`,
       `<span data-diagram-width-resize-line="${index}" class="markdown-editor-diagram-width-resize" aria-hidden="true"></span>`,
     ].join("");
@@ -111,58 +144,63 @@ function resourceBlock(
 }
 
 function inlineMarkdown(raw: string, active: boolean) {
-  return parseInline(raw).map((node) => inlineNode(node, active)).join("");
+  return raw.length ? parseInline(raw).map((node) => inlineNode(node, active)).join("") : "<br />";
 }
 
 function inlineNode(node: MarkdownInline, active: boolean): string {
+  if (node.type === "escape") return `${syntaxMark("\\")}${escapeHtml(node.text)}`;
   if (node.type === "text") {
     return escapeHtml(node.text);
   }
   if (node.type === "image") {
     const marker = imageMarker(node);
-    if (active || !node.safe) {
+    if (!node.safe) {
       return escapeHtml(marker);
     }
     const resized = node.width ? " is-resized" : "";
     const style = node.width ? ` style="width:min(100%, ${node.width}px);"` : "";
-    return `${syntaxMark(marker, active)}<span class="markdown-editor-image${resized}"${style}><img src="${escapeAttribute(node.href)}" alt="${escapeAttribute(node.alt)}" draggable="false" /></span>`;
+    return `${syntaxMark(marker)}<span class="markdown-editor-image${resized}"${style}><img src="${escapeAttribute(node.href)}" alt="${escapeAttribute(node.alt)}" draggable="false" /></span>`;
   }
   if (node.type === "code") {
     const content = `<code>${escapeHtml(node.text)}</code>`;
-    return `${syntaxMark("`", active)}${content}${syntaxMark("`", active)}`;
+    return `${syntaxMark("`")}${content}${syntaxMark("`", false, "close")}`;
   }
   if (node.type === "strong") {
     const content = `<strong>${node.children.map((child) => inlineNode(child, active)).join("")}</strong>`;
-    return `${syntaxMark("**", active)}${content}${syntaxMark("**", active)}`;
+    return `${syntaxMark("**")}${content}${syntaxMark("**", false, "close")}`;
   }
   if (node.type === "em") {
     const content = `<em>${node.children.map((child) => inlineNode(child, active)).join("")}</em>`;
-    return `${syntaxMark("*", active)}${content}${syntaxMark("*", active)}`;
+    return `${syntaxMark("*")}${content}${syntaxMark("*", false, "close")}`;
   }
   if (node.type === "strike") {
     const content = `<s>${node.children.map((child) => inlineNode(child, active)).join("")}</s>`;
-    return `${syntaxMark("~~", active)}${content}${syntaxMark("~~", active)}`;
+    return `${syntaxMark("~~")}${content}${syntaxMark("~~", false, "close")}`;
   }
   if (node.type === "underline") {
     const content = `<u>${node.children.map((child) => inlineNode(child, active)).join("")}</u>`;
-    return `${syntaxMark("<u>", active)}${content}${syntaxMark("</u>", active)}`;
+    return `${syntaxMark("<u>")}${content}${syntaxMark("</u>", false, "close")}`;
   }
   const children = node.text.map((child) => inlineNode(child, active)).join("");
   const content = node.safe
     ? `<a href="${escapeAttribute(node.href)}" target="_blank" rel="noreferrer"${node.title ? ` title="${escapeAttribute(node.title)}"` : ""}>${children}</a>`
     : `<span class="markdown-link-invalid">${children}</span>`;
-  return `${syntaxMark("[", active)}${content}${syntaxMark(`](${node.source})`, active)}`;
+  return `${syntaxMark("[", active)}${content}${syntaxMark(`](${node.source})`, active, "close")}`;
 }
 
 function imageMarker(node: Extract<MarkdownInline, { type: "image" }>) {
   return `![${node.alt}](${node.source})${node.width ? `{width=${node.width}}` : ""}`;
 }
 
-function syntaxMark(mark: string, active: boolean) {
+function syntaxMark(mark: string, active = false, side: "open" | "close" = "open") {
   if (active) {
-    return `<span style="color:${syntaxColor};">${escapeHtml(mark)}</span>`;
+    return `<span data-syntax-side="${side}" style="color:${syntaxColor};">${escapeHtml(mark)}</span>`;
   }
-  return `<span style="font-size:0; color:transparent; user-select:none; pointer-events:none;">${escapeHtml(mark)}</span>`;
+  return `<span data-syntax-mark="1" data-syntax-side="${side}" style="display:none;">${escapeHtml(mark)}</span>`;
+}
+
+function dividerMark(mark: string) {
+  return `<span data-syntax-mark="1" style="display:inline-block; width:0; overflow:visible; white-space:nowrap; color:transparent; caret-color:var(--text); user-select:none; pointer-events:none;">${escapeHtml(mark)}</span>`;
 }
 
 function escapeHtml(value: string) {

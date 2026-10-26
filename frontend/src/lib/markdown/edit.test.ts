@@ -247,8 +247,8 @@ describe("markdown editing operations", () => {
     });
   });
 
-  it("normalizes pasted markdown-ish bullet text", () => {
-    expect(normalizeMarkdownText("Intro - **Task** - next")).toBe("Intro\n- **Task**\n- next");
+  it("preserves inline hyphens when pasting", () => {
+    expect(normalizeMarkdownText("Intro - **Task** - next")).toBe("Intro - **Task** - next");
   });
 
   it("normalizes reversed ranges", () => {
@@ -274,5 +274,19 @@ describe("markdown editing operations", () => {
     });
     expect(focusCaret("one\ntwo", null, "end")).toEqual({ line: 1, col: 3 });
     expect(focusCaret("one\ntwo", { line: 0, col: 2 }, "last")).toEqual({ line: 0, col: 2 });
+  });
+});
+
+describe("Unicode and literal editing regressions", () => {
+  it.each(["😀", "👨‍👩‍👧‍👦", "🇫🇷", "e\u0301", "👍🏽"])("deletes the whole grapheme %s", (text) => {
+    expect(deleteBackward(`a${text}b`, { line: 0, col: 1 + text.length }).value).toBe("ab");
+    expect(deleteForward(`a${text}b`, { line: 0, col: 1 }).value).toBe("ab");
+  });
+  it("continues and exits numbered lists", () => {
+    expect(insertLineBreak("3. Item", { line: 0, col: 7 }).value).toBe("3. Item\n4. ");
+    expect(insertLineBreak("4. ", { line: 0, col: 3 }).value).toBe("");
+  });
+  it("does not continue bullets inside fenced code", () => {
+    expect(insertLineBreak("```\n- code\n```", { line: 1, col: 6 }).value).toBe("```\n- code\n\n```");
   });
 });

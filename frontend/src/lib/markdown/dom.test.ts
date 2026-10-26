@@ -10,6 +10,7 @@ import {
   pointToCaret,
   readSource,
   sourceTextLength,
+  stepColumn,
 } from "./dom";
 
 function makeEditor(html: string) {
@@ -161,6 +162,46 @@ describe("markdown DOM mapping", () => {
     expect(point?.offset).toBe("](https://x.test)".length);
   });
 
+  it("never places the caret inside a hidden syntax marker", () => {
+    const editor = makeEditor(`
+      <div data-line="0"><span data-syntax-mark="1">**</span><strong>bold</strong><span data-syntax-mark="1">**</span><span> text</span></div>
+    `);
+
+    const afterClosingMark = domPointForCaret(editor, { line: 0, col: "**bold**".length });
+    expect(afterClosingMark?.node.nodeValue).toBe(" text");
+    expect(afterClosingMark?.offset).toBe(0);
+
+    const beforeOpeningMark = domPointForCaret(editor, { line: 0, col: 0 });
+    expect(beforeOpeningMark?.node.nodeValue).toBe("bold");
+    expect(beforeOpeningMark?.offset).toBe(0);
+  });
+
+  it("falls back to the preceding visible node when a hidden marker is last on the line", () => {
+    const editor = makeEditor(`
+      <div data-line="0"><span>Use </span><span data-syntax-mark="1">**</span><strong>bold</strong><span data-syntax-mark="1">**</span></div>
+    `);
+
+    const point = domPointForCaret(editor, { line: 0, col: "Use **bold**".length });
+
+    expect(point?.node.nodeValue).toBe("bold");
+    expect(point?.offset).toBe("bold".length);
+  });
+
+  it("keeps exact column fidelity when the whole line is a hidden marker", () => {
+    const editor = makeEditor(`
+      <div data-line="0" class="markdown-editor-divider"><span data-syntax-mark="1">---</span><span data-deco="1" class="markdown-editor-divider-rule"></span></div>
+    `);
+    const marker = editor.querySelector("[data-syntax-mark]")?.firstChild;
+
+    const start = domPointForCaret(editor, { line: 0, col: 0 });
+    expect(start?.node).toBe(marker);
+    expect(start?.offset).toBe(0);
+
+    const end = domPointForCaret(editor, { line: 0, col: 3 });
+    expect(end?.node).toBe(marker);
+    expect(end?.offset).toBe(3);
+  });
+
   it("places and reads a normalized multi-line selection", () => {
     const editor = makeEditor(`
       <div data-line="0">Alpha</div>
@@ -174,4 +215,54 @@ describe("markdown DOM mapping", () => {
       end: { line: 1, col: 2 },
     });
   });
+
+  it("steps one plain character at a time", () => {
+    const editor = makeEditor(`<div data-line="0">Hello</div>`);
+    const line = editor.querySelector("[data-line]")!;
+
+    expect(stepColumn(line, 2, 1)).toBe(3);
+    expect(stepColumn(line, 2, -1)).toBe(1);
+  });
+
+  it("returns null at the true edges of a line", () => {
+    const editor = makeEditor(`<div data-line="0">Hi</div>`);
+    const line = editor.querySelector("[data-line]")!;
+
+    expect(stepColumn(line, 2, 1)).toBeNull();
+    expect(stepColumn(line, 0, -1)).toBeNull();
+  });
+
+  it("skips a whole hidden marker in one step instead of stopping inside it", () => {
+    const editor = makeEditor(`
+      <div data-line="0"><span>Use </span><span data-syntax-mark="1">**</span><strong>bold</strong><span data-syntax-mark="1">**</span></div>
+    `);
+    const line = editor.querySelector("[data-line]")!;
+
+    expect(stepColumn(line, 4, 1)).toBe(7);
+    expect(stepColumn(line, 10, 1)).toBeNull();
+  });
+
+  it("treats a hidden prefix at the very start of a line as the true edge", () => {
+    const editor = makeEditor(`
+      <div data-line="0"><span data-syntax-mark="1">- </span><span>Item</span></div>
+    `);
+    const line = editor.querySelector("[data-line]")!;
+
+    expect(stepColumn(line, "- ".length, -1)).toBeNull();
+  });
+});
+
+it("clamps a stale column to visible content before a trailing hidden marker", () => {
+  const editor = makeEditor('<div data-line="0"><span data-syntax-mark="1">**</span><strong>test</strong><span data-syntax-mark="1">**</span></div>');
+  const point = domPointForCaret(editor, { line: 0, col: 200 });
+  expect(point?.node.nodeValue).toBe("test");
+  expect(point?.offset).toBe(4);
+});
+
+it("crosses adjacent markers and emoji as one visible grapheme", () => {
+  const editor = makeEditor('<div data-line="0"><strong>a</strong><span data-syntax-mark="1">**</span><span data-syntax-mark="1">*</span><em>👨‍👩‍👧‍👦</em><span data-syntax-mark="1">*</span></div>');
+  const line = editor.firstElementChild!;
+  expect(stepColumn(line, 1, 1)).toBe(4 + "👨‍👩‍👧‍👦".length);
+  expect(stepColumn(line, 4 + "👨‍👩‍👧‍👦".length, -1)).toBe(4);
+  expect(stepColumn(line, 4, -1)).toBe(0);
 });

@@ -116,3 +116,8 @@ describe("editing a line that carries an alignment", () => {
     expect(deleteForwardAligned("one\ntwo", caret(0, 3)).value).toBe("onetwo");
   });
 });
+
+it("keeps unrelated alignments when joining paragraphs", () => {
+  expect(deleteBackwardAligned("one{align=center}\ntwo\nthree{align=right}", { line: 1, col: 0 }).value)
+    .toBe("onetwo{align=center}\nthree{align=right}");
+});

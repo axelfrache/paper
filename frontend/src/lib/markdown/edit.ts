@@ -1,3 +1,5 @@
+import { codeLines } from "./fences";
+import { graphemeBoundary } from "./grapheme";
 import { safeHref } from "./inline";
 
 export type Caret = {
@@ -154,14 +156,15 @@ export function replaceRange(value: string, range: TextRange, text: string, care
 export function insertLineBreak(value: string, caret: Caret) {
   const lines = value.split("\n");
   const current = lines[caret.line] ?? "";
-  const prefixMatch = /^(\s*)(-\s\[[ xX]\]\s|[-*]\s)/.exec(current);
+  const prefixMatch = codeLines(lines)[caret.line] ? null : /^(\s*)(-\s\[[ xX]\]\s|[-*]\s|\d+[.)]\s)/.exec(current);
   let prefix = "";
   if (prefixMatch) {
     if (current.slice(prefixMatch[0].length).trim() === "" && caret.col >= prefixMatch[0].length) {
       lines[caret.line] = "";
       return { value: lines.join("\n"), caret: { line: caret.line, col: 0 } };
     }
-    prefix = prefixMatch[1] + (prefixMatch[2].startsWith("- [") ? "- [ ] " : `${prefixMatch[2][0]} `);
+    const ordered = /^(\d+)([.)])/.exec(prefixMatch[2]);
+    prefix = prefixMatch[1] + (ordered ? `${Number(ordered[1]) + 1}${ordered[2]} ` : prefixMatch[2].startsWith("- [") ? "- [ ] " : `${prefixMatch[2][0]} `);
   }
   const before = current.slice(0, caret.col);
   const after = current.slice(caret.col);
@@ -186,15 +189,16 @@ export function deleteBackward(value: string, caret: Caret) {
     }
     return joinWithPreviousLine(value, caret);
   }
-  lines[caret.line] = current.slice(0, caret.col - 1) + current.slice(caret.col);
-  return { value: lines.join("\n"), caret: { line: caret.line, col: caret.col - 1 } };
+  const start = graphemeBoundary(current, caret.col, -1);
+  lines[caret.line] = current.slice(0, start) + current.slice(caret.col);
+  return { value: lines.join("\n"), caret: { line: caret.line, col: start } };
 }
 
 export function deleteForward(value: string, caret: Caret) {
   const lines = value.split("\n");
   const current = lines[caret.line] ?? "";
   if (caret.col < current.length) {
-    lines[caret.line] = current.slice(0, caret.col) + current.slice(caret.col + 1);
+    lines[caret.line] = current.slice(0, caret.col) + current.slice(graphemeBoundary(current, caret.col, 1));
     return { value: lines.join("\n"), caret };
   }
   if (caret.line >= lines.length - 1) {
@@ -279,9 +283,7 @@ export function insertText(value: string, range: TextRange, text: string) {
 }
 
 export function normalizeMarkdownText(text: string) {
-  return text
-    .replace(/\r\n?/g, "\n")
-    .replace(/([^\n])\s+-\s+(?=(\*\*|[A-Za-zÀ-ÿ]))/g, "$1\n- ");
+  return text.replace(/\r\n?/g, "\n");
 }
 
 function isWordChar(char: string) {

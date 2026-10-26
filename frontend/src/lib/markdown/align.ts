@@ -1,3 +1,4 @@
+import { codeLines } from "./fences";
 import { isDivider, isResourceLine } from "./resource";
 import type { Caret, TextRange } from "./edit";
 import { deleteBackward, deleteForward, insertLineBreak, normalizeRange } from "./edit";
@@ -39,8 +40,9 @@ export function writeAlign(raw: string, align: TextAlign) {
 export function alignRange(value: string, range: TextRange, align: TextAlign): { value: string; caret: Caret } {
   const normalized = normalizeRange(range);
   const lines = value.split("\n");
+  const contexts = codeLines(lines);
   for (let line = normalized.start.line; line <= normalized.end.line; line += 1) {
-    if (lines[line] !== undefined) {
+    if (lines[line] !== undefined && !contexts[line]) {
       lines[line] = writeAlign(lines[line], align);
     }
   }
@@ -82,6 +84,7 @@ export function alignOfRange(value: string, range: TextRange): TextAlign | null 
 /** Enter on an aligned line: both halves keep the alignment. */
 export function insertLineBreakAligned(value: string, caret: Caret) {
   const lines = value.split("\n");
+  if (codeLines(lines)[caret.line]) return insertLineBreak(value, caret);
   const { text, align } = readAlign(lines[caret.line] ?? "");
   if (align === defaultTextAlign) {
     return insertLineBreak(value, caret);
@@ -106,6 +109,7 @@ export function deleteBackwardAligned(value: string, caret: Caret) {
 /** Delete, which at the end of a line joins the next one to it. */
 export function deleteForwardAligned(value: string, caret: Caret) {
   const lines = value.split("\n");
+  if (codeLines(lines)[caret.line]) return deleteForward(value, caret);
   const { text } = readAlign(lines[caret.line] ?? "");
   if (caret.col < text.length) {
     return deleteForward(value, caret);
@@ -126,8 +130,10 @@ function joinAligned(
   caret: Caret,
 ) {
   const lines = value.split("\n");
+  const contexts = codeLines(lines);
+  if (contexts[keptLine] || contexts[keptLine + 1]) return operation(value, caret);
   const { align } = readAlign(lines[keptLine] ?? "");
-  const stripped = lines.map((line) => readAlign(line).text);
+  const stripped = lines.map((line, index) => index === keptLine || index === keptLine + 1 ? readAlign(line).text : line);
   const next = operation(stripped.join("\n"), caret);
   const joined = next.value.split("\n");
   joined[keptLine] = writeAlign(joined[keptLine] ?? "", align);

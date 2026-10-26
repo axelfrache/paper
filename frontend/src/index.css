@@ -2103,6 +2103,9 @@ span.account-avatar-lg {
 }
 
 .selection-toolbar {
+  max-width: calc(100% - 16px);
+  flex-wrap: wrap;
+  width: max-content;
   position: absolute;
   z-index: 35;
   display: flex;
@@ -2246,25 +2249,31 @@ span.account-avatar-lg {
   margin: 14px 0;
 }
 
+.markdown-view h1,
+.markdown-view h2,
 .markdown-view h3,
 .markdown-view h4,
-.markdown-view h5 {
+.markdown-view h5,
+.markdown-view h6 {
   margin: 18px 0 8px;
   color: var(--text);
   font-weight: 620;
   letter-spacing: 0;
 }
 
-.markdown-view h3 {
+.markdown-view h1 {
+  font-size: 22px;
+}
+
+.markdown-view h2 {
   font-size: 18px;
 }
 
-.markdown-view h4 {
+.markdown-view h3,
+.markdown-view h4,
+.markdown-view h5,
+.markdown-view h6 {
   font-size: 15.5px;
-}
-
-.markdown-view h5 {
-  font-size: 14px;
 }
 
 .markdown-view ul,
@@ -3697,4 +3706,35 @@ span.account-avatar-lg {
   border: 1px solid var(--line);
   backdrop-filter: blur(4px);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.editor-message {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.markdown-editor [data-check] {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+}
+.markdown-editor [data-check]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.markdown-editor-code {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  background: var(--code);
+  padding: 0 10px;
+  white-space: pre-wrap;
+}
+.markdown-view p { white-space: pre-wrap; }
+
+.markdown-editor-diagram-edit {
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
 }

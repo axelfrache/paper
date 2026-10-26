@@ -1,3 +1,5 @@
+import { codeLines } from "../lib/markdown/fences";
+import { remapCaret } from "../lib/markdown/anchor";
 import { useLayoutEffect, useRef, useState } from "react";
 import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, BrainCircuit, Boxes, CalendarDays, Code2, FileText, GitBranch, Heading1, Heading2, Heading3, Image, Italic, Link, List, ListChecks, ListTodo, Minus, Quote, Sparkles, Strikethrough, TextCursorInput, Underline, Wand2, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -39,7 +41,7 @@ import {
   textAligns,
 } from "../lib/markdown/align";
 import type { TextAlign } from "../lib/markdown/align";
-import { renderEditableMarkdown } from "../lib/markdown/editorRender";
+import { hiddenPrefixLength, renderEditableLine, renderEditableMarkdown } from "../lib/markdown/editorRender";
 import {
   insertLineBeforeResource,
   isDiagramLine,
@@ -47,6 +49,7 @@ import {
   removeResourceAt,
   replaceResourceAt,
   resourceClipboardHtml,
+  resourceLineAt,
   resourceLineFromHtml,
   resourceLineFromPlainText,
   standaloneImage,
@@ -54,12 +57,17 @@ import {
 import { prepareImageForUpload } from "../lib/imageUpload";
 import { safeHref } from "../lib/markdown/render";
 import {
+  domPointForCaret,
   getCaret,
   getSelectionRange,
   linkElementFromTarget,
   placeCaret,
   placeSelection,
+  pointToCaret,
   readSource,
+  scrollCaretIntoView,
+  stepColumn,
+  visibleDeletionRange,
 } from "../lib/markdown/dom";
 import type { AIAction, NoteImage } from "../types/note";
 import type { Diagram, DiagramMode, DiagramPreview } from "../lib/diagram";
@@ -70,6 +78,9 @@ type MarkdownEditorProps = {
   onChange: (value: string) => void;
   onUploadImage?: (file: File) => Promise<NoteImage>;
   onAssist?: (action: AIAction) => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  aiEnabled?: boolean;
   onCaretLineChange?: (line: number) => void;
   focusRequest?: { key: string; placement: "start" | "end" | "last" } | null;
   onFocusPrevious?: () => void;
@@ -167,7 +178,7 @@ const slashItems: SlashItem[] = [
 
 async function writeResourceToClipboard(line: string) {
   if (!navigator.clipboard) {
-    return;
+    return false;
   }
   try {
     const html = resourceClipboardHtml(line);
@@ -176,10 +187,14 @@ async function writeResourceToClipboard(line: string) {
       parts["text/html"] = new Blob([html], { type: "text/html" });
     }
     await navigator.clipboard.write([new ClipboardItem(parts)]);
+    return true;
   } catch {
     try {
       await navigator.clipboard.writeText(line);
-    } catch {}
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 
@@ -188,6 +203,9 @@ export function MarkdownEditor({
   onChange,
   onUploadImage,
   onAssist,
+  onUndo,
+  onRedo,
+  aiEnabled = true,
   onCaretLineChange,
   focusRequest = null,
   onFocusPrevious,
@@ -203,6 +221,7 @@ export function MarkdownEditor({
   const slashBodyRef = useRef<HTMLDivElement | null>(null);
   const diagramDescribeDialogRef = useRef<HTMLDialogElement | null>(null);
   const focusedRef = useRef(false);
+  const composingRef = useRef(false);
   const caretRef = useRef<Caret | null>(null);
   const pendingImageCaretRef = useRef<Caret | null>(null);
   const skipResourceCaretSyncRef = useRef(false);
@@ -210,9 +229,16 @@ export function MarkdownEditor({
   const dropIndicatorRef = useRef<HTMLDivElement | null>(null);
   const selectionToolbarRef = useRef<HTMLDivElement | null>(null);
   const activeLineRef = useRef(-1);
+  const preferredColumnRef = useRef<number | null>(null);
   const handledFocusRequestRef = useRef("");
   const handledDiagramDescribeRequestRef = useRef("");
   const valueRef = useRef(value);
+  const changeRef = useRef(onChange);
+  changeRef.current = onChange;
+  const pendingUploadsRef = useRef(new Set<Caret>());
+  const disposedRef = useRef(false);
+  const [uploadCount, setUploadCount] = useState(0);
+  const [editorMessage, setEditorMessage] = useState("");
   const [slash, setSlash] = useState<SlashState | null>(null);
   const [selectionToolbar, setSelectionToolbar] = useState<SelectionToolbarState | null>(null);
   const [selectionToolbarPlacement, setSelectionToolbarPlacement] = useState<SelectionToolbarPlacement | null>(null);
@@ -226,13 +252,27 @@ export function MarkdownEditor({
   const [hoveredLink, setHoveredLink] = useState<{ href: string; top: number; left: number } | null>(null);
 
   useLayoutEffect(() => {
-    valueRef.current = value;
+    disposedRef.current = false;
+    return () => { disposedRef.current = true; };
+  }, []);
+
+  const updateSourceRef = (next: string) => {
+    if (next !== valueRef.current) {
+      for (const caret of pendingUploadsRef.current) Object.assign(caret, remapCaret(valueRef.current, next, caret));
+      if (pendingImageCaretRef.current) pendingImageCaretRef.current = remapCaret(valueRef.current, next, pendingImageCaretRef.current);
+    }
+    valueRef.current = next;
+  };
+
+  useLayoutEffect(() => {
+    updateSourceRef(value);
+    if (composingRef.current) return;
     // Snapshot the caret: placing it can blur the editor, which clears caretRef.
     const caret = focusedRef.current ? caretRef.current : null;
     renderMarkdown(editorRef.current, value, caret?.line ?? -1, selectedResourceLine ?? -1);
     activeLineRef.current = caret?.line ?? -1;
     if (caret && selectedResourceLine === null) {
-      if (isResourceLine(value.split("\n")[caret.line] ?? "")) {
+      if (resourceLineAt(value, caret.line)) {
         selectResource(caret.line);
       } else {
         placeCaret(editorRef.current, caret);
@@ -265,7 +305,7 @@ export function MarkdownEditor({
         return;
       }
       editor.focus();
-      if (isResourceLine(target.value.split("\n")[caret.line] ?? "")) {
+      if (resourceLineAt(target.value, caret.line)) {
         selectResource(caret.line);
       } else {
         placeCaret(editor, caret);
@@ -359,11 +399,16 @@ export function MarkdownEditor({
     }
 
     setSelectionToolbar(null);
-    const caret = range?.end ?? getCaret(editorRef.current);
+    const selection = window.getSelection();
+    const rawCaret =
+      selection?.focusNode && editorRef.current
+        ? pointToCaret(editorRef.current, selection.focusNode, selection.focusOffset, false)
+        : null;
+    const caret = rawCaret ?? range?.end ?? getCaret(editorRef.current);
     if (!caret) {
       return;
     }
-    if (isResourceLine(value.split("\n")[caret.line] ?? "")) {
+    if (resourceLineAt(value, caret.line)) {
       selectResource(caret.line);
       return;
     }
@@ -372,13 +417,8 @@ export function MarkdownEditor({
     if (caret.line !== activeLineRef.current) {
       renderMarkdown(editorRef.current, value, caret.line);
       activeLineRef.current = caret.line;
-      placeCaret(editorRef.current, caret);
-    } else {
-      const selection = window.getSelection();
-      if (selection?.focusNode === editorRef.current) {
-        placeCaret(editorRef.current, caret);
-      }
     }
+    placeCaret(editorRef.current, caret);
     probeSlash(value, caret);
   };
 
@@ -463,7 +503,7 @@ export function MarkdownEditor({
 
   /** Puts the caret on a line, or selects it when it holds a resource. */
   const focusLine = (line: number, col: number) => {
-    if (isResourceLine(value.split("\n")[line] ?? "")) {
+    if (resourceLineAt(value, line)) {
       selectResource(line);
       return;
     }
@@ -478,16 +518,16 @@ export function MarkdownEditor({
     caretRef.current = caret;
     activeLineRef.current = line;
     setSelectionToolbar(null);
-    renderMarkdown(editorRef.current, value, line, -1);
+    renderMarkdown(editorRef.current, value, line, -1, true);
     placeCaret(editorRef.current, caret);
     onCaretLineChange?.(line);
     skipResourceCaretSyncRef.current = true;
   };
 
   const setSource = (nextValue: string, caret: Caret | null) => {
-    valueRef.current = nextValue;
-    if (caret && isResourceLine(nextValue.split("\n")[caret.line] ?? "")) {
-      onChange(nextValue);
+    updateSourceRef(nextValue);
+    if (caret && resourceLineAt(nextValue, caret.line)) {
+      changeRef.current(nextValue);
       selectResource(caret.line);
       return;
     }
@@ -495,20 +535,44 @@ export function MarkdownEditor({
     if (caret) {
       onCaretLineChange?.(caret.line);
     }
-    onChange(nextValue);
+    changeRef.current(nextValue);
+  };
+
+  const deleteAtVisibleCaret = (direction: -1 | 1) => {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    const raw = editor && selection?.focusNode ? pointToCaret(editor, selection.focusNode, selection.focusOffset, false) : null;
+    const lineEl = raw && editor?.querySelector(`[data-line="${raw.line}"]`);
+    if (!editor || !raw || !lineEl?.querySelector("[data-syntax-side]")) return null;
+    const range = visibleDeletionRange(editor, raw, direction);
+    if (range) return deleteRange(value, range);
+    // No visible text precedes an inline opening marker: join at the line start,
+    // rather than deleting one character of the delimiter. Block prefixes retain
+    // their existing Backspace behavior (remove heading/list formatting).
+    if (direction < 0 && hiddenPrefixLength(value.split("\n")[raw.line] ?? "") === 0) {
+      return deleteBackwardAligned(value, { line: raw.line, col: 0 });
+    }
+    return null;
   };
 
   const handleInput = () => {
+    if (composingRef.current) return;
+    preferredColumnRef.current = null;
     const caret = getCaret(editorRef.current);
     setSelectionToolbar(null);
     setSource(readSource(editorRef.current), caret);
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.target instanceof Element && event.target.closest("button")) return;
+    if (composingRef.current || event.nativeEvent.isComposing || event.keyCode === 229) return;
     const meta = event.metaKey || event.ctrlKey;
     const lines = value.split("\n");
     const lineText = (index: number) => lines[index] ?? "";
-    const isResource = (index: number) => isResourceLine(lineText(index));
+    const isResource = (index: number) => Boolean(resourceLineAt(value, index));
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") {
+      preferredColumnRef.current = null;
+    }
     if (selectedResourceLine !== null) {
       if (meta && event.key.toLowerCase() === "a") {
         event.preventDefault();
@@ -547,7 +611,7 @@ export function MarkdownEditor({
     }
 
     if (slash) {
-      const items = filteredSlashItems(slash.query);
+      const items = filteredSlashItems(slash.query, aiEnabled);
       const index = Math.min(slash.index, Math.max(0, items.length - 1));
       if (event.key === "Escape") {
         event.preventDefault();
@@ -576,10 +640,32 @@ export function MarkdownEditor({
       }
     }
 
+    // Wrapped paragraphs need the browser's visual-line navigation (including its
+    // preferred horizontal position). Source columns cannot represent visual rows.
+    if (plain && collapsed && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+      const direction = event.key === "ArrowUp" ? -1 : 1;
+      const editor = editorRef.current;
+      const lineEl = editor?.querySelector<HTMLElement>(`[data-line="${caret.line}"]`);
+      const rect = window.getSelection()?.rangeCount ? window.getSelection()!.getRangeAt(0).getBoundingClientRect() : null;
+      const lineRect = lineEl?.getBoundingClientRect();
+      const insideVisualLine = rect && rect.height > 0 && lineRect &&
+        (direction < 0 ? rect.top > lineRect.top + rect.height / 2 : rect.bottom < lineRect.bottom - rect.height / 2);
+      const targetLine = caret.line + direction;
+      const targetEl = editor?.querySelector<HTMLElement>(`[data-line="${targetLine}"]`);
+      const wraps = (el: HTMLElement | null | undefined) => el &&
+        el.getBoundingClientRect().height > parseFloat(getComputedStyle(el).lineHeight) * 1.5;
+      if (insideVisualLine || (targetLine >= 0 && targetLine < lines.length && !isResource(targetLine) && (wraps(lineEl) || wraps(targetEl)))) {
+        preferredColumnRef.current = null;
+        setSlash(null);
+        return;
+      }
+    }
+
     // Stepping onto an adjacent resource: it is one character away, in any direction.
     if (plain && collapsed) {
       const stepsOntoPrevious =
-        (event.key === "ArrowUp" || (event.key === "ArrowLeft" && caret.col === 0)) && isResource(caret.line - 1);
+        (event.key === "ArrowUp" || (event.key === "ArrowLeft" && caret.col === hiddenPrefixLength(lineText(caret.line)))) &&
+        isResource(caret.line - 1);
       const stepsOntoNext =
         (event.key === "ArrowDown" || (event.key === "ArrowRight" && caret.col === lineText(caret.line).length)) &&
         isResource(caret.line + 1);
@@ -587,6 +673,53 @@ export function MarkdownEditor({
         event.preventDefault();
         setSlash(null);
         selectResource(stepsOntoPrevious ? caret.line - 1 : caret.line + 1);
+        return;
+      }
+    }
+
+    if (plain && collapsed && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+      const lineEl = editorRef.current?.querySelector(`[data-line="${caret.line}"]`);
+      if (lineEl) {
+        const selection = window.getSelection();
+        const rawCaret = selection?.focusNode ? pointToCaret(editorRef.current!, selection.focusNode, selection.focusOffset, false) : null;
+        const fromCol = rawCaret && rawCaret.line === caret.line ? rawCaret.col : caret.col;
+        const direction = event.key === "ArrowLeft" ? -1 : 1;
+        const stepped = stepColumn(lineEl, fromCol, direction);
+        if (stepped !== null) {
+          event.preventDefault();
+          setSlash(null);
+          const next = { line: caret.line, col: stepped };
+          caretRef.current = next;
+          placeCaret(editorRef.current, next);
+          onCaretLineChange?.(caret.line);
+          skipResourceCaretSyncRef.current = true;
+          return;
+        }
+        if (direction === -1 && caret.line > 0) {
+          event.preventDefault();
+          setSlash(null);
+          focusLine(caret.line - 1, lineText(caret.line - 1).length);
+          return;
+        }
+        if (direction === 1 && caret.line < lines.length - 1) {
+          event.preventDefault();
+          setSlash(null);
+          focusLine(caret.line + 1, 0);
+          return;
+        }
+        event.preventDefault();
+        return;
+      }
+    }
+
+    if (plain && collapsed && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+      const targetLine = event.key === "ArrowUp" ? caret.line - 1 : caret.line + 1;
+      if (targetLine >= 0 && targetLine < lines.length && !isResource(targetLine)) {
+        event.preventDefault();
+        setSlash(null);
+        const preferredCol = preferredColumnRef.current ?? caret.col;
+        preferredColumnRef.current = preferredCol;
+        focusLine(targetLine, Math.min(preferredCol, lineText(targetLine).length));
         return;
       }
     }
@@ -620,12 +753,43 @@ export function MarkdownEditor({
       }
     }
 
+    if (!meta && !event.altKey && event.shiftKey && (event.key === "ArrowLeft" || event.key === "ArrowRight") && editorRef.current) {
+      const selection = window.getSelection();
+      const focusNode = selection?.focusNode;
+      const focusPoint = focusNode ? pointToCaret(editorRef.current, focusNode, selection!.focusOffset, false) : null;
+      if (selection && focusPoint && !isResource(focusPoint.line)) {
+        const direction = event.key === "ArrowLeft" ? -1 : 1;
+        const lineEl = editorRef.current.querySelector(`[data-line="${focusPoint.line}"]`);
+        if (lineEl) {
+          const stepped = stepColumn(lineEl, focusPoint.col, direction);
+          const target =
+            stepped !== null
+              ? { line: focusPoint.line, col: stepped }
+              : direction === -1 && focusPoint.line > 0 && !isResource(focusPoint.line - 1)
+                ? { line: focusPoint.line - 1, col: lineText(focusPoint.line - 1).length }
+                : direction === 1 && focusPoint.line < lines.length - 1 && !isResource(focusPoint.line + 1)
+                  ? { line: focusPoint.line + 1, col: 0 }
+                  : null;
+          if (target) {
+            const point = domPointForCaret(editorRef.current, target);
+            if (point) {
+              event.preventDefault();
+              setSlash(null);
+              selection.extend(point.node, point.offset);
+              scrollCaretIntoView(editorRef.current);
+              return;
+            }
+          }
+        }
+      }
+    }
+
     if (
       event.key === "ArrowLeft" &&
       plain &&
       collapsed &&
       caret.line === 0 &&
-      caret.col === 0
+      caret.col === hiddenPrefixLength(lineText(0))
     ) {
       event.preventDefault();
       setSlash(null);
@@ -695,6 +859,16 @@ export function MarkdownEditor({
       return;
     }
 
+    if (collapsed && !meta && !event.altKey && (event.key === "Backspace" || event.key === "Delete")) {
+      const next = deleteAtVisibleCaret(event.key === "Backspace" ? -1 : 1);
+      if (next) {
+        event.preventDefault();
+        setSelectionToolbar(null);
+        setSource(next.value, next.caret);
+        return;
+      }
+    }
+
     if (event.key === "Backspace") {
       event.preventDefault();
       if (collapsed && caret.col === 0 && isResource(caret.line - 1)) {
@@ -733,13 +907,18 @@ export function MarkdownEditor({
 
   const pointerDownRef = useRef(false);
 
-  const handleFocus = () => {
+  const handleFocus = (event: React.FocusEvent<HTMLDivElement>) => {
+    if (event.target instanceof Element && event.target.closest("button")) {
+      focusedRef.current = false;
+      caretRef.current = null;
+      return;
+    }
     focusedRef.current = true;
     if (pointerDownRef.current || selectedResourceLine !== null) {
       return;
     }
     const caret = getCaret(editorRef.current) ?? { line: 0, col: 0 };
-    if (isResourceLine(value.split("\n")[caret.line] ?? "")) {
+    if (resourceLineAt(value, caret.line)) {
       selectResource(caret.line);
       return;
     }
@@ -750,7 +929,11 @@ export function MarkdownEditor({
     placeCaret(editorRef.current, caret);
   };
 
-  const handleBlur = () => {
+  const handleBlur = (event: React.FocusEvent<HTMLDivElement>) => {
+    // Replacing a focused block button fires blur synchronously during reconciliation.
+    // Do not re-enter the renderer from a descendant's blur.
+    if (event.target !== event.currentTarget) return;
+    if (event.relatedTarget instanceof Node && (selectionToolbarRef.current?.contains(event.relatedTarget) || editorRef.current?.contains(event.relatedTarget))) return;
     focusedRef.current = false;
     caretRef.current = null;
     setSlash(null);
@@ -764,10 +947,10 @@ export function MarkdownEditor({
     if (event.button !== 0) {
       return;
     }
-    
+    preferredColumnRef.current = null;
     setHoveredLink(null);
     
-    pointerDownRef.current = true;
+    pointerDownRef.current = event.type === "pointerdown";
     const clearPointerDown = () => {
       pointerDownRef.current = false;
       window.removeEventListener("pointerup", clearPointerDown);
@@ -784,7 +967,6 @@ export function MarkdownEditor({
         event.preventDefault();
         event.stopPropagation();
         setHoveredLink(null);
-        window.open(linkTarget.href, "_blank", "noopener,noreferrer");
         return;
       }
     }
@@ -882,10 +1064,16 @@ export function MarkdownEditor({
     if (Number.isNaN(line)) {
       return;
     }
+    const keyboardFocus = document.activeElement === checkTarget;
     toggleTaskLine(line);
+    if (keyboardFocus) window.requestAnimationFrame(() => editorRef.current?.querySelector<HTMLButtonElement>(`[data-check="${line}"]`)?.focus());
   };
 
   const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.detail === 0 && event.target instanceof Element && event.target.closest("button")) {
+      handlePointerDown(event as unknown as React.PointerEvent<HTMLDivElement>);
+      return;
+    }
     const linkTarget = linkElementFromTarget(event.target);
     if (!linkTarget) {
       return;
@@ -927,7 +1115,7 @@ export function MarkdownEditor({
     setSelectedResourceLine(null);
     setSource(next.value, next.caret);
     // Back-to-back resources: land on the next one selected rather than caret-less.
-    if (isResourceLine(next.value.split("\n")[next.caret.line] ?? "")) {
+    if (resourceLineAt(next.value, next.caret.line)) {
       selectResource(next.caret.line);
     }
     window.requestAnimationFrame(() => editorRef.current?.focus());
@@ -938,10 +1126,17 @@ export function MarkdownEditor({
     if (!isResourceLine(text)) {
       return;
     }
-    await writeResourceToClipboard(text);
-    if (cut) {
-      removeResource(line);
+    const source = valueRef.current;
+    const copied = await writeResourceToClipboard(text);
+    if (disposedRef.current) return;
+    if (!copied) {
+      setEditorMessage("Could not copy. The block has been kept in your note.");
+      return;
     }
+    // Never delete a different block if the document changed while permission was pending.
+    const changed = source !== valueRef.current;
+    if (cut && !changed) removeResource(line);
+    setEditorMessage(cut && changed ? "Copied. The note changed, so the block was kept." : "Copied to clipboard.");
   };
 
   const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
@@ -990,10 +1185,66 @@ export function MarkdownEditor({
       return;
     }
     event.preventDefault();
-    insertImageFile(image, getCaret(editorRef.current) ?? { line: 0, col: 0 });
+    const doc = document as Document & {
+      caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+      caretRangeFromPoint?: (x: number, y: number) => Range | null;
+    };
+    const position = doc.caretPositionFromPoint?.(event.clientX, event.clientY);
+    const range = position ? null : doc.caretRangeFromPoint?.(event.clientX, event.clientY);
+    const node = position?.offsetNode ?? range?.startContainer;
+    const offset = position?.offset ?? range?.startOffset ?? 0;
+    const caret = node && editorRef.current ? pointToCaret(editorRef.current, node, offset) : null;
+    insertImageFile(image, caret ?? getCaret(editorRef.current) ?? { line: 0, col: 0 });
   };
 
-  const filteredItems = filteredSlashItems(slash?.query ?? "");
+  useLayoutEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const beforeInput = (event: InputEvent) => {
+      if (event.isComposing || composingRef.current || !event.cancelable) return;
+      const historyAction = event.inputType === "historyUndo" ? onUndo : event.inputType === "historyRedo" ? onRedo : null;
+      if (historyAction) {
+        event.preventDefault();
+        historyAction();
+        return;
+      }
+      if (selectedResourceLine !== null) {
+        let next = null;
+        if (event.inputType === "insertParagraph" || event.inputType === "insertLineBreak") {
+          next = insertLineBeforeResource(value, selectedResourceLine);
+        } else if (event.inputType.startsWith("delete")) {
+          next = removeResourceAt(value, selectedResourceLine);
+        } else if (event.inputType === "insertText" && event.data) {
+          next = replaceResourceAt(value, selectedResourceLine, event.data);
+        }
+        if (next) {
+          event.preventDefault();
+          setSelectedResourceLine(null);
+          setSource(next.value, next.caret);
+        }
+        return;
+      }
+      const range = getSelectionRange(editor);
+      if (!range) return;
+      const collapsed = isCollapsedRange(range);
+      let next: { value: string; caret: Caret } | null = null;
+      if (event.inputType === "insertParagraph" || event.inputType === "insertLineBreak") {
+        next = collapsed ? insertLineBreakAligned(value, range.end) : insertText(value, range, "\n");
+      } else if (event.inputType === "deleteContentBackward") {
+        next = collapsed ? deleteAtVisibleCaret(-1) ?? deleteBackwardAligned(value, range.end) : deleteRange(value, range);
+      } else if (event.inputType === "deleteContentForward") {
+        next = collapsed ? deleteAtVisibleCaret(1) ?? deleteForwardAligned(value, range.end) : deleteRange(value, range);
+      }
+      if (next) {
+        event.preventDefault();
+        setSource(next.value, next.caret);
+      }
+    };
+    editor.addEventListener("beforeinput", beforeInput);
+    return () => editor.removeEventListener("beforeinput", beforeInput);
+  });
+
+  const filteredItems = filteredSlashItems(slash?.query ?? "", aiEnabled);
   // Null when the selection spans lines that disagree, so no button claims to be active.
   const selectionAlign = selectionToolbar ? alignOfRange(value, selectionToolbar.range) : null;
 
@@ -1003,11 +1254,21 @@ export function MarkdownEditor({
         ref={editorRef}
         className="markdown-editor"
         contentEditable
-        spellCheck={false}
+        role="textbox"
+        aria-label="Note content"
+        aria-multiline="true"
+        spellCheck
+        onCompositionStart={() => { composingRef.current = true; }}
+        onCompositionEnd={() => {
+          composingRef.current = false;
+          handleInput();
+        }}
         suppressContentEditableWarning
         onInput={handleInput}
         onKeyDown={handleKeyDown}
-        onKeyUp={() => {
+        onKeyUp={(event) => {
+          if (event.target instanceof Element && event.target.closest("button")) return;
+          if (composingRef.current) return;
           if (selectedResourceLine === null) {
             if (skipResourceCaretSyncRef.current) {
               skipResourceCaretSyncRef.current = false;
@@ -1070,6 +1331,8 @@ export function MarkdownEditor({
         }}
       />
       {!value ? <div className="markdown-editor-placeholder">{placeholder}</div> : null}
+      {uploadCount > 0 ? <div className="editor-message" role="status">Uploading image…</div> : null}
+      {editorMessage ? <div className="editor-message" role="status">{editorMessage}</div> : null}
       {slash && filteredItems.length ? (
         <div className="slash-menu" style={{ top: slash.top, left: slash.left }}>
           <div className="slash-menu-header">
@@ -1104,23 +1367,23 @@ export function MarkdownEditor({
             left: selectionToolbarPlacement?.left ?? selectionToolbar.anchorCenter,
           }}
         >
-          <button type="button" aria-label="Bold" title="Bold" onMouseDown={(event) => runSelectionToolbarAction(event, "bold")}>
+          <button type="button" aria-label="Bold" title="Bold" onMouseDown={(event) => event.preventDefault()} onClick={(event) => runSelectionToolbarAction(event, "bold")}>
             <Bold size={15} strokeWidth={2.1} />
           </button>
-          <button type="button" aria-label="Italic" title="Italic" onMouseDown={(event) => runSelectionToolbarAction(event, "italic")}>
+          <button type="button" aria-label="Italic" title="Italic" onMouseDown={(event) => event.preventDefault()} onClick={(event) => runSelectionToolbarAction(event, "italic")}>
             <Italic size={15} strokeWidth={2.1} />
           </button>
-          <button type="button" aria-label="Code" title="Code" onMouseDown={(event) => runSelectionToolbarAction(event, "code")}>
+          <button type="button" aria-label="Code" title="Code" onMouseDown={(event) => event.preventDefault()} onClick={(event) => runSelectionToolbarAction(event, "code")}>
             <Code2 size={15} strokeWidth={2.1} />
           </button>
-          <button type="button" aria-label="Strikethrough" title="Strikethrough" onMouseDown={(event) => runSelectionToolbarAction(event, "strike")}>
+          <button type="button" aria-label="Strikethrough" title="Strikethrough" onMouseDown={(event) => event.preventDefault()} onClick={(event) => runSelectionToolbarAction(event, "strike")}>
             <Strikethrough size={15} strokeWidth={2.1} />
           </button>
-          <button type="button" aria-label="Underline" title="Underline" onMouseDown={(event) => runSelectionToolbarAction(event, "underline")}>
+          <button type="button" aria-label="Underline" title="Underline" onMouseDown={(event) => event.preventDefault()} onClick={(event) => runSelectionToolbarAction(event, "underline")}>
             <Underline size={15} strokeWidth={2.1} />
           </button>
           <span />
-          <button type="button" aria-label="Link" title="Link" onMouseDown={(event) => runSelectionToolbarAction(event, "link")}>
+          <button type="button" aria-label="Link" title="Link" onMouseDown={(event) => event.preventDefault()} onClick={(event) => runSelectionToolbarAction(event, "link")}>
             <Link size={15} strokeWidth={2.1} />
           </button>
           <span />
@@ -1133,7 +1396,7 @@ export function MarkdownEditor({
                 className={selectionAlign === align ? "active" : ""}
                 aria-label={alignLabels[align]}
                 title={alignLabels[align]}
-                onMouseDown={(event) => runAlign(event, align)}
+                onMouseDown={(event) => event.preventDefault()} onClick={(event) => runAlign(event, align)}
               >
                 <Icon size={15} strokeWidth={2.1} />
               </button>
@@ -1264,7 +1527,7 @@ export function MarkdownEditor({
   }
 
   function probeSlash(source: string, caret: Caret | null) {
-    if (!caret) {
+    if (!caret || codeLines(source.split("\n"))[caret.line]) {
       setSlash(null);
       return;
     }
@@ -1305,7 +1568,7 @@ export function MarkdownEditor({
     const scrollHost = scrollParent(wrap);
     const scrollRect = scrollHost?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight };
     const query = match[1].toLowerCase();
-    const count = filteredSlashItems(query).length;
+    const count = filteredSlashItems(query, aiEnabled).length;
     const gap = 8;
     const header = 34;
     const pad = 10;
@@ -1343,8 +1606,8 @@ export function MarkdownEditor({
     if (item.image) {
       lines[caret.line] = stem + after;
       const imageCaret = { line: caret.line, col: stem.length };
-      pendingImageCaretRef.current = imageCaret;
       setSource(lines.join("\n"), imageCaret);
+      pendingImageCaretRef.current = imageCaret;
       window.requestAnimationFrame(() => imageInputRef.current?.click());
       return;
     }
@@ -1431,12 +1694,20 @@ export function MarkdownEditor({
     if (!file.type.startsWith("image/") || !onUploadImage) {
       return;
     }
+    const target = { ...caret };
+    pendingUploadsRef.current.add(target);
+    setUploadCount((count) => count + 1);
     try {
       const image = await onUploadImage(await prepareImageForUpload(file));
+      if (disposedRef.current) return;
+      pendingUploadsRef.current.delete(target);
       const alt = image.name.replace(/\.[^.]+$/, "").replace(/[\[\]]/g, "");
-      insertResourceLine(`![${alt || "image"}](${image.url})`, caret);
+      insertResourceLine(`![${alt || "image"}](${image.url})`, target);
     } catch {
-      window.requestAnimationFrame(() => editorRef.current?.focus());
+      if (!disposedRef.current) setEditorMessage("Could not upload image. Please try again.");
+    } finally {
+      pendingUploadsRef.current.delete(target);
+      if (!disposedRef.current) setUploadCount((count) => count - 1);
     }
   }
 
@@ -1468,6 +1739,9 @@ export function MarkdownEditor({
       insertResourceLine(line, caret);
       return;
     }
+    const target = { ...caret };
+    pendingUploadsRef.current.add(target);
+    setUploadCount((count) => count + 1);
     try {
       const response = await fetch(image.href);
       if (!response.ok) {
@@ -1476,10 +1750,19 @@ export function MarkdownEditor({
       const blob = await response.blob();
       const file = new File([blob], image.alt || "image", { type: blob.type });
       const uploaded = await onUploadImage(await prepareImageForUpload(file));
+      if (disposedRef.current) return;
+      pendingUploadsRef.current.delete(target);
       const alt = uploaded.name.replace(/\.[^.]+$/, "").replace(/[\[\]]/g, "");
-      insertResourceLine(`![${alt || "image"}](${uploaded.url})`, caret);
+      insertResourceLine(`![${alt || "image"}](${uploaded.url})`, target);
     } catch {
-      insertResourceLine(line, caret);
+      pendingUploadsRef.current.delete(target);
+      if (!disposedRef.current) {
+        insertResourceLine(line, target);
+        setEditorMessage("Image could not be imported. Its original link was kept.");
+      }
+    } finally {
+      pendingUploadsRef.current.delete(target);
+      if (!disposedRef.current) setUploadCount((count) => count - 1);
     }
   }
 
@@ -1686,7 +1969,8 @@ export function MarkdownEditor({
     try {
       const response = await generateAI(buildDiagramGenerationPrompt(prompt, diagramDescribeMode));
       const diagram = parseGeneratedDiagram(response.text, diagramDescribeMode);
-      const next = insertDiagramMarkerAt(value, diagramDescribeTarget.line, diagram);
+      if (disposedRef.current) return;
+      const next = insertDiagramMarkerAt(valueRef.current, diagramDescribeTarget.line, diagram);
       focusedRef.current = false;
       activeLineRef.current = -1;
       caretRef.current = null;
@@ -1704,11 +1988,46 @@ export function MarkdownEditor({
   }
 }
 
-function renderMarkdown(el: HTMLDivElement | null, value: string, activeLine: number, selectedResourceLine = -1) {
+const renderedEditors = new WeakMap<HTMLDivElement, {
+  value: string; lines: string[]; contexts: ReturnType<typeof codeLines>;
+  activeLine: number; selectedResourceLine: number;
+}>();
+
+function renderMarkdown(el: HTMLDivElement | null, value: string, activeLine: number, selectedResourceLine = -1, navigationOnly = false) {
   if (!el) {
     return;
   }
-  el.innerHTML = renderEditableMarkdown(value, activeLine, selectedResourceLine);
+  const previous = renderedEditors.get(el);
+  // Keyboard navigation changes only the old/new active and selected lines.
+  // Input and composition still reconcile the full DOM, including native edits.
+  if (navigationOnly && previous?.value === value) {
+    for (const index of new Set([previous.activeLine, activeLine, previous.selectedResourceLine, selectedResourceLine])) {
+      if (index < 0 || previous.contexts[index]) continue;
+      const current = el.children[index];
+      if (!current) continue;
+      const html = renderEditableLine(previous.lines[index] ?? "", index === activeLine, index, index === selectedResourceLine);
+      const template = document.createElement("div");
+      template.innerHTML = html;
+      const next = template.firstElementChild!;
+      if (!current.isEqualNode(next)) current.replaceWith(next);
+    }
+    previous.activeLine = activeLine;
+    previous.selectedResourceLine = selectedResourceLine;
+    return;
+  }
+  const lines = value.split("\n");
+  renderedEditors.set(el, { value, lines, contexts: codeLines(lines), activeLine, selectedResourceLine });
+  const html = renderEditableMarkdown(value, activeLine, selectedResourceLine);
+  if (el.innerHTML === html) return;
+  const template = document.createElement("div");
+  template.innerHTML = html;
+  const desired = Array.from(template.children);
+  desired.forEach((line, index) => {
+    const current = el.children[index];
+    if (!current) el.appendChild(line);
+    else if (!current.isEqualNode(line)) current.replaceWith(line);
+  });
+  while (el.children.length > desired.length) el.lastElementChild?.remove();
 }
 
 function focusTarget(value: string, current: Caret | null, placement: "start" | "end" | "last") {
@@ -1743,7 +2062,7 @@ function applyPerLine(
 
   // A bare caret is a single insertion point, not a span to iterate over.
   if (isCollapsedRange(normalized)) {
-    return isResourceLine(lines[normalized.start.line] ?? "")
+    return resourceLineAt(value, normalized.start.line)
       ? { value, caret: normalized.start }
       : operation(value, normalized);
   }
@@ -1752,7 +2071,7 @@ function applyPerLine(
   let nextCaret: Caret | null = null;
 
   for (let line = normalized.end.line; line >= normalized.start.line; line -= 1) {
-    if (isResourceLine(lines[line] ?? "")) {
+    if (resourceLineAt(value, line)) {
       continue;
     }
     const start = line === normalized.start.line ? normalized.start.col : 0;
@@ -1832,9 +2151,9 @@ function insertDiagramMarkerAt(value: string, line: number, diagram: Diagram) {
   };
 }
 
-function filteredSlashItems(query: string) {
+function filteredSlashItems(query: string, aiEnabled = true) {
   const normalized = query.trim().toLowerCase();
-  return slashItems.filter((item) => !normalized || item.label.toLowerCase().includes(normalized) || item.id.includes(normalized));
+  return slashItems.filter((item) => (aiEnabled || (!item.ai && !item.diagramDescribe)) && (!normalized || item.label.toLowerCase().includes(normalized) || item.id.includes(normalized)));
 }
 
 function scrollParent(el: HTMLElement | null) {

@@ -1,3 +1,4 @@
+import { codeLines } from "./fences";
 import { defaultTextAlign, readAlign } from "./align";
 import { isDivider } from "./resource";
 import { parseDiagramMarker } from "../diagram";
@@ -8,18 +9,19 @@ import type { Diagram } from "../diagram";
 import type { TextAlign } from "./align";
 
 export type MarkdownBlock =
-  | { type: "heading"; level: number; text: string }
+  | { type: "heading"; level: number; text: string; align?: TextAlign }
   | { type: "paragraph"; text: string; align?: TextAlign }
-  | { type: "quote"; text: string }
+  | { type: "quote"; text: string; align?: TextAlign }
   | { type: "ul"; items: string[] }
   | { type: "tasks"; items: Array<{ text: string; done: boolean }> }
-  | { type: "ol"; items: string[] }
+  | { type: "ol"; items: string[]; start?: number }
   | { type: "diagram"; diagram: Diagram }
   | { type: "code"; text: string }
   | { type: "divider" };
 
 export function parseBlocks(raw: string): MarkdownBlock[] {
   const lines = normalizeMarkdown(raw).split("\n");
+  const contexts = codeLines(lines);
   const blocks: MarkdownBlock[] = [];
   let paragraph: string[] = [];
   let paragraphAlign: TextAlign | null = null;
@@ -29,7 +31,7 @@ export function parseBlocks(raw: string): MarkdownBlock[] {
     if (paragraph.length > 0) {
       // Lines merge into one paragraph here, so its first line decides the alignment.
       // The default stays implicit, exactly as it is in the source.
-      const text = paragraph.join(" ");
+      const text = paragraph.join("\n");
       blocks.push(
         paragraphAlign && paragraphAlign !== defaultTextAlign
           ? { type: "paragraph", text, align: paragraphAlign }
@@ -44,7 +46,7 @@ export function parseBlocks(raw: string): MarkdownBlock[] {
     const line = lines[index];
     const trimmed = line.trim();
 
-    if (trimmed.startsWith("```")) {
+    if (contexts[index] === "fence") {
       if (code) {
         blocks.push({ type: "code", text: code.join("\n") });
         code = null;
@@ -78,10 +80,12 @@ export function parseBlocks(raw: string): MarkdownBlock[] {
       continue;
     }
 
-    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+    const alignedLine = readAlign(trimmed);
+    const alignment = alignedLine.align === defaultTextAlign ? {} : { align: alignedLine.align };
+    const heading = alignedLine.text.match(/^(#{1,6})\s+(.+)$/);
     if (heading) {
       flushParagraph();
-      blocks.push({ type: "heading", level: heading[1].length, text: heading[2] });
+      blocks.push({ type: "heading", level: heading[1].length, text: heading[2], ...alignment });
       continue;
     }
 
@@ -129,18 +133,20 @@ export function parseBlocks(raw: string): MarkdownBlock[] {
         items.push(next[1]);
         index += 1;
       }
-      blocks.push({ type: "ol", items });
+      const start = parseInt(trimmed, 10);
+      blocks.push({ type: "ol", items, ...(start !== 1 ? { start } : {}) });
       continue;
     }
 
-    const quote = trimmed.match(/^>\s?(.+)$/);
+    const quote = alignedLine.text.match(/^>\s?(.+)$/);
     if (quote) {
       flushParagraph();
-      blocks.push({ type: "quote", text: quote[1] });
+      blocks.push({ type: "quote", text: quote[1], ...alignment });
       continue;
     }
 
     const aligned = readAlign(trimmed);
+    if (paragraphAlign !== null && paragraphAlign !== aligned.align) flushParagraph();
     if (paragraphAlign === null) {
       paragraphAlign = aligned.align;
     }
@@ -155,7 +161,5 @@ export function parseBlocks(raw: string): MarkdownBlock[] {
 }
 
 export function normalizeMarkdown(raw: string) {
-  return raw
-    .replace(/\r\n?/g, "\n")
-    .replace(/([^\n])\s+-\s+(?=(\*\*|[A-Za-zÀ-ÿ]))/g, "$1\n- ");
+  return raw.replace(/\r\n?/g, "\n");
 }

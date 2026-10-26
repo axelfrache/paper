@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { createDefaultDiagram, parseDiagramMarker, serializeDiagramMarker } from "../lib/diagram";
-import { placeCaret, placeSelection, getSelectionRange } from "../lib/markdown/dom";
+import { placeCaret, placeSelection, getSelectionRange, pointToCaret } from "../lib/markdown/dom";
 import type { NoteImage } from "../types/note";
 import { MarkdownEditor } from "./MarkdownEditor";
 
@@ -183,7 +183,7 @@ describe("MarkdownEditor integration", () => {
     });
 
     act(() => {
-      host.querySelector(".selection-toolbar button[aria-label='Bold']")?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+      host.querySelector(".selection-toolbar button[aria-label='Bold']")?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
 
     expect(valueFrom(host)).toBe("Make **Paper** bold");
@@ -255,7 +255,7 @@ describe("MarkdownEditor integration", () => {
     });
 
     act(() => {
-      host.querySelector(".selection-toolbar button[aria-label='Bold']")?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+      host.querySelector(".selection-toolbar button[aria-label='Bold']")?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
 
     expect(valueFrom(host)).toBe("Make Paper bold");
@@ -272,7 +272,7 @@ describe("MarkdownEditor integration", () => {
     });
 
     act(() => {
-      host.querySelector(".selection-toolbar button[aria-label='Strikethrough']")?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+      host.querySelector(".selection-toolbar button[aria-label='Strikethrough']")?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
 
     expect(valueFrom(host)).toBe("Strike ~~Paper~~");
@@ -289,7 +289,7 @@ describe("MarkdownEditor integration", () => {
     });
 
     act(() => {
-      host.querySelector(".selection-toolbar button[aria-label='Underline']")?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+      host.querySelector(".selection-toolbar button[aria-label='Underline']")?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
 
     expect(valueFrom(host)).toBe("Underline <u>Paper</u>");
@@ -332,7 +332,7 @@ describe("MarkdownEditor integration", () => {
     });
 
     act(() => {
-      host.querySelector(".selection-toolbar button[aria-label='Link']")?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+      host.querySelector(".selection-toolbar button[aria-label='Link']")?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
 
     expect(valueFrom(host)).toBe("Visit [Paper](https://)");
@@ -353,7 +353,7 @@ describe("MarkdownEditor integration", () => {
     });
 
     act(() => {
-      host.querySelector(".selection-toolbar button[aria-label='Link']")?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+      host.querySelector(".selection-toolbar button[aria-label='Link']")?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
 
     expect(valueFrom(host)).toBe("Visit Paper");
@@ -677,6 +677,266 @@ describe("MarkdownEditor integration", () => {
     });
     expect(selectedResourceLine(editor)).toBeNull();
     expect(getSelectionRange(editor)).toEqual({ start: { line: 0, col: 6 }, end: { line: 0, col: 6 } });
+  });
+
+  it("steps across a bold word one visible character at a time with ArrowRight", () => {
+    const host = mount("Use **bold** text.");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 0, col: 0 });
+    });
+
+    const stops: number[] = [];
+    for (let i = 0; i < "Use bold text.".length + 2; i++) {
+      act(() => {
+        editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+      });
+      const selection = window.getSelection();
+      const raw = selection?.focusNode ? pointToCaret(editor, selection.focusNode, selection.focusOffset, false) : null;
+      stops.push(raw?.col ?? -1);
+    }
+
+    expect(stops.slice(0, 14)).toEqual([1, 2, 3, 4, 7, 8, 9, 10, 13, 14, 15, 16, 17, 18]);
+    expect(stops.every((col) => col !== 5 && col !== 11)).toBe(true);
+  });
+
+  it("steps back across a bold word one visible character at a time with ArrowLeft", () => {
+    const host = mount("Use **bold** text.");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 0, col: 19 });
+    });
+
+    const stops: number[] = [];
+    for (let i = 0; i < "Use bold text.".length + 2; i++) {
+      act(() => {
+        editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }));
+      });
+      const selection = window.getSelection();
+      const raw = selection?.focusNode ? pointToCaret(editor, selection.focusNode, selection.focusOffset, false) : null;
+      stops.push(raw?.col ?? -1);
+    }
+
+    expect(stops.slice(0, 14)).toEqual([17, 16, 15, 14, 13, 12, 9, 8, 7, 6, 3, 2, 1, 0]);
+    expect(stops.every((col) => col !== 5 && col !== 11)).toBe(true);
+  });
+
+  it("keeps the caret visible when ArrowLeft reaches a bold word at the very start of the document", () => {
+    const host = mount("**bold** text.");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 0, col: 2 });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }));
+    });
+
+    const selection = window.getSelection();
+    const isHiddenMarker = selection?.focusNode?.nodeType === Node.TEXT_NODE && selection.focusNode.parentElement?.getAttribute("data-syntax-mark") === "1";
+    expect(isHiddenMarker).toBe(false);
+  });
+
+  it("keeps the caret visible when ArrowRight reaches a bold word at the very end of the document", () => {
+    const host = mount("Text **bold**");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 0, col: "Text **bold**".length });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+    });
+
+    const selection = window.getSelection();
+    const isHiddenMarker = selection?.focusNode?.nodeType === Node.TEXT_NODE && selection.focusNode.parentElement?.getAttribute("data-syntax-mark") === "1";
+    expect(isHiddenMarker).toBe(false);
+  });
+
+  it("extends a selection across a bold word one visible character at a time with Shift+ArrowRight", () => {
+    const host = mount("Use **bold** text.");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 0, col: 0 });
+    });
+
+    const stops: number[] = [];
+    for (let i = 0; i < "Use bold text.".length + 2; i++) {
+      act(() => {
+        editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", shiftKey: true, bubbles: true, cancelable: true }));
+      });
+      const selection = window.getSelection();
+      const node = selection?.focusNode;
+      const isHiddenMarker = node?.nodeType === Node.TEXT_NODE && node.parentElement?.getAttribute("data-syntax-mark") === "1";
+      expect(isHiddenMarker).toBe(false);
+      const raw = node ? pointToCaret(editor, node, selection!.focusOffset, false) : null;
+      stops.push(raw?.col ?? -1);
+    }
+
+    expect(stops.slice(0, 14)).toEqual([1, 2, 3, 4, 7, 8, 9, 10, 13, 14, 15, 16, 17, 18]);
+  });
+
+  it("keeps the selection anchor fixed while extending with Shift+ArrowRight", () => {
+    const host = mount("Use **bold** text.");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 0, col: 4 });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", shiftKey: true, bubbles: true, cancelable: true }));
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", shiftKey: true, bubbles: true, cancelable: true }));
+    });
+
+    expect(getSelectionRange(editor)).toEqual({ start: { line: 0, col: 4 }, end: { line: 0, col: 8 } });
+  });
+
+  it("navigates across a divider line and lands past it on the following line", () => {
+    const host = mount("Before\n---\nAfter");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 0, col: "Before".length });
+    });
+
+    for (let i = 0; i < 3; i++) {
+      act(() => {
+        editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+      });
+    }
+
+    expect(getSelectionRange(editor)).toEqual({ start: { line: 2, col: 0 }, end: { line: 2, col: 0 } });
+  });
+
+  it("moves to the end of the previous line with ArrowLeft from column 0", () => {
+    const host = mount("First line\nSecond");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 1, col: 0 });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }));
+    });
+
+    expect(getSelectionRange(editor)).toEqual({
+      start: { line: 0, col: "First line".length },
+      end: { line: 0, col: "First line".length },
+    });
+  });
+
+  it("moves to the end of the previous line with ArrowLeft from the visual start of a bullet", () => {
+    const host = mount("First line\n- Item");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 1, col: "- ".length });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }));
+    });
+
+    expect(getSelectionRange(editor)).toEqual({
+      start: { line: 0, col: "First line".length },
+      end: { line: 0, col: "First line".length },
+    });
+  });
+
+  it("moves to the start of the next line with ArrowRight from the end of a line", () => {
+    const host = mount("First\nSecond line");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 0, col: "First".length });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+    });
+
+    expect(getSelectionRange(editor)).toEqual({ start: { line: 1, col: 0 }, end: { line: 1, col: 0 } });
+  });
+
+  it("clamps the column with ArrowDown onto a shorter line", () => {
+    const host = mount("Long first line\nxy");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 0, col: "Long first line".length });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+    });
+
+    expect(getSelectionRange(editor)).toEqual({ start: { line: 1, col: 2 }, end: { line: 1, col: 2 } });
+  });
+
+  it("remembers the preferred column across a shorter line with ArrowDown", () => {
+    const host = mount("Long first line\nxy\nAnother long line");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 0, col: "Long first line".length });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+    });
+
+    expect(getSelectionRange(editor)).toEqual({
+      start: { line: 2, col: "Long first line".length },
+      end: { line: 2, col: "Long first line".length },
+    });
+  });
+
+  it("resets the preferred column once another key is pressed", () => {
+    const host = mount("Long first line\nxy\nAnother long line");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 0, col: "Long first line".length });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }));
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+    });
+
+    expect(getSelectionRange(editor)).toEqual({ start: { line: 2, col: 1 }, end: { line: 2, col: 1 } });
+  });
+
+  it("clamps the column with ArrowUp onto a shorter line", () => {
+    const host = mount("xy\nLong second line");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 1, col: "Long second line".length });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }));
+    });
+
+    expect(getSelectionRange(editor)).toEqual({ start: { line: 0, col: 2 }, end: { line: 0, col: 2 } });
+  });
+
+  it("moves onto a divider line with ArrowRight, keeping exact column fidelity", () => {
+    const host = mount("Before\n---\nAfter");
+    const editor = editorFrom(host);
+
+    act(() => {
+      editor.focus();
+      placeCaret(editor, { line: 0, col: "Before".length });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+    });
+
+    expect(getSelectionRange(editor)).toEqual({ start: { line: 1, col: 0 }, end: { line: 1, col: 0 } });
+  });
+
+  it("gives a divider's hidden marker a paintable caret without shifting the rule", () => {
+    const host = mount("---");
+    const editor = editorFrom(host);
+    const style = editor.querySelector("[data-syntax-mark]")?.getAttribute("style") ?? "";
+
+    expect(style).toContain("caret-color:var(--text)");
+    expect(style).not.toContain("font-size:0");
+    expect(style).toContain("display:inline-block");
+    expect(style).toContain("width:0");
   });
 
   it("selects the next resource after deleting one that sits right above it", () => {
@@ -1020,7 +1280,7 @@ describe("MarkdownEditor integration", () => {
 
     const button = host.querySelector<HTMLButtonElement>(".selection-toolbar button[aria-label='Align center']");
     act(() => {
-      button?.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true }));
+      button?.dispatchEvent(new MouseEvent("click", { button: 0, bubbles: true, cancelable: true }));
     });
 
     expect(valueFrom(host)).toBe("first line{align=center}\nsecond line");
@@ -1040,7 +1300,7 @@ describe("MarkdownEditor integration", () => {
 
     const button = host.querySelector<HTMLButtonElement>(".selection-toolbar button[aria-label='Justify']");
     act(() => {
-      button?.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true }));
+      button?.dispatchEvent(new MouseEvent("click", { button: 0, bubbles: true, cancelable: true }));
     });
 
     expect(valueFrom(host)).toBe("first line");
@@ -1269,4 +1529,265 @@ describe("MarkdownEditor resource copy, cut, and paste", () => {
     expect(upload).not.toHaveBeenCalled();
     expect(valueFrom(host)).toContain(sourceUrl);
   });
+});
+
+describe("editor reliability regressions", () => {
+  it("keeps a cut resource if clipboard access fails", async () => {
+    const source = "![image](/image.png)\nAfter";
+    const host = mount(source), editor = editorFrom(host);
+    const clipboard = stubClipboard();
+    clipboard.write.mockRejectedValue(new Error("denied"));
+    clipboard.writeText.mockRejectedValue(new Error("denied"));
+    act(() => selectResourceBlock(editor, 0));
+    await act(async () => {
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "x", ctrlKey: true, bubbles: true, cancelable: true }));
+    });
+    expect(valueFrom(host)).toBe(source);
+    expect(host.querySelector("[role=status]")?.textContent).toContain("kept");
+  });
+  it("does not delete a block after the document changed during clipboard permission", async () => {
+    const source = "![image](/image.png)\nAfter";
+    const host = mount(source), editor = editorFrom(host);
+    const clipboard = stubClipboard();
+    let resolve!: () => void;
+    clipboard.write.mockImplementation(() => new Promise<void>((done) => { resolve = done; }));
+    act(() => selectResourceBlock(editor, 0));
+    act(() => editor.dispatchEvent(new KeyboardEvent("keydown", { key: "x", ctrlKey: true, bubbles: true, cancelable: true })));
+    act(() => editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })));
+    await act(async () => resolve());
+    expect(valueFrom(host)).toContain("![image](/image.png)");
+    expect(host.querySelector("[role=status]")?.textContent).toContain("note changed");
+  });
+  it("does not render or intercept Enter during composition", () => {
+    const host = mount("before"), editor = editorFrom(host);
+    act(() => { editor.focus(); placeCaret(editor, { line: 0, col: 6 }); });
+    const line = editor.firstElementChild!;
+    act(() => editor.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
+    const enter = new KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true, cancelable: true });
+    act(() => {
+      line.textContent = "before日本";
+      editor.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true }));
+      editor.dispatchEvent(enter);
+    });
+    expect(valueFrom(host)).toBe("before");
+    expect(editor.firstElementChild).toBe(line);
+    expect(enter.defaultPrevented).toBe(false);
+    act(() => editor.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })));
+    expect(valueFrom(host)).toBe("before日本");
+  });
+  it("handles mobile Enter through beforeinput", () => {
+    const host = mount("hello"), editor = editorFrom(host);
+    act(() => { editor.focus(); placeCaret(editor, { line: 0, col: 2 }); });
+    const event = new InputEvent("beforeinput", { inputType: "insertParagraph", bubbles: true, cancelable: true });
+    act(() => editor.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(true);
+    expect(valueFrom(host)).toBe("he\nllo");
+  });
+  it("lets the browser move vertically inside a wrapped paragraph", () => {
+    const host = mount("A long paragraph\nNext"), editor = editorFrom(host);
+    act(() => { editor.focus(); placeCaret(editor, { line: 0, col: 4 }); });
+    vi.spyOn(Range.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(20, 20, 0, 20));
+    vi.spyOn(editor.firstElementChild!, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 100, 80));
+    const event = new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true });
+    act(() => editor.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(false);
+  });
+  it("keeps untouched paragraph DOM nodes while typing", () => {
+    const host = mount("first\nsecond"), editor = editorFrom(host);
+    act(() => { editor.focus(); placeCaret(editor, { line: 0, col: 5 }); });
+    const second = editor.children[1];
+    act(() => editor.dispatchEvent(new KeyboardEvent("keydown", { key: "!", bubbles: true, cancelable: true })));
+    expect(valueFrom(host)).toBe("first!\nsecond");
+    expect(editor.children[1]).toBe(second);
+  });
+  it("allows keyboard activation of task checkboxes", () => {
+    const host = mount("- [ ] Task"), editor = editorFrom(host);
+    const button = editor.querySelector<HTMLButtonElement>("[role=checkbox]")!;
+    expect(button.getAttribute("aria-checked")).toBe("false");
+    act(() => button.click());
+    expect(valueFrom(host)).toBe("- [x] Task");
+  });
+});
+
+it("tracks an upload position while text is inserted before it", async () => {
+  let resolve!: (image: NoteImage) => void;
+  const upload = vi.fn(() => new Promise<NoteImage>((done) => { resolve = done; }));
+  const host = mount("Before\n\nAfter", null, upload), editor = editorFrom(host);
+  act(() => { editor.focus(); placeCaret(editor, { line: 1, col: 0 }); editor.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowDown", bubbles: true })); });
+  const input = host.querySelector<HTMLInputElement>('input[type=file]')!;
+  Object.defineProperty(input, "files", { configurable: true, value: [new File(["image"], "photo.png", { type: "image/png" })] });
+  await act(async () => { input.dispatchEvent(new Event("change", { bubbles: true })); });
+  expect(host.querySelector("[role=status]")?.textContent).toContain("Uploading");
+  act(() => {
+    editor.focus(); placeCaret(editor, { line: 0, col: 0 });
+    pasteText(editor, "New\n");
+  });
+  await act(async () => resolve({ id: "image", url: "/image.png", name: "photo.png", contentType: "image/png", size: 5 }));
+  expect(valueFrom(host)).toBe("New\nBefore\n![photo](/image.png)\n\nAfter");
+  expect(host.textContent).not.toContain("Uploading");
+});
+
+it("keeps focus on task controls without moving the caret into the text", () => {
+  const host = mount("- [ ] Task"), editor = editorFrom(host);
+  const button = editor.querySelector<HTMLButtonElement>("[role=checkbox]")!;
+  act(() => button.focus());
+  expect(document.activeElement).toBe(button);
+  const key = new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true });
+  act(() => button.dispatchEvent(key));
+  expect(key.defaultPrevented).toBe(false);
+  act(() => button.click());
+  expect(valueFrom(host)).toBe("- [x] Task");
+  expect(host.querySelector(".markdown-editor")).not.toBeNull();
+});
+
+it("routes native undo gestures to note history", () => {
+  const onUndo = vi.fn(), onRedo = vi.fn();
+  const host = mount("Text", null, undefined, { onUndo, onRedo });
+  for (const inputType of ["historyUndo", "historyRedo"]) {
+    const event = new InputEvent("beforeinput", { inputType, bubbles: true, cancelable: true });
+    act(() => editorFrom(host).dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(true);
+  }
+  expect(onUndo).toHaveBeenCalledOnce();
+  expect(onRedo).toHaveBeenCalledOnce();
+});
+
+it("handles mobile text replacement of a selected resource", () => {
+  const host = mount("![image](/image.png)\nAfter"), editor = editorFrom(host);
+  act(() => selectResourceBlock(editor, 0));
+  act(() => editor.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "é", bubbles: true, cancelable: true })));
+  expect(valueFrom(host)).toBe("é\nAfter");
+});
+
+describe("visible caret at formatting boundaries", () => {
+  const formats = [
+    ["**test**", 2, 6], ["*test*", 1, 5], ["`test`", 1, 5],
+    ["~~test~~", 2, 6], ["<u>test</u>", 3, 7], ["***test***", 3, 7],
+  ] as const;
+  const press = (editor: HTMLElement, key: string, shiftKey = false) => {
+    act(() => {
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key, shiftKey, bubbles: true, cancelable: true }));
+      editor.dispatchEvent(new KeyboardEvent("keyup", { key, shiftKey, bubbles: true, cancelable: true }));
+    });
+  };
+  const rawCaret = (editor: HTMLDivElement) => {
+    const selection = window.getSelection()!;
+    expect(selection.focusNode?.parentElement?.closest('[data-syntax-mark="1"]')).toBeNull();
+    return pointToCaret(editor, selection.focusNode!, selection.focusOffset, false);
+  };
+  it.each(formats)("moves past %s without a delimiter-only stop", (source, _start, end) => {
+    const host = mount(`${source} salut la team ça va ?\n- yo ça va ou quoi ?`), editor = editorFrom(host);
+    act(() => { editor.focus(); placeCaret(editor, { line: 0, col: end }); });
+    press(editor, "ArrowRight");
+    expect(rawCaret(editor)).toEqual({ line: 0, col: source.length + 1 });
+    press(editor, "ArrowLeft");
+    expect(rawCaret(editor)).toEqual({ line: 0, col: source.length });
+    press(editor, "ArrowLeft");
+    expect(rawCaret(editor)).toEqual({ line: 0, col: end - 1 });
+  });
+  it.each(formats)("leaves a line ending in %s", (source, _start, end) => {
+    const host = mount(`${source}\nAfter`), editor = editorFrom(host);
+    act(() => { editor.focus(); placeCaret(editor, { line: 0, col: end }); });
+    press(editor, "ArrowRight");
+    expect(rawCaret(editor)).toEqual({ line: 1, col: 0 });
+    press(editor, "ArrowLeft");
+    expect(rawCaret(editor)).toEqual({ line: 0, col: end });
+    press(editor, "ArrowLeft");
+    expect(rawCaret(editor)).toEqual({ line: 0, col: end - 1 });
+  });
+  it.each(formats)("deletes visible text at the end of %s without breaking its wrapper", (source, _start, end) => {
+    const host = mount(`${source} next`), editor = editorFrom(host);
+    act(() => { editor.focus(); placeCaret(editor, { line: 0, col: end }); });
+    press(editor, "Backspace");
+    expect(valueFrom(host)).toBe(`${source.replace("test", "tes")} next`);
+  });
+  it.each(["**x**", "*x*", "`x`", "~~x~~", "<u>x</u>", "***x***"])("removes the empty wrapper when deleting the final character in %s", (source) => {
+    const host = mount(`${source} next`), editor = editorFrom(host);
+    act(() => { editor.focus(); placeCaret(editor, { line: 0, col: source.indexOf("x") + 1 }); });
+    press(editor, "Backspace");
+    expect(valueFrom(host)).toBe(" next");
+  });
+  it("types outside all nested closing markers", () => {
+    const host = mount("***test***"), editor = editorFrom(host);
+    act(() => { editor.focus(); placeCaret(editor, { line: 0, col: 7 }); });
+    press(editor, "!");
+    expect(valueFrom(host)).toBe("***test***!");
+  });
+  it("extends a selection past formatting without a hidden stop", () => {
+    const host = mount("**test** next"), editor = editorFrom(host);
+    act(() => { editor.focus(); placeCaret(editor, { line: 0, col: 5 }); });
+    press(editor, "ArrowRight", true);
+    expect(rawCaret(editor)).toEqual({ line: 0, col: 6 });
+    press(editor, "ArrowRight", true);
+    expect(rawCaret(editor)).toEqual({ line: 0, col: 9 });
+    expect(window.getSelection()?.anchorOffset).toBe(3);
+  });
+});
+
+it("preserves formatting when a mobile keyboard deletes at its boundary", () => {
+  const host = mount("**test** next"), editor = editorFrom(host);
+  act(() => { editor.focus(); placeCaret(editor, { line: 0, col: 6 }); });
+  act(() => editor.dispatchEvent(new InputEvent("beforeinput", { inputType: "deleteContentBackward", bubbles: true, cancelable: true })));
+  expect(valueFrom(host)).toBe("**tes** next");
+});
+
+it("does not delete an invisible opening marker at the document start", () => {
+  const host = mount("**test**"), editor = editorFrom(host);
+  act(() => { editor.focus(); placeCaret(editor, { line: 0, col: 2 }); });
+  act(() => editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true })));
+  expect(valueFrom(host)).toBe("**test**");
+});
+
+it("deletes a selection ending at a formatted word without removing its closing markers", () => {
+  const host = mount("**test** next"), editor = editorFrom(host);
+  act(() => {
+    editor.focus();
+    placeSelection(editor, { start: { line: 0, col: 5 }, end: { line: 0, col: 6 } });
+    editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+  });
+  expect(valueFrom(host)).toBe("**tes** next");
+});
+
+it("removes both delimiters when replacing an entirely selected formatted word", () => {
+  const host = mount("***test*** next"), editor = editorFrom(host);
+  act(() => {
+    editor.focus();
+    placeSelection(editor, { start: { line: 0, col: 3 }, end: { line: 0, col: 7 } });
+    editor.dispatchEvent(new KeyboardEvent("keydown", { key: "x", bubbles: true, cancelable: true }));
+  });
+  expect(valueFrom(host)).toBe("x next");
+});
+
+it("handles held arrows and immediate reversal across formatted and empty lines", () => {
+  const source = "**ab**\n\n*cd*\n`ef`\n~~gh~~";
+  const host = mount(source), editor = editorFrom(host);
+  act(() => { editor.focus(); placeCaret(editor, { line: 0, col: 2 }); });
+  const rawCaret = () => {
+    const selection = window.getSelection()!;
+    return pointToCaret(editor, selection.focusNode!, selection.focusOffset, false);
+  };
+  for (const key of ["ArrowRight", "ArrowLeft"]) {
+    for (let i = 0; i < 12; i++) {
+      const before = rawCaret();
+      act(() => editor.dispatchEvent(new KeyboardEvent("keydown", { key, repeat: i > 0, bubbles: true, cancelable: true })));
+      expect(rawCaret()).not.toEqual(before);
+    }
+  }
+  expect(rawCaret()).toEqual({ line: 0, col: 2 });
+  act(() => editor.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowLeft", bubbles: true })));
+  expect(rawCaret()).toEqual({ line: 0, col: 2 });
+  expect(valueFrom(host)).toBe(source);
+});
+
+it("updates link syntax on line crossings while preserving unrelated DOM", () => {
+  const host = mount("[a](https://example.com)\nb\n```\n**literal**\n```"), editor = editorFrom(host);
+  act(() => { editor.focus(); placeCaret(editor, { line: 1, col: 0 }); });
+  const code = editor.children[3];
+  act(() => editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true })));
+  expect(editor.children[0].textContent).toBe("[a](https://example.com)");
+  expect(editor.children[0].querySelectorAll("[data-syntax-mark]")).toHaveLength(0);
+  act(() => editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true })));
+  expect(editor.children[0].querySelectorAll("[data-syntax-mark]").length).toBeGreaterThan(0);
+  expect(editor.children[3]).toBe(code);
+  expect(code.textContent).toBe("**literal**");
 });

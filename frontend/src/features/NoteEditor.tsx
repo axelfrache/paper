@@ -309,6 +309,9 @@ export function NoteEditor({
             onChange={onContentChange}
             onUploadImage={onUploadImage}
             onAssist={onAssist}
+            aiEnabled={aiEnabled}
+            onUndo={onUndo}
+            onRedo={onRedo}
             onCaretLineChange={onCaretLineChange}
             focusRequest={contentFocusTarget}
             onFocusPrevious={focusTags}

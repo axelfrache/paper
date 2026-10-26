@@ -14,7 +14,7 @@ describe("markdown rendering parser", () => {
 
   it("groups adjacent paragraph lines", () => {
     expect(parseBlocks("First line\nsecond line\n\nNext")).toEqual([
-      { type: "paragraph", text: "First line second line" },
+      { type: "paragraph", text: "First line\nsecond line" },
       { type: "paragraph", text: "Next" },
     ]);
   });
@@ -196,7 +196,21 @@ describe("markdown rendering parser", () => {
     expect(parseBlocks(marker)).toEqual([{ type: "diagram", diagram }]);
   });
 
-  it("normalizes generated markdown bullets", () => {
-    expect(normalizeMarkdown("Summary - **Task one** - Task two")).toBe("Summary\n- **Task one**\n- Task two");
+  it("preserves inline hyphens", () => {
+    expect(normalizeMarkdown("Summary - **Task one** - Task two")).toBe("Summary - **Task one** - Task two");
+  });
+});
+
+describe("reading fidelity", () => {
+  it("does not convert prose or code hyphens to lists", () => {
+    expect(parseBlocks("Paris - Lyon")).toEqual([{ type: "paragraph", text: "Paris - Lyon" }]);
+    expect(parseBlocks("```\nParis - Lyon\n```")).toEqual([{ type: "code", text: "Paris - Lyon" }]);
+  });
+  it("preserves ordered list starts and heading alignment", () => {
+    expect(parseBlocks("3. Three\n4. Four")).toEqual([{ type: "ol", start: 3, items: ["Three", "Four"] }]);
+    expect(parseBlocks("#### Title{align=center}")).toEqual([{ type: "heading", level: 4, text: "Title", align: "center" }]);
+  });
+  it("keeps shorter and mismatched fences inside code", () => {
+    expect(parseBlocks("````\n```\n~~~\n````")).toEqual([{ type: "code", text: "```\n~~~" }]);
   });
 });

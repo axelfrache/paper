@@ -1,3 +1,4 @@
+import { readAlign } from "../lib/markdown/align";
 import type { ReactNode } from "react";
 import { diagramSummary, diagramToSvgMarkup } from "../lib/diagram";
 import { parseBlocks, parseInline } from "../lib/markdown/render";
@@ -23,8 +24,8 @@ export function MarkdownView({ text, className }: MarkdownViewProps) {
 
 function renderBlock(block: MarkdownBlock, index: number) {
   if (block.type === "heading") {
-    const Heading = `h${Math.min(block.level + 2, 5)}` as "h3" | "h4" | "h5";
-    return <Heading key={index}>{renderInline(block.text)}</Heading>;
+    const Heading = `h${block.level}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
+    return <Heading key={index} style={block.align ? { textAlign: block.align } : undefined}>{renderInline(block.text)}</Heading>;
   }
   if (block.type === "paragraph") {
     return (
@@ -34,7 +35,7 @@ function renderBlock(block: MarkdownBlock, index: number) {
     );
   }
   if (block.type === "quote") {
-    return <blockquote key={index}>{renderInline(block.text)}</blockquote>;
+    return <blockquote key={index} style={block.align ? { textAlign: block.align } : undefined}>{renderInline(block.text)}</blockquote>;
   }
   if (block.type === "code") {
     return (
@@ -56,9 +57,9 @@ function renderBlock(block: MarkdownBlock, index: number) {
   }
   if (block.type === "ol") {
     return (
-      <ol key={index}>
+      <ol key={index} start={block.start}>
         {block.items.map((item, itemIndex) => (
-          <li key={`${item}-${itemIndex}`}>{renderInline(item)}</li>
+          <li key={`${item}-${itemIndex}`} style={{ textAlign: readAlign(item).align }}>{renderInline(readAlign(item).text)}</li>
         ))}
       </ol>
     );
@@ -69,7 +70,7 @@ function renderBlock(block: MarkdownBlock, index: number) {
         {block.items.map((item, itemIndex) => (
           <li key={`${item.text}-${itemIndex}`} className={item.done ? "done" : ""}>
             <span>{item.done ? "☑" : "☐"}</span>
-            <p>{renderInline(item.text)}</p>
+            <p style={{ textAlign: readAlign(item.text).align }}>{renderInline(readAlign(item.text).text)}</p>
           </li>
         ))}
       </ul>
@@ -78,7 +79,7 @@ function renderBlock(block: MarkdownBlock, index: number) {
   return (
     <ul key={index}>
       {block.items.map((item, itemIndex) => (
-        <li key={`${item}-${itemIndex}`}>{renderInline(item)}</li>
+        <li key={`${item}-${itemIndex}`} style={{ textAlign: readAlign(item).align }}>{renderInline(readAlign(item).text)}</li>
       ))}
     </ul>
   );
@@ -89,6 +90,7 @@ function renderInline(text: string): ReactNode[] {
 }
 
 function renderInlineNode(node: MarkdownInline, index: number): ReactNode {
+  if (node.type === "escape") return node.text;
   if (node.type === "text") {
     return node.text;
   }
