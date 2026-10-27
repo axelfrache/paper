@@ -109,14 +109,21 @@ export type DiagramLayoutEdge = {
   labelY: number;
 };
 
+export type DiagramGroupTab = {
+  transform: string;
+  points: string;
+  textX: number;
+  textY: number;
+  angle: number;
+};
+
 export type DiagramLayoutGroup = {
   id: string;
   source: DiagramGroup;
   name: string;
   color: DiagramColor;
   points: string;
-  labelX: number;
-  labelY: number;
+  tab: DiagramGroupTab | null;
   hx: number;
   hy: number;
   hw: number;
@@ -380,7 +387,7 @@ export function layoutDiagram(diagram: Diagram): DiagramLayout {
     .filter((group): group is DiagramLayoutGroup => group !== null);
 
   const pad = 44;
-  const groupPoints = groups.flatMap((group) => parsePoints(group.points));
+  const groupPoints = groups.flatMap((group) => parsePoints(group.points).concat(group.tab ? parsePoints(group.tab.points) : []));
   const xs = nodes.flatMap((node) => [node.hx, node.hx + node.hw]).concat(groupPoints.map((p) => p.x), [0]);
   const ys = nodes.flatMap((node) => [node.hy, node.hy + node.hh]).concat(groupPoints.map((p) => p.y), [0]);
   const minX = Math.min(...xs) - pad;
@@ -415,7 +422,7 @@ function layoutGroup(group: DiagramGroup, diagramNodes: DiagramNode[], mode: Dia
     { x: maxX, y: maxY },
     { x: minX, y: maxY },
   ].map((corner) => diagramToLayoutPoint(mode, corner.x, corner.y));
-  const bottom = corners.reduce((a, b) => (b.y > a.y ? b : a));
+  const [top, , , left] = corners;
   const cornerXs = corners.map((p) => p.x);
   const cornerYs = corners.map((p) => p.y);
   const hx = Math.min(...cornerXs);
@@ -432,8 +439,61 @@ function layoutGroup(group: DiagramGroup, diagramNodes: DiagramNode[], mode: Dia
     hw,
     hh,
     points: corners.map((p) => `${Math.round(p.x * 10) / 10},${Math.round(p.y * 10) / 10}`).join(" "),
-    labelX: Math.round(bottom.x * 10) / 10,
-    labelY: Math.round((bottom.y - 10) * 10) / 10,
+    tab: groupTabGeometry(top, left, corners[1], (group.name ?? "").trim()),
+  };
+}
+
+function groupTabGeometry(
+  top: { x: number; y: number },
+  left: { x: number; y: number },
+  right: { x: number; y: number },
+  label: string,
+): DiagramGroupTab | null {
+  if (!label) {
+    return null;
+  }
+  let dx = left.x - top.x;
+  let dy = left.y - top.y;
+  let origin = top;
+  const rawAngle = (Math.atan2(dy, dx) * 180) / Math.PI;
+  if (rawAngle > 90 || rawAngle < -90) {
+    dx = -dx;
+    dy = -dy;
+    origin = left;
+  }
+  const edgeLen = Math.hypot(dx, dy) || 1;
+  const ux = dx / edgeLen;
+  const uy = dy / edgeLen;
+  // The second axis follows the adjacent side of the zone, laying the tab flat.
+  const sideLength = Math.hypot(right.x - top.x, right.y - top.y) || 1;
+  const px = (right.x - top.x) / sideLength;
+  const py = (right.y - top.y) / sideLength;
+  const fontSize = 11;
+  // Allow for uppercase bold lettering, tracking, and padding on both ends.
+  const textWidth = Array.from(label.toUpperCase()).reduce(
+    (width, char) => width + fontSize * (/[MW@]/.test(char) ? 1 : /[I1 .,:!|]/.test(char) ? 0.4 : 0.78) + 0.3,
+    0,
+  );
+  const tabWidth = Math.max(fontSize * 3, textWidth + 20);
+  const tabHeight = fontSize * 2;
+  const inset = 0;
+  const corner = (along: number, across: number) => ({
+    x: origin.x + ux * along + px * across,
+    y: origin.y + uy * along + py * across,
+  });
+  const points = [
+    corner(inset, 0),
+    corner(inset + tabWidth, 0),
+    corner(inset + tabWidth, tabHeight),
+    corner(inset, tabHeight),
+  ];
+  const textPoint = corner(inset + tabWidth / 2, tabHeight / 2);
+  return {
+    transform: `translate(${textPoint.x} ${textPoint.y}) matrix(${ux} ${uy} ${px} ${py} 0 0)`,
+    points: points.map((p) => `${Math.round(p.x * 10) / 10},${Math.round(p.y * 10) / 10}`).join(" "),
+    textX: Math.round(textPoint.x * 10) / 10,
+    textY: Math.round(textPoint.y * 10) / 10,
+    angle: Math.round(((Math.atan2(dy, dx) * 180) / Math.PI) * 10) / 10,
   };
 }
 
@@ -602,17 +662,12 @@ function edgeLabelSvg(edge: DiagramLayoutEdge) {
 function groupSvg(group: DiagramLayoutGroup) {
   const palette = diagramPalette[group.color] ?? diagramPalette.slate;
   const region = `<polygon class="diagram-group-region" points="${group.points}" fill="${palette.fill}" stroke="${palette.stroke}"/>`;
-  if (!group.name) {
+  if (!group.tab) {
     return region;
   }
-  const fontSize = 11;
-  const lineHeight = fontSize * 1.25;
-  const plate = nodeLabelPlate(group.name, group.labelX, group.labelY, fontSize, lineHeight);
-  const plateSvg = plate
-    ? `<rect class="diagram-group-label-plate" x="${plate.x}" y="${plate.y}" width="${plate.width}" height="${plate.height}" rx="${plate.rx}" stroke="${palette.stroke}"/>`
-    : "";
-  const labelBody = labelTspans(group.name, group.labelX, group.labelY, lineHeight, true);
-  return `${region}${plateSvg}<text class="diagram-group-label" text-anchor="middle" dominant-baseline="central" font-size="${fontSize}" fill="${palette.stroke}">${labelBody}</text>`;
+  const tab = `<polygon class="diagram-group-tab" points="${group.tab.points}" fill="${palette.stroke}"/>`;
+  const text = `<text class="diagram-group-tab-label" x="0" y="0" text-anchor="middle" dominant-baseline="central" transform="${group.tab.transform}">${escapeHtml(group.name)}</text>`;
+  return `${region}${tab}${text}`;
 }
 
 function contentBounds(layout: DiagramLayout) {
@@ -622,7 +677,7 @@ function contentBounds(layout: DiagramLayout) {
   }
 
   const pad = 20;
-  const groupPoints = layout.groups.flatMap((group) => parsePoints(group.points));
+  const groupPoints = layout.groups.flatMap((group) => parsePoints(group.points).concat(group.tab ? parsePoints(group.tab.points) : []));
   const minX = Math.min(...layout.nodes.map((node) => node.hx), ...groupPoints.map((p) => p.x)) - pad;
   const minY = Math.min(...layout.nodes.map((node) => node.hy), ...groupPoints.map((p) => p.y)) - pad;
   const maxX = Math.max(...layout.nodes.map((node) => node.hx + node.hw), ...groupPoints.map((p) => p.x)) + pad;

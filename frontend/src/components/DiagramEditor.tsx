@@ -444,7 +444,11 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
     }
 
     const clickedIds = forceIds ?? [nodeId];
-    const movingIds = clickedIds.every((id) => selectedIds.includes(id)) ? selectedIds : clickedIds;
+    const currentlyWholeGroup = diagramRef.current.groups?.some(
+      (group) => group.members.length === selectedIds.length && group.members.every((id) => selectedIds.includes(id)),
+    );
+    const movingIds =
+      !currentlyWholeGroup && clickedIds.every((id) => selectedIds.includes(id)) ? selectedIds : clickedIds;
     setSelectedIds(movingIds);
     setSelectedEdgeId(null);
     const svg = svgRef.current;
@@ -551,7 +555,12 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
     window.addEventListener("pointerup", up);
   };
 
-  const handleGroupResizePointerDown = (event: React.PointerEvent<SVGRectElement>, groupId: string) => {
+  const handleGroupResizePointerDown = (
+    event: React.PointerEvent<SVGRectElement>,
+    groupId: string,
+    signX: 1 | -1,
+    signY: 1 | -1,
+  ) => {
     event.preventDefault();
     event.stopPropagation();
 
@@ -570,7 +579,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
         return;
       }
       const point = screenToDiagramPoint(moveEvent, currentSvg, diagramRef.current);
-      const delta = (point.x - start.x + (point.y - start.y)) / 2;
+      const delta = ((point.x - start.x) * signX + (point.y - start.y) * signY) / 2;
       const padding = Math.max(minGroupPadding, Math.round(basePadding + delta));
       patchDiagram(
         (current) => ({
@@ -1365,12 +1374,20 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
                   strokeDasharray={active ? undefined : "6 5"}
                   onPointerDown={(event) => handleNodePointerDown(event, group.source.members[0], group.source.members)}
                 />
-                {group.name ? (
-                  <foreignObject x={group.labelX - 100} y={group.labelY - 14} width="200" height="28" style={{ overflow: "visible", pointerEvents: "none" }}>
-                    <div className="diagram-node-label bare">
-                      <span style={{ color: palette.stroke, borderColor: palette.stroke }}>{group.name}</span>
-                    </div>
-                  </foreignObject>
+                {group.tab ? (
+                  <>
+                    <polygon className="diagram-group-tab" points={group.tab.points} fill={palette.stroke} />
+                    <text
+                      className="diagram-group-tab-label"
+                      x={0}
+                      y={0}
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      transform={group.tab.transform}
+                    >
+                      {group.name}
+                    </text>
+                  </>
                 ) : null}
               </g>
             );
@@ -1528,17 +1545,27 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
           {selectedGroup && tool !== "pan"
             ? (() => {
                 const activeGroup = layout.groups.find((group) => group.id === selectedGroup.id);
-                return activeGroup ? (
+                if (!activeGroup) {
+                  return null;
+                }
+                const corners: Array<{ x: number; y: number; signX: 1 | -1; signY: 1 | -1 }> = [
+                  { x: activeGroup.hx, y: activeGroup.hy, signX: -1, signY: -1 },
+                  { x: activeGroup.hx + activeGroup.hw, y: activeGroup.hy, signX: 1, signY: -1 },
+                  { x: activeGroup.hx + activeGroup.hw, y: activeGroup.hy + activeGroup.hh, signX: 1, signY: 1 },
+                  { x: activeGroup.hx, y: activeGroup.hy + activeGroup.hh, signX: -1, signY: 1 },
+                ];
+                return corners.map((corner) => (
                   <rect
-                    className="diagram-resize-handle"
-                    x={activeGroup.hx + activeGroup.hw - 7}
-                    y={activeGroup.hy + activeGroup.hh - 7}
-                    width="14"
-                    height="14"
-                    rx="4"
-                    onPointerDown={(event) => handleGroupResizePointerDown(event, activeGroup.id)}
+                    key={`${corner.signX}-${corner.signY}`}
+                    className="diagram-group-resize-handle"
+                    x={corner.x - 6}
+                    y={corner.y - 6}
+                    width="12"
+                    height="12"
+                    rx="3"
+                    onPointerDown={(event) => handleGroupResizePointerDown(event, activeGroup.id, corner.signX, corner.signY)}
                   />
-                ) : null;
+                ));
               })()
             : null}
 

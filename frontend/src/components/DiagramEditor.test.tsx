@@ -373,6 +373,20 @@ describe("node groups", () => {
     expect(editor.x("left") - leftBefore).toBeCloseTo(editor.x("middle") - middleBefore, 5);
   });
 
+  it("narrows focus to one member when it's clicked right after the group was selected", () => {
+    const editor = mount(rowOfThree("iso"));
+    editor.select(0);
+    shiftSelect(editor.host, 1);
+    editor.press("g", { metaKey: true });
+
+    clickRegion(editor.host);
+    expect(editor.host.querySelector(".diagram-inspector strong")?.textContent).toBe("Group");
+
+    editor.select(1);
+
+    expect(editor.host.querySelector(".diagram-inspector-meta")?.textContent).toBe("Box");
+  });
+
   it("selects just that one node on a fresh click into a member, not the whole group", () => {
     const diagram: Diagram = {
       version: 1,
@@ -489,7 +503,7 @@ describe("node groups", () => {
     expect(editor.value().groups?.[0].members.slice().sort()).toEqual(["a", "b"]);
   });
 
-  it("only shows a resize handle for the selected group, and dragging it changes padding", () => {
+  it("shows four resize handles only once the group is selected, one per corner", () => {
     const diagram: Diagram = {
       version: 1,
       mode: "iso",
@@ -499,20 +513,54 @@ describe("node groups", () => {
     };
     const editor = mount(diagram);
 
-    expect(editor.host.querySelector(".diagram-resize-handle")).toBeNull();
+    expect(editor.host.querySelectorAll(".diagram-group-resize-handle")).toHaveLength(0);
     clickRegion(editor.host);
-    const handle = editor.host.querySelector<SVGRectElement>(".diagram-resize-handle");
-    expect(handle).not.toBeNull();
+    expect(editor.host.querySelectorAll(".diagram-group-resize-handle")).toHaveLength(4);
+  });
+
+  it("grows padding when the bottom-right handle is dragged outward", () => {
+    const diagram: Diagram = {
+      version: 1,
+      mode: "iso",
+      nodes: [node("a", 0), node("b", 200)],
+      edges: [],
+      groups: [createDiagramGroup(["a", "b"], "blue")],
+    };
+    const editor = mount(diagram);
+    clickRegion(editor.host);
+    const handles = editor.host.querySelectorAll<SVGRectElement>(".diagram-group-resize-handle");
 
     act(() => {
-      handle!.dispatchEvent(
+      handles[2].dispatchEvent(
         new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true, clientX: 300, clientY: 300 }),
       );
       window.dispatchEvent(new MouseEvent("pointermove", { bubbles: true, clientX: 380, clientY: 380 }));
       window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
     });
 
-    expect(editor.value().groups?.[0].padding).not.toBeUndefined();
-    expect(editor.value().groups?.[0].padding).not.toBe(defaultGroupPadding);
+    expect(editor.value().groups?.[0].padding).toBeGreaterThan(defaultGroupPadding);
+  });
+
+  it("also grows padding when the top-left handle is dragged outward, the other way", () => {
+    const diagram: Diagram = {
+      version: 1,
+      mode: "iso",
+      nodes: [node("a", 0), node("b", 200)],
+      edges: [],
+      groups: [createDiagramGroup(["a", "b"], "blue")],
+    };
+    const editor = mount(diagram);
+    clickRegion(editor.host);
+    const handles = editor.host.querySelectorAll<SVGRectElement>(".diagram-group-resize-handle");
+
+    act(() => {
+      handles[0].dispatchEvent(
+        new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true, clientX: 300, clientY: 300 }),
+      );
+      window.dispatchEvent(new MouseEvent("pointermove", { bubbles: true, clientX: 220, clientY: 220 }));
+      window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+    });
+
+    expect(editor.value().groups?.[0].padding).toBeGreaterThan(defaultGroupPadding);
   });
 });

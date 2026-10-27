@@ -424,6 +424,35 @@ describe("node groups", () => {
     }
   });
 
+  it("has no tab when unnamed, and a flat tab aligned with the zone corner when named", () => {
+    const unnamed = layoutDiagram(twoNodeDiagram([createDiagramGroup(["a", "b"], "violet")])).groups[0];
+    expect(unnamed.tab).toBeNull();
+
+    const named = layoutDiagram(
+      twoNodeDiagram([{ ...createDiagramGroup(["a", "b"], "violet"), name: "Core" }]),
+    ).groups[0];
+    expect(named.tab).not.toBeNull();
+    const points = named.tab!.points.split(" ");
+    expect(points).toHaveLength(4);
+    const left = named.points.split(" ")[3].split(",").map(Number);
+    const start = points[0].split(",").map(Number);
+    expect(start[0]).toBeCloseTo(left[0], 0);
+    expect(start[1]).toBeCloseTo(left[1], 0);
+    const corners = points.map((pair) => pair.split(",").map(Number));
+    const zone = named.points.split(" ").map((pair) => pair.split(",").map(Number));
+    const side = [zone[1][0] - zone[0][0], zone[1][1] - zone[0][1]];
+    const tabSide = [corners[2][0] - corners[1][0], corners[2][1] - corners[1][1]];
+    expect(tabSide[1] / tabSide[0]).toBeCloseTo(side[1] / side[0], 2);
+    // The region's top-left edge isn't axis-aligned in iso mode, so a tab that follows it
+    // has a non-zero slant rather than sitting flat.
+    expect(named.tab!.angle).not.toBe(0);
+
+    const html = diagramToSvgMarkup(twoNodeDiagram([{ ...createDiagramGroup(["a", "b"], "violet"), name: "Core" }]));
+    expect(html).toContain('class="diagram-group-tab"');
+    expect(html).toContain(named.tab!.transform);
+    expect(html).not.toContain("diagram-group-label-plate");
+  });
+
   it("grows the region with an explicit padding, and clamps a too-small one", () => {
     const base = layoutDiagram(twoNodeDiagram([createDiagramGroup(["a", "b"], "violet")])).groups[0];
     const wider = layoutDiagram(

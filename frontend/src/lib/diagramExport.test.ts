@@ -59,7 +59,7 @@ describe("standalone diagram SVG", () => {
     const svg = await buildStandaloneSvg(grouped, undefined, fakeIcon);
 
     expect(svg).toContain("<polygon");
-    expect(svg).toContain(">Core<");
+    expect(svg).toContain(">CORE<");
     expect(svg).not.toContain("var(--");
   });
 

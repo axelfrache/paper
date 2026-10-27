@@ -101,7 +101,7 @@ export async function buildStandaloneSvg(
 }
 
 function renderBody(layout: DiagramLayout, mode: DiagramMode, iconHref: (n: DiagramLayoutNode) => string, halo: string) {
-  const groups = layout.groups.map((group) => groupMarkup(group, halo)).join("");
+  const groups = layout.groups.map((group) => groupMarkup(group)).join("");
   const edges = layout.edges
     .map((edge) => {
       const cap = edge.markerStart || edge.markerEnd ? "butt" : "round";
@@ -136,20 +136,15 @@ function renderBody(layout: DiagramLayout, mode: DiagramMode, iconHref: (n: Diag
   return `${groups}${edges}${edgeLabels}${nodes}`;
 }
 
-function groupMarkup(group: DiagramLayoutGroup, halo: string) {
+function groupMarkup(group: DiagramLayoutGroup) {
   const palette = diagramPalette[group.color] ?? diagramPalette.slate;
   const region = `<polygon points="${group.points}" fill="${palette.fill}" stroke="${palette.stroke}"/>`;
-  if (!group.name) {
+  if (!group.tab) {
     return region;
   }
-  const fontSize = 11;
-  const lineHeight = fontSize * 1.25;
-  const plate = nodeLabelPlate(group.name, group.labelX, group.labelY, fontSize, lineHeight);
-  const plateSvg = plate
-    ? `<rect x="${plate.x}" y="${plate.y}" width="${plate.width}" height="${plate.height}" rx="${plate.rx}" fill="${halo}" stroke="${palette.stroke}" stroke-width="1"/>`
-    : "";
-  const label = tspans(group.name, group.labelX, group.labelY, lineHeight, true);
-  return `${region}${plateSvg}<text text-anchor="middle" dominant-baseline="central" font-size="${fontSize}" font-weight="700" letter-spacing="0.3" fill="${palette.stroke}">${label}</text>`;
+  const tab = `<polygon points="${group.tab.points}" fill="${palette.stroke}"/>`;
+  const text = `<text x="0" y="0" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="700" letter-spacing="0.3" fill="#ffffff" transform="${group.tab.transform}">${escapeText(group.name.toUpperCase())}</text>`;
+  return `${region}${tab}${text}`;
 }
 
 function edgeLabel(edge: DiagramLayoutEdge) {
