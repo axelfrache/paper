@@ -4215,6 +4215,10 @@ span.account-avatar-lg {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+.folder-nav .nav-item:focus-visible {
+  /* Keep the ring clear of the sticky heading and scroll clipping. */
+  outline-offset: -2px;
+}
 @media (max-width: 600px) {
   .folder-dialog-body {
     padding: 18px;
