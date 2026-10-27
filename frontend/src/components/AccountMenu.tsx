@@ -1,3 +1,4 @@
+import { InstallPaper } from "./InstallPaper";
 import { LogOut, Pencil, ShieldCheck, UserRound, X } from "lucide-react";
 import { useRef, useState } from "react";
 import {
@@ -147,6 +148,7 @@ export function AccountMenu({ user, onLogout }: AccountMenuProps) {
           ) : null}
           {error ? <div className="account-error">{error}</div> : null}
         </section>
+        <InstallPaper />
         <footer>
           <button
             type="button"

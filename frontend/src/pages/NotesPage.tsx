@@ -1,3 +1,5 @@
+import { AutosaveQueue, type SaveState } from "../lib/autosave";
+import { prepareNavigation, registerDraftGuard } from "../lib/pwa";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { AlignLeft, ListTodo, MessageCircleQuestion, Plus, Star } from "lucide-react";
@@ -79,7 +81,18 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
     sourceIds: string[];
   }>({ status: "idle", answer: "", sourceIds: [] });
   const [toast, setToast] = useState("");
-  const saveTimers = useRef(new Map<string, number>());
+  const [saveState, setSaveState] = useState<SaveState>("saved");
+  const [online, setOnline] = useState(navigator.onLine);
+  const [saveQueue] = useState(() => new AutosaveQueue<NoteDraft>((id, draft) => updateNote(id, draft), setSaveState));
+  useEffect(() => registerDraftGuard(() => saveQueue.flush(), () => saveQueue.dirty), [saveQueue]);
+  useEffect(() => {
+    const change = () => {
+      setOnline(navigator.onLine);
+      if (navigator.onLine) void saveQueue.flush().catch(() => {});
+    };
+    window.addEventListener("online", change); window.addEventListener("offline", change);
+    return () => { window.removeEventListener("online", change); window.removeEventListener("offline", change); };
+  }, [saveQueue]);
   const toastTimer = useRef<number | null>(null);
   const aiRequestRef = useRef(0);
   const editorLineRef = useRef<number | null>(null);
@@ -150,9 +163,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
 
   useEffect(() => {
     return () => {
-      for (const timer of saveTimers.current.values()) {
-        window.clearTimeout(timer);
-      }
+      saveQueue.dispose();
       if (toastTimer.current) {
         window.clearTimeout(toastTimer.current);
       }
@@ -270,16 +281,8 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
   }, []);
 
   const persist = useCallback((note: Note) => {
-    const existing = saveTimers.current.get(note.id);
-    if (existing) {
-      window.clearTimeout(existing);
-    }
-    const timer = window.setTimeout(() => {
-      void updateNote(note.id, toDraft(note)).catch(() => flash("Could not save note"));
-      saveTimers.current.delete(note.id);
-    }, 420);
-    saveTimers.current.set(note.id, timer);
-  }, [flash]);
+    saveQueue.schedule(note.id, toDraft(note));
+  }, [saveQueue]);
 
   const pushUndo = useCallback((note: Note, next: Note) => {
     const history = historyRef.current.get(note.id) ?? { undo: [], redo: [] };
@@ -353,6 +356,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       const deleted = new Set(ids);
       for (const id of ids) {
         historyRef.current.delete(id);
+        saveQueue.discard(id);
       }
       setNotes((current) => current.filter((note) => !deleted.has(note.id)));
       setSelectedIds([]);
@@ -518,11 +522,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       await Promise.all(ids.map((id) => deleteNote(id)));
       for (const id of ids) {
         historyRef.current.delete(id);
-        const timer = saveTimers.current.get(id);
-        if (timer) {
-          window.clearTimeout(timer);
-          saveTimers.current.delete(id);
-        }
+        saveQueue.discard(id);
       }
       const deleted = new Set(ids);
       const rest = notes.filter((note) => !deleted.has(note.id));
@@ -580,6 +580,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       const index = Math.max(0, notes.findIndex((item) => item.id === note.id));
       try {
         await deleteNote(note.id);
+        saveQueue.discard(note.id);
         setNotes((current) => current.filter((item) => item.id !== note.id));
         setSelectedIds((current) => current.filter((id) => id !== note.id));
         setActiveId((current) => (current === note.id ? null : current));
@@ -906,7 +907,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
           setSidebarHidden(true);
         }}
         user={user}
-        onLogout={onLogout}
+        onLogout={async () => { await prepareNavigation(); await onLogout(); }}
         onResizeStart={(event) => startColumnResize("navigation", event)}
         onResizeBy={(delta) =>
           setColumnWidth("navigation", navigationWidth + delta)
@@ -1123,6 +1124,10 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
           </button>
         </div>
       ) : null}
+      <div className={`note-save-status${saveState === "error" || !online ? " is-warning" : ""}`} role="status" aria-live="polite">
+        {!online ? (saveQueue.dirty ? "Offline · Unsaved changes. Keep this window open." : "Offline · Reconnect to save changes.") : saveState === "error" ? "Could not save. Changes are kept in this window." : saveState === "saved" ? "All changes saved" : "Saving…"}
+        {saveState === "error" && online ? <button onClick={() => void saveQueue.flush().catch(() => {})}>Retry</button> : null}
+      </div>
       <Toast message={toast} />
     </div>
   );

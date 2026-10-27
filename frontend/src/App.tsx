@@ -5,6 +5,16 @@ import { NotesPage } from "./pages/NotesPage";
 import type { AuthConfig, AuthUser } from "./types/auth";
 
 export default function App() {
+  const [online, setOnline] = useState(navigator.onLine);
+  useEffect(() => {
+    const change = () => setOnline(navigator.onLine);
+    window.addEventListener("online", change);
+    window.addEventListener("offline", change);
+    return () => {
+      window.removeEventListener("online", change);
+      window.removeEventListener("offline", change);
+    };
+  }, []);
   const [config, setConfig] = useState<AuthConfig | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -46,7 +56,17 @@ export default function App() {
   if (loadError || !config) {
     return (
       <div className="auth-unavailable">
-        <strong>Paper is unavailable</strong>
+        <img
+          className="pwa-offline-icon"
+          src="/paper-appicon.svg"
+          alt="Paper"
+        />
+        <strong>{online ? "Paper is unavailable" : "You’re offline"}</strong>
+        <p>
+          {online
+            ? "Check your connection and try again."
+            : "Connect to the internet to open your notes. Offline note access is not available yet."}
+        </p>
         <button type="button" onClick={() => window.location.reload()}>
           Try again
         </button>
@@ -60,7 +80,9 @@ export default function App() {
         config={config}
         theme={theme}
         error={new URLSearchParams(window.location.search).has("authError")}
-        onToggleTheme={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+        onToggleTheme={() =>
+          setTheme((current) => (current === "dark" ? "light" : "dark"))
+        }
       />
     );
   }
@@ -86,5 +108,7 @@ function initialTheme(): "light" | "dark" {
   } catch {
     return "light";
   }
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
 }

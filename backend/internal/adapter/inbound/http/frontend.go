@@ -37,7 +37,7 @@ func newSPAHandler(assets fs.FS) stdhttp.Handler {
 			}
 		}
 
-		if strings.HasPrefix(name, "assets/") || strings.HasPrefix(name, "diagram-icons/") {
+		if strings.HasPrefix(name, "assets/") || strings.HasPrefix(name, "diagram-icons/") || name == "sw.js" || name == "manifest.webmanifest" {
 			stdhttp.NotFound(w, r)
 			return
 		}
@@ -57,6 +57,13 @@ func newSPAHandler(assets fs.FS) stdhttp.Handler {
 
 func setAssetCache(w stdhttp.ResponseWriter, name string) {
 	switch {
+	case name == "sw.js":
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		w.Header().Set("Service-Worker-Allowed", "/")
+	case name == "manifest.webmanifest":
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Content-Type", "application/manifest+json")
 	case strings.HasPrefix(name, "assets/"):
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	case strings.HasPrefix(name, "diagram-icons/"):

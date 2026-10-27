@@ -1,3 +1,4 @@
+import { apiFetch, trackMutation } from "./pwa";
 import type { Folder, FolderDraft, NoteMove } from "../types/note";
 import type { AIAction, AICompletion, AISuggestion, AskAnswer, Note, NoteDraft, NoteImage } from "../types/note";
 import type { AuthConfig, AuthUser } from "../types/auth";
@@ -13,25 +14,27 @@ export class APIError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    credentials: "same-origin",
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
+  return trackMutation(init?.method, async () => {
+    const response = await apiFetch(path, {
+      ...init,
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        ...init?.headers,
+      },
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      throw new APIError(payload?.error ?? "Request failed", response.status);
+    }
+
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    return response.json() as Promise<T>;
   });
-
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new APIError(payload?.error ?? "Request failed", response.status);
-  }
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  return response.json() as Promise<T>;
 }
 
 export function getAuthConfig() {
@@ -65,14 +68,16 @@ export function updateDisplayName(displayName: string) {
 }
 
 export async function uploadAvatar(file: File) {
-  const body = new FormData();
-  body.append("file", file);
-  const response = await fetch("/api/profile/avatar", { method: "POST", body, credentials: "same-origin" });
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new APIError(payload?.error ?? "Avatar upload failed", response.status);
-  }
-  return response.json() as Promise<AuthUser>;
+  return trackMutation("POST", async () => {
+    const body = new FormData();
+    body.append("file", file);
+    const response = await apiFetch("/api/profile/avatar", { method: "POST", body, credentials: "same-origin" });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      throw new APIError(payload?.error ?? "Avatar upload failed", response.status);
+    }
+    return response.json() as Promise<AuthUser>;
+  });
 }
 
 export function removeAvatar() {
@@ -132,18 +137,20 @@ export function generateAI(prompt: string) {
 }
 
 export async function uploadNoteImage(noteId: string, file: File) {
-  const body = new FormData();
-  body.append("file", file);
-  const response = await fetch(`/api/notes/${encodeURIComponent(noteId)}/images`, {
-    method: "POST",
-    body,
-    credentials: "same-origin",
+  return trackMutation("POST", async () => {
+    const body = new FormData();
+    body.append("file", file);
+    const response = await apiFetch(`/api/notes/${encodeURIComponent(noteId)}/images`, {
+      method: "POST",
+      body,
+      credentials: "same-origin",
+    });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(payload?.error ?? "Image upload failed");
+    }
+    return response.json() as Promise<NoteImage>;
   });
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(payload?.error ?? "Image upload failed");
-  }
-  return response.json() as Promise<NoteImage>;
 }
 
 export function listFolders() {

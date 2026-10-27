@@ -10,6 +10,8 @@ import (
 
 func TestSPAHandlerServesFrontendRoutesAndAssets(t *testing.T) {
 	assets := fstest.MapFS{
+		"sw.js":                      &fstest.MapFile{Data: []byte("self.addEventListener")},
+		"manifest.webmanifest":       &fstest.MapFile{Data: []byte(`{"name":"Paper"}`)},
 		"index.html":                 &fstest.MapFile{Data: []byte("<main>Paper</main>")},
 		"assets/app-abc123.js":       &fstest.MapFile{Data: []byte("app")},
 		"diagram-icons/flat/api.svg": &fstest.MapFile{Data: []byte("<svg></svg>")},
@@ -25,6 +27,8 @@ func TestSPAHandlerServesFrontendRoutesAndAssets(t *testing.T) {
 		cache  string
 		method string
 	}{
+		{name: "worker", path: "/sw.js", status: stdhttp.StatusOK, body: "self.addEventListener", cache: "no-cache"},
+		{name: "manifest", path: "/manifest.webmanifest", status: stdhttp.StatusOK, body: `{"name":"Paper"}`, cache: "no-cache"},
 		{name: "root", path: "/", status: stdhttp.StatusOK, body: "<main>Paper</main>", cache: "no-cache"},
 		{name: "frontend route", path: "/notes/123", status: stdhttp.StatusOK, body: "<main>Paper</main>", cache: "no-cache"},
 		{name: "hashed asset", path: "/assets/app-abc123.js", status: stdhttp.StatusOK, body: "app", cache: "public, max-age=31536000, immutable"},
@@ -69,5 +73,16 @@ func TestRouterDoesNotServeTheSPAForUnknownAPIRoutes(t *testing.T) {
 	NewRouter(nil, nil, nil, nil, AuthHTTPConfig{}, RateLimitConfig{}, nil).ServeHTTP(response, request)
 	if response.Code != stdhttp.StatusNotFound {
 		t.Fatalf("expected status %d, got %d", stdhttp.StatusNotFound, response.Code)
+	}
+}
+
+func TestPWAMissingResourcesNeverReturnHTML(t *testing.T) {
+	handler := newSPAHandler(fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("shell")}})
+	for _, path := range []string{"/sw.js", "/manifest.webmanifest"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest("GET", path, nil))
+		if response.Code != 404 {
+			t.Fatalf("%s returned %d", path, response.Code)
+		}
 	}
 }
