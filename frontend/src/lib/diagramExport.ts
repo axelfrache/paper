@@ -101,15 +101,14 @@ export async function buildStandaloneSvg(
 }
 
 function renderBody(layout: DiagramLayout, mode: DiagramMode, iconHref: (n: DiagramLayoutNode) => string, halo: string) {
-  const groups = layout.groups.map((group) => groupMarkup(group)).join("");
+  const groupRegions = layout.groups.map((group) => groupRegionMarkup(group)).join("");
   const edges = layout.edges
     .map((edge) => {
       const cap = edge.markerStart || edge.markerEnd ? "butt" : "round";
       return `<path d="${edge.d}" fill="none" stroke="${edge.color}" stroke-width="${edge.width}" stroke-linecap="${cap}" stroke-linejoin="round"${edge.markerStart ? ` marker-start="${edge.markerStart}"` : ""}${edge.markerEnd ? ` marker-end="${edge.markerEnd}"` : ""}${edge.dashed ? ' stroke-dasharray="7 6"' : ""}/>`;
     })
     .join("");
-  const edgeLabels = layout.edges.map((edge) => edgeLabel(edge)).join("");
-  const nodes = layout.nodes
+  const nodeShapes = layout.nodes
     .map((node) => {
       const faces = node.faces
         .map((face) => `<path d="${face.d}" fill="${face.fill}" stroke="${face.stroke}" stroke-width="1.4"/>`)
@@ -118,6 +117,13 @@ function renderBody(layout: DiagramLayout, mode: DiagramMode, iconHref: (n: Diag
         ? `<text x="${node.cx}" y="${node.capY}" text-anchor="middle" font-size="8.5" letter-spacing="1" font-weight="700" fill="${node.color}">${escapeText(node.cap)}</text>`
         : "";
       const icon = nodeIcon(node, mode, iconHref(node));
+      return `${faces}${cap}${icon}`;
+    })
+    .join("");
+  const groupTabs = layout.groups.map((group) => groupTabMarkup(group)).join("");
+  const edgeLabels = layout.edges.map((edge) => edgeLabel(edge)).join("");
+  const nodeLabels = layout.nodes
+    .map((node) => {
       const boxed = resolveLabelBoxed(node.source.labelBoxed, mode);
       const size = boxed ? 12 : 13;
       const fill = boxed ? exportColors.labelBare : exportColors.label;
@@ -130,21 +136,25 @@ function renderBody(layout: DiagramLayout, mode: DiagramMode, iconHref: (n: Diag
         ? tspans(node.label, node.cx, node.labelY, lineHeight, true)
         : tspans(node.label, node.cx, node.labelY, lineHeight);
       const baseline = boxed ? ` dominant-baseline="central"` : "";
-      return `${faces}${cap}${icon}${plateSvg}<text text-anchor="middle"${baseline} font-size="${size}" font-weight="${boxed ? 500 : 530}" fill="${fill}">${label}</text>`;
+      return `${plateSvg}<text text-anchor="middle"${baseline} font-size="${size}" font-weight="${boxed ? 500 : 530}" fill="${fill}">${label}</text>`;
     })
     .join("");
-  return `${groups}${edges}${edgeLabels}${nodes}`;
+  return `${groupRegions}${edges}${nodeShapes}${groupTabs}${edgeLabels}${nodeLabels}`;
 }
 
-function groupMarkup(group: DiagramLayoutGroup) {
+function groupRegionMarkup(group: DiagramLayoutGroup) {
   const palette = diagramPalette[group.color] ?? diagramPalette.slate;
-  const region = `<polygon points="${group.points}" fill="${palette.fill}" stroke="${palette.stroke}"/>`;
+  return `<polygon points="${group.points}" fill="${palette.fill}" stroke="${palette.stroke}"/>`;
+}
+
+function groupTabMarkup(group: DiagramLayoutGroup) {
   if (!group.tab) {
-    return region;
+    return "";
   }
+  const palette = diagramPalette[group.color] ?? diagramPalette.slate;
   const tab = `<polygon points="${group.tab.points}" fill="${palette.stroke}"/>`;
   const text = `<text x="0" y="0" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="700" letter-spacing="0.3" fill="#ffffff" transform="${group.tab.transform}">${escapeText(group.name.toUpperCase())}</text>`;
-  return `${region}${tab}${text}`;
+  return `${tab}${text}`;
 }
 
 function edgeLabel(edge: DiagramLayoutEdge) {

@@ -153,6 +153,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
   const [guides, setGuides] = useState<AlignmentGuide[]>([]);
   const [spacing, setSpacing] = useState<SpacingHint[]>([]);
   const nudgeCommitRef = useRef<number | null>(null);
+  const nudgeFlushRef = useRef<(() => void) | null>(null);
   const [elementMenuOpen, setElementMenuOpen] = useState(false);
   const [elementMenuRendered, setElementMenuRendered] = useState(false);
   const [pendingFromId, setPendingFromId] = useState<string | null>(null);
@@ -241,7 +242,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
           setExportOpen(false);
           return;
         }
-        onClose();
+        handleClose();
         return;
       }
       if ((event.key === "Delete" || event.key === "Backspace") && (selectedIds.length || selectedEdgeId) && !isTypingTarget(event.target)) {
@@ -281,6 +282,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
     return () => {
       if (nudgeCommitRef.current) {
         window.clearTimeout(nudgeCommitRef.current);
+        nudgeFlushRef.current?.();
       }
     };
   }, []);
@@ -329,13 +331,28 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
     if (nudgeCommitRef.current) {
       window.clearTimeout(nudgeCommitRef.current);
     }
-    nudgeCommitRef.current = window.setTimeout(() => {
+    const flush = () => {
       nudgeCommitRef.current = null;
+      nudgeFlushRef.current = null;
       setGuides([]);
       setSpacing([]);
       resolveGroupMembershipAfterDrag(selectedIds);
       commitDiagram();
-    }, 400);
+    };
+    nudgeFlushRef.current = flush;
+    nudgeCommitRef.current = window.setTimeout(flush, 400);
+  };
+
+  const flushPendingNudge = () => {
+    if (nudgeCommitRef.current) {
+      window.clearTimeout(nudgeCommitRef.current);
+      nudgeFlushRef.current?.();
+    }
+  };
+
+  const handleClose = () => {
+    flushPendingNudge();
+    onClose();
   };
 
   const patchDiagram = (updater: (current: Diagram) => Diagram, options?: { commit?: boolean }) => {
@@ -1277,7 +1294,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
             ) : null}
           </div>
           <span className="diagram-editor-divider" aria-hidden="true"></span>
-          <button className="topbar-icon-button" onClick={onClose} aria-label="Close" title="Close">
+          <button className="topbar-icon-button" onClick={handleClose} aria-label="Close" title="Close">
             <X size={17} strokeWidth={2} />
           </button>
         </div>
@@ -1373,32 +1390,16 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
             const palette = diagramPalette[group.color] ?? diagramPalette.slate;
             const active = selectedGroup?.id === group.id;
             return (
-              <g key={group.id}>
-                <polygon
-                  className="diagram-group-region"
-                  points={group.points}
-                  fill={palette.fill}
-                  stroke={palette.stroke}
-                  strokeWidth={active ? 2.2 : 1.4}
-                  strokeDasharray={active ? undefined : "6 5"}
-                  onPointerDown={(event) => handleNodePointerDown(event, group.source.members[0], group.source.members)}
-                />
-                {group.tab ? (
-                  <>
-                    <polygon className="diagram-group-tab" points={group.tab.points} fill={palette.stroke} />
-                    <text
-                      className="diagram-group-tab-label"
-                      x={0}
-                      y={0}
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      transform={group.tab.transform}
-                    >
-                      {group.name}
-                    </text>
-                  </>
-                ) : null}
-              </g>
+              <polygon
+                key={group.id}
+                className="diagram-group-region"
+                points={group.points}
+                fill={palette.fill}
+                stroke={palette.stroke}
+                strokeWidth={active ? 2.2 : 1.4}
+                strokeDasharray={active ? undefined : "6 5"}
+                onPointerDown={(event) => handleNodePointerDown(event, group.source.members[0], group.source.members)}
+              />
             );
           })}
 
@@ -1492,39 +1493,6 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
                 </text>
               ) : null}
               {node.icon ? <DiagramNodeIcon node={node} mode={liveDiagram.mode} /> : null}
-              {editingId === node.id ? (
-                <foreignObject
-                  x={node.cx - inlineLabelWidth(node.hw) / 2}
-                  y={node.labelY - 16}
-                  width={inlineLabelWidth(node.hw)}
-                  height={inlineLabelHeight(node.label)}
-                >
-                  <textarea
-                    ref={labelInputRef}
-                    className="diagram-inline-label-input"
-                    rows={labelRowCount(node.label)}
-                    value={node.label}
-                    onChange={(event) => setNodeLabel(node.id, event.target.value)}
-                    onBlur={stopInlineLabelEdit}
-                    onPointerDown={(event) => {
-                      event.stopPropagation();
-                    }}
-                    onKeyDown={handleLabelKeyDown}
-                  />
-                </foreignObject>
-              ) : (
-                <foreignObject
-                  x={node.cx - 100}
-                  y={node.labelY - 18}
-                  width="200"
-                  height="28"
-                  style={{ overflow: "visible", pointerEvents: "none" }}
-                >
-                  <div className={resolveLabelBoxed(node.source.labelBoxed, liveDiagram.mode) ? "diagram-node-label bare" : "diagram-node-label"}>
-                    <span>{node.label}</span>
-                  </div>
-                </foreignObject>
-              )}
               <rect
                 x={node.hx}
                 y={node.hy}
@@ -1550,6 +1518,62 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
               ) : null}
             </g>
           ))}
+
+          {layout.nodes.map((node) =>
+            editingId === node.id ? (
+              <foreignObject
+                key={node.id}
+                x={node.cx - inlineLabelWidth(node.hw) / 2}
+                y={node.labelY - 16}
+                width={inlineLabelWidth(node.hw)}
+                height={inlineLabelHeight(node.label)}
+              >
+                <textarea
+                  ref={labelInputRef}
+                  className="diagram-inline-label-input"
+                  rows={labelRowCount(node.label)}
+                  value={node.label}
+                  onChange={(event) => setNodeLabel(node.id, event.target.value)}
+                  onBlur={stopInlineLabelEdit}
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                  }}
+                  onKeyDown={handleLabelKeyDown}
+                />
+              </foreignObject>
+            ) : (
+              <foreignObject
+                key={node.id}
+                x={node.cx - 100}
+                y={node.labelY - 18}
+                width="200"
+                height="28"
+                style={{ overflow: "visible", pointerEvents: "none" }}
+              >
+                <div className={resolveLabelBoxed(node.source.labelBoxed, liveDiagram.mode) ? "diagram-node-label bare" : "diagram-node-label"}>
+                  <span>{node.label}</span>
+                </div>
+              </foreignObject>
+            ),
+          )}
+
+          {layout.groups.map((group) =>
+            group.tab ? (
+              <g key={group.id}>
+                <polygon className="diagram-group-tab" points={group.tab.points} fill={diagramPalette[group.color]?.stroke ?? diagramPalette.slate.stroke} />
+                <text
+                  className="diagram-group-tab-label"
+                  x={0}
+                  y={0}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  transform={group.tab.transform}
+                >
+                  {group.name}
+                </text>
+              </g>
+            ) : null,
+          )}
 
           {selectedGroup && tool !== "pan"
             ? (() => {

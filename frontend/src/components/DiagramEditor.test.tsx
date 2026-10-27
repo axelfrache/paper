@@ -579,3 +579,100 @@ describe("node groups", () => {
     expect(editor.value().groups?.[0].padding).toBeGreaterThan(defaultGroupPadding);
   });
 });
+
+describe("closing while a keyboard nudge is still debouncing", () => {
+  function mountWithClose(initial: Diagram) {
+    const host = document.createElement("div");
+    document.body.replaceChildren(host);
+    root = createRoot(host);
+    let latest = initial;
+    let closed = false;
+    function LocalHarness() {
+      const [diagram, setDiagram] = useState(initial);
+      return (
+        <DiagramEditor
+          diagram={diagram}
+          onChange={(next) => {
+            setDiagram(next);
+            latest = next;
+          }}
+          onClose={() => {
+            closed = true;
+          }}
+        />
+      );
+    }
+    act(() => {
+      root?.render(<LocalHarness />);
+    });
+    const svg = host.querySelector<SVGSVGElement>("svg.diagram-canvas")!;
+    vi.spyOn(svg, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 400, 300));
+    return {
+      host,
+      value: () => latest,
+      isClosed: () => closed,
+    };
+  }
+
+  function selectNode(host: HTMLElement, index: number) {
+    act(() => {
+      host.querySelectorAll(".diagram-node")[index]?.dispatchEvent(
+        new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true }),
+      );
+      window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+    });
+  }
+
+  it("flushes an in-flight nudge when the close button is clicked before the debounce fires", () => {
+    const editor = mountWithClose(rowOfThree("iso"));
+    selectNode(editor.host, 1);
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    });
+    expect(editor.value().nodes.find((item) => item.id === "middle")?.x).toBe(200);
+
+    const closeButton = editor.host.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!;
+    act(() => {
+      closeButton.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(editor.value().nodes.find((item) => item.id === "middle")?.x).toBeGreaterThan(200);
+    expect(editor.isClosed()).toBe(true);
+  });
+
+  it("flushes an in-flight nudge when Escape is pressed before the debounce fires", () => {
+    const editor = mountWithClose(rowOfThree("iso"));
+    selectNode(editor.host, 1);
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    });
+    expect(editor.value().nodes.find((item) => item.id === "middle")?.x).toBe(200);
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+
+    expect(editor.value().nodes.find((item) => item.id === "middle")?.x).toBeGreaterThan(200);
+    expect(editor.isClosed()).toBe(true);
+  });
+});
+
+describe("label paint order", () => {
+  it("renders every node's label after every node's shape in the DOM, regardless of node order", () => {
+    const diagram: Diagram = {
+      version: 1,
+      mode: "iso",
+      nodes: [node("left", 0), node("right", 200)],
+      edges: [],
+    };
+    const editor = mount(diagram);
+    const html = editor.host.innerHTML;
+    const lastShapeIndex = html.lastIndexOf("diagram-node\"");
+    const firstLabelIndex = html.indexOf("diagram-node-label");
+    expect(lastShapeIndex).toBeGreaterThan(-1);
+    expect(firstLabelIndex).toBeGreaterThan(-1);
+    expect(firstLabelIndex).toBeGreaterThan(lastShapeIndex);
+  });
+});

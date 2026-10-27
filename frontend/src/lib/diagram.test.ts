@@ -401,6 +401,27 @@ describe("node label badge", () => {
   });
 });
 
+describe("label paint order", () => {
+  const twoOverlappingNodes = (): Diagram => ({
+    version: 1,
+    mode: "iso",
+    nodes: [
+      { id: "a", kind: "server", x: 0, y: 0, label: "A", color: "blue" },
+      { id: "b", kind: "server", x: 50, y: 50, label: "B", color: "blue" },
+    ],
+    edges: [],
+  });
+
+  it("paints every node's label after every node's icon, regardless of node order", () => {
+    const html = diagramToSvgMarkup(twoOverlappingNodes());
+    const labelAIndex = html.indexOf(">A</tspan>");
+    const lastIconIndex = html.lastIndexOf("<image");
+    expect(labelAIndex).toBeGreaterThan(-1);
+    expect(lastIconIndex).toBeGreaterThan(-1);
+    expect(labelAIndex).toBeGreaterThan(lastIconIndex);
+  });
+});
+
 describe("node groups", () => {
   const twoNodeDiagram = (groups?: Diagram["groups"]): Diagram => ({
     version: 1,

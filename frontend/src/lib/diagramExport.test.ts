@@ -103,4 +103,13 @@ describe("standalone diagram SVG", () => {
     expect(marker).toContain("diagram:");
     expect(svg).toContain("<svg");
   });
+
+  it("paints every node's label after every node's icon, regardless of node order", async () => {
+    const svg = await buildStandaloneSvg(withIcons("iso"), undefined, fakeIcon);
+    const firstLabelIndex = svg.indexOf(">Cluster</tspan>");
+    const lastIconIndex = svg.lastIndexOf("<image");
+    expect(firstLabelIndex).toBeGreaterThan(-1);
+    expect(lastIconIndex).toBeGreaterThan(-1);
+    expect(firstLabelIndex).toBeGreaterThan(lastIconIndex);
+  });
 });

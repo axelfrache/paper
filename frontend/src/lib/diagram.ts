@@ -527,12 +527,11 @@ export function diagramToSvgMarkup(diagram: Diagram, maxHeight = 340) {
   const viewBoxHeight = Math.max(90, bounds.height);
   const displayHeight = Math.max(120, Math.min(640, diagram.preview?.height ?? Math.min(maxHeight, viewBoxHeight)));
   const body = [
-    ...layout.groups.map((group) => groupSvg(group)),
+    ...layout.groups.map((group) => groupRegionSvg(group)),
     ...layout.edges.map((edge) => {
       const lineCap = edge.markerStart || edge.markerEnd ? "butt" : "round";
       return `<path d="${edge.d}" fill="none" stroke="${edge.color}" stroke-width="${edge.width}" stroke-linecap="${lineCap}" stroke-linejoin="round"${edge.markerStart ? ` marker-start="${edge.markerStart}"` : ""}${edge.markerEnd ? ` marker-end="${edge.markerEnd}"` : ""}${edge.dashed ? ' stroke-dasharray="7 6"' : ""}/>`;
     }),
-    ...layout.edges.map((edge) => edgeLabelSvg(edge)),
     ...layout.nodes.map((node) => {
       const faces = node.faces
         .map((face) => `<path d="${face.d}" fill="${face.fill}" stroke="${face.stroke}" stroke-width="1.4"/>`)
@@ -541,6 +540,11 @@ export function diagramToSvgMarkup(diagram: Diagram, maxHeight = 340) {
         ? `<text x="${node.cx}" y="${node.capY}" text-anchor="middle" font-size="8.5" letter-spacing="1" font-weight="700" fill="${node.color}">${escapeHtml(node.cap)}</text>`
         : "";
       const icon = nodeIconSvg(node, diagram.mode);
+      return `${faces}${cap}${icon}`;
+    }),
+    ...layout.groups.map((group) => groupTabSvg(group)),
+    ...layout.edges.map((edge) => edgeLabelSvg(edge)),
+    ...layout.nodes.map((node) => {
       const boxed = resolveLabelBoxed(node.source.labelBoxed, diagram.mode);
       const labelSize = boxed ? 12 : 13;
       const labelWeight = boxed ? 500 : 530;
@@ -556,7 +560,7 @@ export function diagramToSvgMarkup(diagram: Diagram, maxHeight = 340) {
         ? labelTspans(node.label, node.cx, node.labelY, lineHeight, true)
         : labelTspans(node.label, node.cx, node.labelY, lineHeight);
       const baseline = boxed ? ` dominant-baseline="central"` : "";
-      return `${faces}${cap}${icon}${plateSvg}<text text-anchor="middle"${baseline} font-size="${labelSize}" font-weight="${labelWeight}" fill="${labelFill}">${labelBody}</text>`;
+      return `${plateSvg}<text text-anchor="middle"${baseline} font-size="${labelSize}" font-weight="${labelWeight}" fill="${labelFill}">${labelBody}</text>`;
     }),
   ].join("");
 
@@ -660,15 +664,19 @@ function edgeLabelSvg(edge: DiagramLayoutEdge) {
   return `${backing}<text class="diagram-edge-label" text-anchor="middle" dominant-baseline="central" stroke-width="${edgeLabelHalo(edge.width)}">${body}</text>`;
 }
 
-function groupSvg(group: DiagramLayoutGroup) {
+function groupRegionSvg(group: DiagramLayoutGroup) {
   const palette = diagramPalette[group.color] ?? diagramPalette.slate;
-  const region = `<polygon class="diagram-group-region" points="${group.points}" fill="${palette.fill}" stroke="${palette.stroke}"/>`;
+  return `<polygon class="diagram-group-region" points="${group.points}" fill="${palette.fill}" stroke="${palette.stroke}"/>`;
+}
+
+function groupTabSvg(group: DiagramLayoutGroup) {
   if (!group.tab) {
-    return region;
+    return "";
   }
+  const palette = diagramPalette[group.color] ?? diagramPalette.slate;
   const tab = `<polygon class="diagram-group-tab" points="${group.tab.points}" fill="${palette.stroke}"/>`;
   const text = `<text class="diagram-group-tab-label" x="0" y="0" text-anchor="middle" dominant-baseline="central" transform="${group.tab.transform}">${escapeHtml(group.name)}</text>`;
-  return `${region}${tab}${text}`;
+  return `${tab}${text}`;
 }
 
 function contentBounds(layout: DiagramLayout) {
