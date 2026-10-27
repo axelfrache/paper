@@ -416,6 +416,21 @@ describe("node groups", () => {
     expect(editor.value().nodes).toHaveLength(3);
   });
 
+  it("changes the group label edge and corner", () => {
+    const editor = mount(rowOfThree("iso"));
+    editor.select(0);
+    shiftSelect(editor.host, 1);
+    editor.press("g", { metaKey: true });
+    for (const label of ["Group label edge", "Group label corner"]) {
+      const select = editor.host.querySelector<HTMLSelectElement>(`[aria-label="${label}"]`)!;
+      act(() => {
+        select.value = "right";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    }
+    expect(editor.value().groups?.[0]).toMatchObject({ labelEdge: "right", labelAlign: "right" });
+  });
+
   it("renames a group", () => {
     const editor = mount(rowOfThree("iso"));
     editor.select(0);

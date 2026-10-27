@@ -2889,6 +2889,7 @@ span.account-avatar-lg {
 }
 
 .diagram-inspector input,
+.diagram-inspector select,
 .diagram-inspector textarea {
   width: 100%;
   border: 1px solid var(--line-input);
@@ -2896,6 +2897,11 @@ span.account-avatar-lg {
   background: var(--bg);
   padding: 5px 8px;
   font-size: 12.5px;
+}
+
+.diagram-inspector select {
+  color: var(--text);
+  font-family: inherit;
 }
 
 .diagram-inspector-label {

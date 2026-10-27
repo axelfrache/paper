@@ -57,6 +57,8 @@ export type DiagramGroup = {
   color: DiagramColor;
   members: string[];
   padding?: number;
+  labelEdge?: "top" | "right";
+  labelAlign?: "left" | "right";
 };
 
 export const minGroupPadding = 24;
@@ -422,7 +424,11 @@ function layoutGroup(group: DiagramGroup, diagramNodes: DiagramNode[], mode: Dia
     { x: maxX, y: maxY },
     { x: minX, y: maxY },
   ].map((corner) => diagramToLayoutPoint(mode, corner.x, corner.y));
-  const [top, , , left] = corners;
+  const [top, right, bottom, left] = corners;
+  const onRight = group.labelEdge === "right";
+  const start = mode === "iso" ? (onRight ? top : left) : (onRight ? right : top);
+  const end = mode === "iso" ? (onRight ? right : top) : (onRight ? bottom : right);
+  const inward = mode === "iso" ? (onRight ? left : bottom) : (onRight ? top : left);
   const cornerXs = corners.map((p) => p.x);
   const cornerYs = corners.map((p) => p.y);
   const hx = Math.min(...cornerXs);
@@ -439,7 +445,7 @@ function layoutGroup(group: DiagramGroup, diagramNodes: DiagramNode[], mode: Dia
     hw,
     hh,
     points: corners.map((p) => `${Math.round(p.x * 10) / 10},${Math.round(p.y * 10) / 10}`).join(" "),
-    tab: groupTabGeometry(top, left, corners[1], (group.name ?? "").trim()),
+    tab: groupTabGeometry(start, end, inward, (group.name ?? "").trim(), group.labelAlign),
   };
 }
 
@@ -448,19 +454,14 @@ function groupTabGeometry(
   left: { x: number; y: number },
   right: { x: number; y: number },
   label: string,
+  align: DiagramGroup["labelAlign"],
 ): DiagramGroupTab | null {
   if (!label) {
     return null;
   }
-  let dx = left.x - top.x;
-  let dy = left.y - top.y;
-  let origin = top;
-  const rawAngle = (Math.atan2(dy, dx) * 180) / Math.PI;
-  if (rawAngle > 90 || rawAngle < -90) {
-    dx = -dx;
-    dy = -dy;
-    origin = left;
-  }
+  const dx = left.x - top.x;
+  const dy = left.y - top.y;
+  const origin = top;
   const edgeLen = Math.hypot(dx, dy) || 1;
   const ux = dx / edgeLen;
   const uy = dy / edgeLen;
@@ -476,7 +477,7 @@ function groupTabGeometry(
   );
   const tabWidth = Math.max(fontSize * 3, textWidth + 20);
   const tabHeight = fontSize * 2;
-  const inset = 0;
+  const inset = align === "right" ? edgeLen - tabWidth : 0;
   const corner = (along: number, across: number) => ({
     x: origin.x + ux * along + px * across,
     y: origin.y + uy * along + py * across,
@@ -1478,6 +1479,8 @@ function normalizeGroup(value: unknown, nodeIds: Set<string>): DiagramGroup | nu
     name: typeof group.name === "string" && group.name.replace(/\s+/g, " ").trim() ? group.name.replace(/\s+/g, " ").trim().slice(0, 80) : undefined,
     color: isDiagramColor(group.color) ? group.color : "slate",
     members,
+    labelEdge: group.labelEdge === "right" || group.labelEdge === "top" ? group.labelEdge : undefined,
+    labelAlign: group.labelAlign === "right" || group.labelAlign === "left" ? group.labelAlign : undefined,
     padding: typeof group.padding === "number" ? Math.max(minGroupPadding, Math.round(group.padding)) : undefined,
   };
 }

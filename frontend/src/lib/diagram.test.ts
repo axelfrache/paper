@@ -453,6 +453,25 @@ describe("node groups", () => {
     expect(html).not.toContain("diagram-group-label-plate");
   });
 
+  it("positions and persists labels at either end of both edges in both modes", () => {
+    for (const mode of ["iso", "flat"] as const) {
+      for (const labelEdge of ["top", "right"] as const) {
+        for (const labelAlign of ["left", "right"] as const) {
+          const group = { ...createDiagramGroup(["a", "b"], "blue"), name: "Core", labelEdge, labelAlign };
+          const diagram = { ...twoNodeDiagram([group]), mode };
+          const saved = parseDiagramMarker(serializeDiagramMarker(diagram))!;
+          expect(saved.groups![0]).toMatchObject({ labelEdge, labelAlign });
+          const region = layoutDiagram(saved).groups[0];
+          const corners = region.points.split(" ");
+          const startIndex = mode === "iso" ? (labelEdge === "top" ? 3 : 0) : (labelEdge === "top" ? 0 : 1);
+          const endIndex = mode === "iso" ? (labelEdge === "top" ? 0 : 1) : (labelEdge === "top" ? 1 : 2);
+          expect(region.tab!.points.split(" ")[labelAlign === "left" ? 0 : 1])
+            .toBe(corners[labelAlign === "left" ? startIndex : endIndex]);
+        }
+      }
+    }
+  });
+
   it("grows the region with an explicit padding, and clamps a too-small one", () => {
     const base = layoutDiagram(twoNodeDiagram([createDiagramGroup(["a", "b"], "violet")])).groups[0];
     const wider = layoutDiagram(

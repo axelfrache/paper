@@ -795,6 +795,15 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
     }));
   };
 
+  const positionGroupLabel = (position: Pick<DiagramGroup, "labelEdge" | "labelAlign">) => {
+    if (!selectedGroup) return;
+    const groupId = selectedGroup.id;
+    patchDiagram((current) => ({
+      ...current,
+      groups: current.groups?.map((group) => group.id === groupId ? { ...group, ...position } : group),
+    }));
+  };
+
   const applyGroupColor = (nextColor: DiagramColor) => {
     if (!selectedGroup) {
       return;
@@ -1851,6 +1860,28 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
                 ))}
               </div>
             </div>
+            <label className="diagram-inspector-style">
+              <span>Label edge</span>
+              <select
+                aria-label="Group label edge"
+                value={selectedGroup.labelEdge ?? "top"}
+                onChange={(event) => positionGroupLabel({ labelEdge: event.target.value as "top" | "right" })}
+              >
+                <option value="top">Top (horizontal)</option>
+                <option value="right">Right (vertical)</option>
+              </select>
+            </label>
+            <label className="diagram-inspector-style">
+              <span>Label corner</span>
+              <select
+                aria-label="Group label corner"
+                value={selectedGroup.labelAlign ?? "left"}
+                onChange={(event) => positionGroupLabel({ labelAlign: event.target.value as "left" | "right" })}
+              >
+                <option value="left">Left / start</option>
+                <option value="right">Right / end</option>
+              </select>
+            </label>
             <button onClick={ungroupSelected}>Ungroup</button>
           </aside>
         ) : selectedNodes.length > 1 ? (
