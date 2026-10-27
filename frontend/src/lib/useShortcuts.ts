@@ -24,7 +24,7 @@ export function useShortcuts(handlers: ShortcutHandlers) {
         modifierHeldRef.current = true;
       }
 
-      if (document.querySelector(".diagram-editor")) {
+      if (document.querySelector(".diagram-editor, dialog[open]")) {
         return;
       }
 

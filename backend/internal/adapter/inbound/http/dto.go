@@ -7,6 +7,7 @@ import (
 )
 
 type noteDraftDTO struct {
+	FolderID *string  `json:"folderId"`
 	Title    string   `json:"title"`
 	Content  string   `json:"content"`
 	Tags     []string `json:"tags"`
@@ -15,6 +16,7 @@ type noteDraftDTO struct {
 
 func (d noteDraftDTO) toDomain() domain.NoteDraft {
 	return domain.NoteDraft{
+		FolderID: d.FolderID,
 		Title:    d.Title,
 		Content:  d.Content,
 		Tags:     d.Tags,
@@ -23,6 +25,7 @@ func (d noteDraftDTO) toDomain() domain.NoteDraft {
 }
 
 type noteDTO struct {
+	FolderID  *string   `json:"folderId"`
 	ID        string    `json:"id"`
 	Title     string    `json:"title"`
 	Content   string    `json:"content"`
@@ -34,6 +37,7 @@ type noteDTO struct {
 
 func newNoteDTO(note domain.Note) noteDTO {
 	return noteDTO{
+		FolderID:  note.FolderID,
 		ID:        note.ID,
 		Title:     note.Title,
 		Content:   note.Content,

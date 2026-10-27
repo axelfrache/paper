@@ -1,3 +1,4 @@
+import type { Folder, FolderDraft, NoteMove } from "../types/note";
 import type { AIAction, AICompletion, AISuggestion, AskAnswer, Note, NoteDraft, NoteImage } from "../types/note";
 import type { AuthConfig, AuthUser } from "../types/auth";
 
@@ -82,7 +83,7 @@ export function listNotes() {
   return request<Note[]>("/api/notes");
 }
 
-export function createNote(draft: NoteDraft) {
+export function createNote(draft: NoteDraft & { folderId?: string | null }) {
   return request<Note>("/api/notes", {
     method: "POST",
     body: JSON.stringify(draft),
@@ -143,4 +144,25 @@ export async function uploadNoteImage(noteId: string, file: File) {
     throw new Error(payload?.error ?? "Image upload failed");
   }
   return response.json() as Promise<NoteImage>;
+}
+
+export function listFolders() {
+  return request<Folder[]>("/api/folders");
+}
+export function saveFolder(draft: FolderDraft, id?: string) {
+  return request<Folder>(
+    id ? `/api/folders/${encodeURIComponent(id)}` : "/api/folders",
+    { method: id ? "PATCH" : "POST", body: JSON.stringify(draft) },
+  );
+}
+export function deleteFolder(id: string) {
+  return request<void>(`/api/folders/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+export function moveNotes(moves: NoteMove[]) {
+  return request<void>("/api/notes/move", {
+    method: "POST",
+    body: JSON.stringify({ moves }),
+  });
 }

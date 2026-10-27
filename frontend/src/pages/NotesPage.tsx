@@ -4,6 +4,11 @@ import { AlignLeft, ListTodo, MessageCircleQuestion, Plus, Star } from "lucide-r
 import { CommandPalette, type PaletteAction, type PaletteMode } from "../components/CommandPalette";
 import { NotesColumn } from "../components/NotesColumn";
 import { Sidebar, type ViewKey } from "../components/Sidebar";
+import { FolderNav } from "../components/FolderNav";
+import { FolderDialog, folderColors, type FolderDialogState } from "../components/FolderDialog";
+import { listFolders, saveFolder, deleteFolder, moveNotes } from "../lib/api";
+import type { Folder, NoteMove } from "../types/note";
+import { Folder as FolderIcon, ChevronDown } from "lucide-react";
 import { Toast } from "../components/Toast";
 import { NoteEditor, type AIResult } from "../features/NoteEditor";
 import { askNotes, assistNote, createNote, deleteNote, listNotes, searchNotes, updateNote, uploadNoteImage } from "../lib/api";
@@ -41,6 +46,14 @@ const emptyDraft: NoteDraft = {
 
 export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEnabled: boolean; onLogout: () => Promise<void> }) {
   const [notes, setNotes] = useState<Note[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  // undefined = all folders, null = unfiled.
+  const [folderScope, setFolderScope] = useState<string | null | undefined>(undefined);
+  const [folderDialog, setFolderDialog] = useState<FolderDialogState | null>(null);
+  const [moveUndo, setMoveUndo] = useState<NoteMove[] | null>(null);
+  const [moving, setMoving] = useState(false);
+  const folderBusy = useRef(false);
+  const sortedFolders = useMemo(() => [...folders].sort((a,b) => a.name.localeCompare(b.name)), [folders]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [view, setView] = useState<ViewKey>("all");
@@ -109,7 +122,8 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
 
   useEffect(() => {
     const load = async () => {
-      const nextNotes = await listNotes();
+      const [nextNotes, nextFolders] = await Promise.all([listNotes(), listFolders()]);
+      setFolders(nextFolders);
       setNotes(nextNotes);
       const savedId = readLastActiveNoteId();
       const initial = nextNotes.find((note) => note.id === savedId) ?? nextNotes[0] ?? null;
@@ -157,6 +171,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
 
   const visibleNotes = useMemo(() => {
     let pool = [...notes].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    if (folderScope !== undefined) pool = pool.filter((note) => (note.folderId ?? null) === folderScope);
     if (matchIds) {
       pool = pool.filter((note) => matchIds.has(note.id));
     }
@@ -168,19 +183,19 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       pool = pool.slice(0, 5);
     }
     return pool;
-  }, [notes, view, matchIds]);
+  }, [notes, view, matchIds, folderScope]);
 
   const notesRef = useRef(notes);
   notesRef.current = notes;
   const searchSeq = useRef(0);
 
   useEffect(() => {
+    const seq = ++searchSeq.current;
     const trimmed = query.trim();
     if (!trimmed && activeTags.length === 0) {
       setMatchIds(null);
       return;
     }
-    const seq = ++searchSeq.current;
     const handle = window.setTimeout(() => {
       void searchNotes(trimmed, activeTags)
         .then((results) => {
@@ -308,7 +323,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       return false;
     }
     try {
-      const restored = await Promise.all(action.notes.map((note) => createNote(toDraft(note))));
+      const restored = await Promise.all(action.notes.map((note) => createNote({ ...toDraft(note), folderId: folders.some((folder) => folder.id === note.folderId) ? note.folderId : null })));
       setNotes((current) => {
         const next = [...current];
         next.splice(Math.min(action.index, next.length), 0, ...restored);
@@ -325,7 +340,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       flash(action.notes.length === 1 ? "Could not restore note" : "Could not restore notes");
       return true;
     }
-  }, [flash]);
+  }, [flash, folders]);
 
   const redoDeletedNotes = useCallback(async () => {
     const action = deletedHistoryRef.current.redo.pop();
@@ -407,7 +422,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
 
   const handleNew = useCallback(async () => {
     try {
-      const note = await createNote(emptyDraft);
+      const note = await createNote({ ...emptyDraft, folderId: folderScope ?? null });
       setNotes((current) => [note, ...current]);
       setActiveId(note.id);
       setSelectedIds([note.id]);
@@ -425,10 +440,11 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
     } catch {
       flash("Could not create note");
     }
-  }, [closeCompactSidebar, flash]);
+  }, [closeCompactSidebar, flash, folderScope]);
 
   const selectNote = useCallback(
     (note: Note, extend = false) => {
+      if (folderScope !== undefined && (note.folderId ?? null) !== folderScope) setFolderScope(undefined);
       setActiveId(note.id);
       setMobilePane("editor");
       setTagDraft("");
@@ -448,7 +464,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       setSelectedIds([note.id]);
       lastSelectedIdRef.current = note.id;
     },
-    [visibleNotes],
+    [visibleNotes, folderScope],
   );
 
   const navigateNote = useCallback(
@@ -546,7 +562,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
   const duplicateNote = useCallback(
     async (note: Note) => {
       try {
-        const created = await createNote({ ...toDraft(note), title: note.title ? `${note.title} (copy)` : "" });
+        const created = await createNote({ ...toDraft(note), folderId: note.folderId ?? null, title: note.title ? `${note.title} (copy)` : "" });
         setNotes((current) => [created, ...current]);
         setActiveId(created.id);
         setSelectedIds([created.id]);
@@ -780,6 +796,65 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
     onEscape: () => setPaletteOpen(false),
   });
 
+  const applyMoves = async (moves: NoteMove[], remember = true) => {
+    if (folderBusy.current)
+      throw new Error("Please wait for the current move to finish.");
+    folderBusy.current = true;
+    setMoving(true);
+    const previous = moves.map((move) => ({
+      noteId: move.noteId,
+      folderId:
+        notesRef.current.find((note) => note.id === move.noteId)?.folderId ??
+        null,
+    }));
+    const patchFolders = (changes: NoteMove[]) =>
+      setNotes((current) =>
+        current.map((note) => {
+          const change = changes.find((move) => move.noteId === note.id);
+          return change ? { ...note, folderId: change.folderId } : note;
+        }),
+      );
+    patchFolders(moves);
+    try {
+      await moveNotes(moves);
+      setMoveUndo(remember ? previous : null);
+      if (folderScope !== undefined) {
+        const leaving = new Set(
+          moves
+            .filter((move) => move.folderId !== folderScope)
+            .map((move) => move.noteId),
+        );
+        setSelectedIds((ids) => ids.filter((id) => !leaving.has(id)));
+        setActiveId((id) => (id && leaving.has(id) ? null : id));
+      }
+    } catch (error) {
+      patchFolders(previous);
+      throw error;
+    } finally {
+      folderBusy.current = false;
+      setMoving(false);
+    }
+  };
+  const moveTo = (ids: string[], folderId: string | null) =>
+    applyMoves(ids.map((noteId) => ({ noteId, folderId })));
+  const chooseFolder = (id: string | null) => {
+    setNavPinned(true);
+    setFolderScope(id);
+    setView("all");
+    setMobilePane("notes");
+    const first = notes.find(
+      (note) =>
+        (note.folderId ?? null) === id &&
+        matchesFilter(note, { query, tags: activeTags }),
+    );
+    setActiveId(first?.id ?? null);
+    setSelectedIds(first ? [first.id] : []);
+    closeCompactSidebar();
+  };
+  const openMove = (ids: string[]) => {
+    if (ids.length) setFolderDialog({ kind: "move", ids });
+  };
+
   const shellStyle = {
     "--sidebar-width": `${navigationWidth}px`,
     "--notes-width": `${notesWidth}px`,
@@ -788,11 +863,32 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
   return (
     <div className={`app-shell mobile-${mobilePane}`} style={shellStyle}>
       <Sidebar
+        foldersSlot={
+          <FolderNav
+            folders={sortedFolders}
+            notes={notes}
+            selected={folderScope}
+            onSelect={chooseFolder}
+            onCreate={() => setFolderDialog({ kind: "new" })}
+            onEdit={(folder) => setFolderDialog({ kind: "edit", folder })}
+            onDelete={(folder) => setFolderDialog({ kind: "edit", folder, confirmDelete: true })}
+            onDrop={(ids, id) =>
+              void moveTo(
+                ids.filter((noteId) =>
+                  notes.some((note) => note.id === noteId),
+                ),
+                id,
+              ).catch((error: Error) => flash(error.message))
+            }
+          />
+        }
+        folderSelected={folderScope !== undefined}
         notes={notes}
         view={view}
         activeTags={activeTags}
         hidden={sidebarHidden}
         onViewChange={(nextView) => {
+          setFolderScope(undefined);
           setView(nextView);
           setActiveTags([]);
           setQuery("");
@@ -812,7 +908,9 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
         user={user}
         onLogout={onLogout}
         onResizeStart={(event) => startColumnResize("navigation", event)}
-        onResizeBy={(delta) => setColumnWidth("navigation", navigationWidth + delta)}
+        onResizeBy={(delta) =>
+          setColumnWidth("navigation", navigationWidth + delta)
+        }
       />
 
       {!sidebarHidden ? (
@@ -828,7 +926,22 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       ) : null}
 
       <NotesColumn
-        title={titleForView(view)}
+        title={
+          folderScope === undefined
+            ? titleForView(view)
+            : folderScope === null
+              ? "No folder"
+              : (folders.find((folder) => folder.id === folderScope)?.name ??
+                "Folder")
+        }
+        folders={folders}
+        showFolders={folderScope === undefined}
+        onMoveNotes={openMove}
+        onSearchAll={
+          folderScope !== undefined && (query.trim() || activeTags.length)
+            ? () => setFolderScope(undefined)
+            : undefined
+        }
         notes={visibleNotes}
         activeId={activeId}
         selectedIds={selectedIds}
@@ -857,6 +970,33 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       />
 
       <NoteEditor
+        folderControl={
+          activeNote ? (
+            <button
+              className="editor-folder-button"
+              onClick={() => openMove([activeNote.id])}
+              aria-label="Move note to folder"
+              title="Move to folder"
+            >
+              <FolderIcon
+                size={14}
+                style={{
+                  color:
+                    folderColors[
+                      folders.find(
+                        (folder) => folder.id === activeNote.folderId,
+                      )?.color ?? "slate"
+                    ],
+                }}
+              />
+              <span>
+                {folders.find((folder) => folder.id === activeNote.folderId)
+                  ?.name ?? "No folder"}
+              </span>
+              <ChevronDown size={12} />
+            </button>
+          ) : null
+        }
         note={activeNote}
         tagDraft={tagDraft}
         aiResult={aiResult}
@@ -871,7 +1011,9 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
           try {
             return await uploadNoteImage(activeNote.id, file);
           } catch (error) {
-            flash(error instanceof Error ? error.message : "Could not upload image");
+            flash(
+              error instanceof Error ? error.message : "Could not upload image",
+            );
             throw error;
           }
         }}
@@ -908,6 +1050,79 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
         onClose={() => setPaletteOpen(false)}
       />
 
+      {folderDialog ? (
+        <FolderDialog
+          state={folderDialog}
+          folders={sortedFolders}
+          currentFolderId={
+            folderDialog.kind === "move" && folderDialog.ids.length === 1
+              ? (notes.find((note) => note.id === folderDialog.ids[0])
+                  ?.folderId ?? null)
+              : undefined
+          }
+          onClose={() => setFolderDialog(null)}
+          onMove={moveTo}
+          onSave={async (draft, id) => {
+            const folder = await saveFolder(draft, id);
+            setFolders((current) => [
+              ...current.filter((item) => item.id !== folder.id),
+              folder,
+            ]);
+            if (folderDialog.kind === "new") {
+              setNavPinned(true);
+              setFolderScope(folder.id);
+              setView("all");
+              setQuery("");
+              setActiveTags([]);
+              setActiveId(null);
+              setSelectedIds([]);
+              setMobilePane("notes");
+            }
+            return folder;
+          }}
+          onDelete={async (folder) => {
+            await deleteFolder(folder.id);
+            setFolders((current) =>
+              current.filter((item) => item.id !== folder.id),
+            );
+            setNotes((current) =>
+              current.map((note) =>
+                note.folderId === folder.id
+                  ? { ...note, folderId: null }
+                  : note,
+              ),
+            );
+            setMoveUndo(null);
+            if (folderScope === folder.id) setFolderScope(null);
+            flash("Folder deleted. Notes kept in No folder.");
+          }}
+        />
+      ) : null}
+      {moveUndo ? (
+        <div className="folder-move-toast" role="status">
+          <span>
+            {moveUndo.length === 1
+              ? "Note moved"
+              : `${moveUndo.length} notes moved`}
+          </span>
+          <button
+            disabled={moving}
+            onClick={() =>
+              void applyMoves(moveUndo, false).catch((error: Error) =>
+                flash(error.message),
+              )
+            }
+          >
+            Undo
+          </button>
+          <button
+            aria-label="Dismiss move notification"
+            onClick={() => setMoveUndo(null)}
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
       <Toast message={toast} />
     </div>
   );

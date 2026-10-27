@@ -6,6 +6,7 @@ import (
 )
 
 type Note struct {
+	FolderID  *string
 	ID        string
 	OwnerID   string
 	Title     string
@@ -17,6 +18,8 @@ type Note struct {
 }
 
 type NoteDraft struct {
+	// FolderID is used only on creation; moving uses a separate atomic operation.
+	FolderID *string
 	Title    string
 	Content  string
 	Tags     []string

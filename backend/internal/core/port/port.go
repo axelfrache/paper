@@ -8,6 +8,10 @@ import (
 )
 
 type NoteService interface {
+	ListFolders(context.Context) ([]domain.Folder, error)
+	SaveFolder(context.Context, string, domain.FolderDraft) (domain.Folder, error)
+	DeleteFolder(context.Context, string) error
+	MoveNotes(context.Context, []domain.NoteMove) error
 	CreateNote(ctx context.Context, draft domain.NoteDraft) (domain.Note, error)
 	UpdateNote(ctx context.Context, id string, draft domain.NoteDraft) (domain.Note, error)
 	GetNote(ctx context.Context, id string) (domain.Note, error)
@@ -20,6 +24,10 @@ type NoteService interface {
 }
 
 type NoteRepository interface {
+	ListFolders(context.Context, string) ([]domain.Folder, error)
+	SaveFolder(context.Context, string, string, domain.FolderDraft) (domain.Folder, error)
+	DeleteFolder(context.Context, string, string) error
+	MoveNotes(context.Context, string, []domain.NoteMove) error
 	Create(ctx context.Context, ownerID string, draft domain.NoteDraft) (domain.Note, error)
 	Update(ctx context.Context, ownerID, id string, draft domain.NoteDraft) (domain.Note, error)
 	GetByID(ctx context.Context, ownerID, id string) (domain.Note, error)

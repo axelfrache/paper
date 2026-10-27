@@ -6,11 +6,18 @@ import { parseInline } from "../lib/markdown/inline";
 import type { MarkdownInline } from "../lib/markdown/inline";
 import { isDivider, isResourceLine } from "../lib/markdown/resource";
 import { extractTagTokens, highlightSegments, takeTrailingTag } from "../lib/notesFilter";
+import { folderColors } from "./FolderDialog";
+import { noteDragType } from "./FolderNav";
+import type { Folder } from "../types/note";
 import type { Note } from "../types/note";
 
 type NoteDirection = "previous" | "next";
 
 type NotesColumnProps = {
+  folders?: Folder[];
+  showFolders?: boolean;
+  onMoveNotes?: (ids: string[]) => void;
+  onSearchAll?: () => void;
   title: string;
   notes: Note[];
   activeId: string | null;
@@ -37,6 +44,7 @@ type NotesColumnProps = {
 };
 
 export function NotesColumn({
+  folders = [], showFolders = false, onMoveNotes, onSearchAll,
   title,
   notes,
   activeId,
@@ -170,6 +178,8 @@ export function NotesColumn({
         </div>
       ) : null}
 
+      {onSearchAll ? <button className="folder-search-all" onClick={onSearchAll}>Search in all notes →</button> : null}
+      {selectedIds.length > 1 && onMoveNotes ? <div className="folder-selection-actions"><span>{selectedIds.length} selected</span><button onClick={() => onMoveNotes(selectedIds)}>Move to…</button></div> : null}
       <div className="list-title">
         <strong>{title}</strong>
         <span>{notes.length}</span>
@@ -188,6 +198,11 @@ export function NotesColumn({
             }}
             className={noteCardClass(note.id, activeId, selected)}
             aria-selected={selected.has(note.id)}
+            draggable={Boolean(onMoveNotes)}
+            onDragStart={(event) => {
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData(noteDragType, JSON.stringify(selected.has(note.id) ? selectedIds : [note.id]));
+            }}
             onClick={(event) => onSelect(note, event.shiftKey)}
             onContextMenu={(event) => {
               event.preventDefault();
@@ -217,6 +232,7 @@ export function NotesColumn({
               {note.favorite ? <Star size={12} fill="currentColor" strokeWidth={1.8} /> : null}
             </div>
             <p><NoteSummaryPreview content={note.content} query={query} /></p>
+            {showFolders && note.folderId ? <div className="note-card-folder"><span className="folder-dot" style={{ background: folderColors[folders.find((folder) => folder.id === note.folderId)?.color ?? "slate"] }} />{folders.find((folder) => folder.id === note.folderId)?.name}</div> : null}
             <div className="note-card-meta">
               <span>{formatRelative(note.updatedAt)}</span>
               <div>
@@ -229,8 +245,8 @@ export function NotesColumn({
         ))}
         {notes.length === 0 ? (
           <div className="empty-state">
-            Nothing here yet.
-            <span>Press ⌘N to start a note.</span>
+            {query.trim() || activeTags.length ? "No matching notes." : "Nothing here yet."}
+            {query.trim() || activeTags.length ? <button onClick={onClearFilters}>Clear filters</button> : <button onClick={onNew}>Create a note</button>}
           </div>
         ) : null}
       </div>
@@ -268,6 +284,7 @@ export function NotesColumn({
             <Copy size={14} strokeWidth={1.8} />
             <span>Duplicate</span>
           </button>
+          {onMoveNotes ? <button type="button" role="menuitem" onClick={() => runMenuAction((note) => onMoveNotes(selected.has(note.id) ? selectedIds : [note.id]))}>Move to folder…</button> : null}
           <span className="note-context-menu-sep" aria-hidden="true"></span>
           <button type="button" role="menuitem" className="danger" onClick={() => runMenuAction(onDeleteNote)}>
             <Trash2 size={14} strokeWidth={1.8} />

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Clock3, Files, Hash, ListTodo, PanelLeftClose, Plus, Star } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { PointerEvent } from "react";
@@ -9,6 +10,8 @@ import { ShortcutsHelp } from "./ShortcutsDialog";
 export type ViewKey = "all" | "recent" | "favorites" | "tasks";
 
 type SidebarProps = {
+  foldersSlot?: ReactNode;
+  folderSelected?: boolean;
   notes: Note[];
   view: ViewKey;
   activeTags: string[];
@@ -30,7 +33,7 @@ const viewDefs: Array<{ key: ViewKey; label: string; icon: LucideIcon }> = [
   { key: "tasks", label: "Tasks", icon: ListTodo },
 ];
 
-export function Sidebar({ notes, view, activeTags, hidden, onViewChange, onToggleTag, onNew, onToggleCollapse, user, onLogout, onResizeStart, onResizeBy }: SidebarProps) {
+export function Sidebar({ foldersSlot, folderSelected, notes, view, activeTags, hidden, onViewChange, onToggleTag, onNew, onToggleCollapse, user, onLogout, onResizeStart, onResizeBy }: SidebarProps) {
   const tagCounts = tagCountsFor(notes);
 
   return (
@@ -53,7 +56,7 @@ export function Sidebar({ notes, view, activeTags, hidden, onViewChange, onToggl
 
       <nav className="sidebar-nav">
         {viewDefs.map((item) => {
-          const active = view === item.key && activeTags.length === 0;
+          const active = !folderSelected && view === item.key && activeTags.length === 0;
           const Icon = item.icon;
           return (
             <button
@@ -71,6 +74,7 @@ export function Sidebar({ notes, view, activeTags, hidden, onViewChange, onToggl
         })}
       </nav>
 
+      {foldersSlot}
       <div className="sidebar-label">Tags</div>
       <div className="tag-nav">
         {tagCounts.map((tag) => (

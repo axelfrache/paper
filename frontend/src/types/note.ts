@@ -1,4 +1,5 @@
 export type Note = {
+  folderId?: string | null;
   id: string;
   title: string;
   content: string;
@@ -44,3 +45,13 @@ export type NoteImage = {
   size: number;
   url: string;
 };
+
+export type Folder = {
+  id: string;
+  name: string;
+  color: string;
+  createdAt: string;
+  updatedAt: string;
+};
+export type FolderDraft = Pick<Folder, "name" | "color">;
+export type NoteMove = { noteId: string; folderId: string | null };

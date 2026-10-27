@@ -11,17 +11,19 @@ import (
 )
 
 type NoteRepository struct {
-	mu     sync.RWMutex
-	nextID int
-	notes  map[string]domain.Note
-	images map[string]domain.NoteImageRecord
+	mu      sync.RWMutex
+	nextID  int
+	notes   map[string]domain.Note
+	images  map[string]domain.NoteImageRecord
+	folders map[string]domain.Folder
 }
 
 func NewNoteRepository() *NoteRepository {
 	return &NoteRepository{
-		nextID: 1,
-		notes:  make(map[string]domain.Note),
-		images: make(map[string]domain.NoteImageRecord),
+		nextID:  1,
+		folders: make(map[string]domain.Folder),
+		notes:   make(map[string]domain.Note),
+		images:  make(map[string]domain.NoteImageRecord),
 	}
 }
 
@@ -29,12 +31,16 @@ func (r *NoteRepository) Create(_ context.Context, ownerID string, draft domain.
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	if err := r.checkFolder(ownerID, draft.FolderID); err != nil {
+		return domain.Note{}, err
+	}
 	now := time.Now().UTC()
 	id := fmt.Sprintf("note_%d", r.nextID)
 	r.nextID++
 
 	note := domain.Note{
 		ID:        id,
+		FolderID:  draft.FolderID,
 		OwnerID:   ownerID,
 		Title:     draft.Title,
 		Content:   draft.Content,

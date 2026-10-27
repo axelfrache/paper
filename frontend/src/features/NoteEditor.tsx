@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Moon, Redo2, Search, Sparkles, Star, Sun, Trash2, Undo2, X } from "lucide-react";
 import { DiagramEditor } from "../components/DiagramEditor";
@@ -14,6 +15,7 @@ export type AIResult = {
 };
 
 type NoteEditorProps = {
+  folderControl?: ReactNode;
   note: Note | null;
   tagDraft: string;
   aiResult: AIResult | null;
@@ -63,6 +65,7 @@ type DiagramEditTarget = {
 };
 
 export function NoteEditor({
+  folderControl,
   note,
   tagDraft,
   aiResult,
@@ -245,6 +248,7 @@ export function NoteEditor({
 
       <div className="editor-scroll">
         <div className="editor-document">
+          {folderControl}
           <input
             ref={titleRef}
             className="editor-title"

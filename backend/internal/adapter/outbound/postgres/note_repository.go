@@ -42,6 +42,7 @@ func (r *NoteRepository) Create(ctx context.Context, ownerID string, draft domai
 	now := time.Now().UTC()
 	note := domain.Note{
 		ID:        newNoteID(),
+		FolderID:  draft.FolderID,
 		OwnerID:   ownerID,
 		Title:     draft.Title,
 		Content:   draft.Content,
@@ -54,12 +55,16 @@ func (r *NoteRepository) Create(ctx context.Context, ownerID string, draft domai
 	if err != nil {
 		return domain.Note{}, err
 	}
-	_, err = r.pool.Exec(ctx, `
-		insert into notes (id, owner_id, title, content, tags, favorite, created_at, updated_at)
-		values ($1, $2, $3, $4, $5, $6, $7, $8)
-	`, note.ID, note.OwnerID, note.Title, note.Content, tags, note.Favorite, note.CreatedAt, note.UpdatedAt)
+	command, err := r.pool.Exec(ctx, `
+ insert into notes (id, owner_id, title, content, tags, favorite, created_at, updated_at, folder_id)
+ select $1, $2, $3, $4, $5, $6, $7, $8, $9
+ where $9::text is null or exists (select 1 from folders where id = $9 and owner_id = $2)
+ `, note.ID, note.OwnerID, note.Title, note.Content, tags, note.Favorite, note.CreatedAt, note.UpdatedAt, note.FolderID)
 	if err != nil {
 		return domain.Note{}, err
+	}
+	if command.RowsAffected() == 0 {
+		return domain.Note{}, domain.NewNotFoundError("Folder was not found.")
 	}
 	return cloneNote(note), nil
 }
@@ -74,14 +79,14 @@ func (r *NoteRepository) Update(ctx context.Context, ownerID, id string, draft d
 		update notes
 		set title = $2, content = $3, tags = $4, favorite = $5, updated_at = $6
 		where id = $1 and owner_id = $7
-		returning id, title, content, tags, favorite, created_at, updated_at
+		returning id, title, content, tags, favorite, created_at, updated_at, folder_id
 	`, id, draft.Title, draft.Content, tags, draft.Favorite, now, ownerID)
 	return scanNote(row, id)
 }
 
 func (r *NoteRepository) GetByID(ctx context.Context, ownerID, id string) (domain.Note, error) {
 	row := r.pool.QueryRow(ctx, `
-		select id, title, content, tags, favorite, created_at, updated_at
+		select id, title, content, tags, favorite, created_at, updated_at, folder_id
 		from notes
 		where id = $1 and owner_id = $2
 	`, id, ownerID)
@@ -90,7 +95,7 @@ func (r *NoteRepository) GetByID(ctx context.Context, ownerID, id string) (domai
 
 func (r *NoteRepository) List(ctx context.Context, ownerID string) ([]domain.Note, error) {
 	rows, err := r.pool.Query(ctx, `
-		select id, title, content, tags, favorite, created_at, updated_at
+		select id, title, content, tags, favorite, created_at, updated_at, folder_id
 		from notes
 		where owner_id = $1
 		order by updated_at desc
@@ -200,6 +205,11 @@ func (r *NoteRepository) migrate(ctx context.Context, legacyOwnerID string) erro
 		cross join lateral regexp_matches(notes.content, '/api/images/([a-f0-9]{32}\.(png|jpg|gif|webp|svg))', 'g') as found
 		on conflict (id) do nothing
 	`}
+	statements = append(statements,
+		`create table if not exists folders (id text primary key, owner_id text not null, name text not null, color text not null, created_at timestamptz not null, updated_at timestamptz not null)`,
+		`alter table notes add column if not exists folder_id text references folders(id) on delete set null`,
+		`create index if not exists folders_owner_idx on folders(owner_id)`,
+		`create index if not exists notes_owner_folder_idx on notes(owner_id, folder_id)`)
 	for _, statement := range statements[:2] {
 		if _, err := tx.Exec(ctx, statement); err != nil {
 			return err
@@ -226,7 +236,7 @@ type noteScanner interface {
 func scanNote(scanner noteScanner, requestedID string) (domain.Note, error) {
 	var note domain.Note
 	var rawTags []byte
-	if err := scanner.Scan(&note.ID, &note.Title, &note.Content, &rawTags, &note.Favorite, &note.CreatedAt, &note.UpdatedAt); err != nil {
+	if err := scanner.Scan(&note.ID, &note.Title, &note.Content, &rawTags, &note.Favorite, &note.CreatedAt, &note.UpdatedAt, &note.FolderID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Note{}, domain.NewNotFoundError("Note %q was not found.", requestedID)
 		}

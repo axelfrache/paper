@@ -19,6 +19,7 @@ The backend is a Go application built on a strict hexagonal (ports & adapters) a
 
 - **WYSIWYG markdown editor**: a hand-rolled editor over `contenteditable` with its own caret model, rendered line by line.
 - **Diagrams**: flat and isometric diagrams as embedded blocks, with an interactive editor (with an isometric placement grid) and text-to-diagram generation.
+- **Folders**: color-coded folders with note counts, scoped search, bulk moves, drag-and-drop, and undo. Deleting a folder keeps its notes in No folder.
 - **AI note actions**: summarize, extract tasks, suggest title/tags, clean up, improve clarity, and ask-your-notes.
 - **Diagram-safe rewriting**: clean up and improve clarity mask embedded diagram markers before sending content to the LLM, so a diagram is never mangled.
 - **Image uploads**: client-side resize and compression, stored locally or in an S3-compatible bucket.
@@ -164,3 +165,11 @@ pnpm run format         # fix formatting
 This project is distributed under the [MIT License](LICENSE).
 
 Copyright (c) 2026 Axel Frache.
+
+### Folder storage and integration tests
+
+Folders are private to each user. Existing notes migrate to No folder automatically at startup. Content autosaves do not change folder membership or the last-edited date when moving a note.
+
+The authenticated folder API uses `GET/POST /api/folders`, `PATCH/DELETE /api/folders/{id}`, and `POST /api/notes/move` with `{ "moves": [{ "noteId": "…", "folderId": "…" }] }`. Use `null` to unfile a note. Batches of up to 500 notes are atomic. Creation accepts an optional `folderId`; content updates intentionally ignore it.
+
+To run the PostgreSQL migration and transaction test, point `PAPER_FOLDER_TEST_DATABASE_URL` at a **disposable database** and run `go test ./...` from `backend`. This test recreates the notes, images, and folders tables; never use an application database. Without that variable, this integration test is skipped and the in-memory service tests still run.
