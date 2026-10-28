@@ -584,7 +584,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
 
     if (event.pointerType === "touch") {
       const pointerId = event.pointerId;
-      const startClient = { x: event.clientX, y: event.clientY };
+      const startClient = { clientX: event.clientX, clientY: event.clientY };
       const moveThreshold = 10;
       let settled = false;
       let longPressTimer: number;
@@ -600,10 +600,10 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
         if (moveEvent.pointerId !== pointerId || settled) {
           return;
         }
-        if (Math.hypot(moveEvent.clientX - startClient.x, moveEvent.clientY - startClient.y) > moveThreshold) {
+        if (Math.hypot(moveEvent.clientX - startClient.clientX, moveEvent.clientY - startClient.clientY) > moveThreshold) {
           settled = true;
           cleanup();
-          beginDrag(moveEvent, true);
+          beginDrag(startClient, true);
         }
       };
 
