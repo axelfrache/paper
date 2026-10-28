@@ -4260,11 +4260,46 @@ span.account-avatar-lg {
 /* Shared actions remain reachable with a pointer, keyboard or touch. */
 .folder-nav-row, .note-card-row { position: relative; display: flex; align-items: center; min-width: 0; }
 .folder-nav-row > .nav-item, .note-card-row > .note-card { flex: 1; min-width: 0; }
-.note-card-row > .note-card { width: 100%; padding-right: 46px; }
-.folder-nav-row > .nav-item { padding-right: 42px; }
-.row-actions { position: absolute; right: 2px; top: 4px; display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); opacity: 0; }
+.note-card-row > .note-card { width: 100%; padding-right: 36px; }
+.folder-nav-row > .nav-item { padding-right: 36px; }
+.row-actions {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--subtle);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+.row-actions::before {
+  content: "";
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  background: transparent;
+}
+.row-actions svg { position: relative; width: 16px; height: 16px; }
 .folder-nav-row .row-actions { top: 50%; transform: translateY(-50%); }
-.row-actions:hover, .row-actions:focus-visible, .note-card-row:hover .row-actions, .folder-nav-row:hover .row-actions { opacity: 1; background: var(--hover); }
+.note-card-row:hover .row-actions,
+.folder-nav-row:hover .row-actions,
+.note-card-row:focus-within .row-actions,
+.folder-nav-row:focus-within .row-actions,
+.row-actions[aria-expanded="true"] { opacity: 1; pointer-events: auto; }
+.folder-nav-row:hover > .nav-item:not(.active) { background: var(--hover); }
+.note-card-row:hover > .note-card:not(.active):not(.selected) { background: var(--hover-soft); }
+.row-actions:hover, .row-actions:focus-visible, .row-actions[aria-expanded="true"] { color: var(--text); }
+.row-actions:hover::before, .row-actions[aria-expanded="true"]::before { background: var(--hover); }
+.row-actions:focus-visible { outline: none; }
+.row-actions:focus-visible::before { outline: 2px solid var(--accent); outline-offset: 1px; }
 .note-card-row > input { width: 24px; height: 24px; margin: 10px; accent-color: var(--accent); flex: none; }
 .selection-toggle { margin-left: auto; border: 0; background: transparent; color: var(--accent); padding: 8px; }
 .folder-selection-actions { flex-wrap: wrap; }
@@ -4274,7 +4309,7 @@ span.account-avatar-lg {
 .action-menu-scrim { position: fixed; inset: 0; z-index: 119; background: transparent; }
 .folder-move-toast { max-width: calc(100vw - 24px); white-space: normal; }
 @media (any-pointer: coarse), (max-width: 900px) {
-  .row-actions { opacity: 1; width: 44px; height: 44px; }
+  .row-actions { opacity: 1; pointer-events: auto; right: 2px; width: 44px; height: 44px; }
   .folder-nav-row > .nav-item { min-height: 48px; padding-right: 48px; }
   .note-card-row > .note-card { padding-right: 48px; }
   .notes-filter button, .editor-topbar button, .nav-item, .collapse-button, .folder-section-title button,
