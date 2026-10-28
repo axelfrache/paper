@@ -2434,6 +2434,7 @@ span.account-avatar-lg {
   border-bottom: 1px solid var(--line);
   background: var(--sidebar);
   padding: 0 16px;
+  touch-action: manipulation;
 }
 
 .diagram-editor-crumb {
@@ -2665,6 +2666,7 @@ span.account-avatar-lg {
   display: flex;
   align-items: center;
   gap: 2px;
+  touch-action: manipulation;
 }
 
 .diagram-zoom-controls button {
@@ -2733,6 +2735,9 @@ span.account-avatar-lg {
   box-shadow: var(--shadow);
   padding: 6px;
   transform: translateX(-50%);
+  /* Allows the row's own horizontal swipe-scroll, but stops a finger that strays here
+     mid-pinch from handing the gesture to the browser's native page zoom. */
+  touch-action: pan-x;
 }
 
 .diagram-toolbar button {
@@ -2879,6 +2884,7 @@ span.account-avatar-lg {
   background: var(--surface-raised);
   box-shadow: var(--shadow);
   padding: 12px;
+  touch-action: pan-y;
 }
 
 .diagram-inspector > strong {
@@ -4374,10 +4380,20 @@ span.account-avatar-lg {
   .editor-topbar > .editor-mobile-actions { display: grid; margin-left: 8px; }
   .editor-topbar > .editor-topbar-history { margin-left: auto; }
   .diagram-editor { height: var(--visible-height, 100dvh); }
-  .diagram-properties-toggle { display: block; position: absolute; top: 12px; right: 12px; z-index: 6; min-height: 44px; padding: 8px 14px; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 8px; }
+  .diagram-properties-toggle { display: block; position: absolute; top: 12px; right: 12px; z-index: 6; min-height: 44px; padding: 8px 14px; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 8px; touch-action: manipulation; }
   .diagram-editor .diagram-inspector { display: none; top: 64px; right: 12px; width: min(360px, calc(100vw - 24px)); max-height: calc(var(--visible-height, 100dvh) - 230px); z-index: 5; }
   .diagram-editor.properties-open .diagram-inspector { display: block; }
-  .diagram-toolbar { flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; max-width: calc(100vw - 20px); bottom: max(12px, env(safe-area-inset-bottom)); }
+  .diagram-toolbar {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    max-width: calc(100vw - 20px);
+    bottom: max(12px, env(safe-area-inset-bottom));
+    scrollbar-width: thin;
+  }
+  .diagram-toolbar::-webkit-scrollbar { height: 3px; }
+  .diagram-toolbar::-webkit-scrollbar-thumb { background: var(--line-hover-strong); border-radius: 3px; }
+  .diagram-toolbar::-webkit-scrollbar-track { background: transparent; }
   .diagram-zoom-controls { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 64px); }
   .diagram-element-menu-wrap { position: static; }
   .diagram-element-menu { position: fixed; left: 16px; bottom: 90px; transform: none; width: calc(100vw - 32px); max-height: calc(var(--visible-height, 100dvh) - 180px); }
@@ -4416,4 +4432,15 @@ span.account-avatar-lg {
 }
 @media (any-pointer: coarse), (max-width: 900px) {
   .pwa-update button, .note-save-status button, .folder-move-toast button { min-height: 44px; min-width: 44px; }
+}
+@media (any-pointer: coarse) {
+  /* Pinch already steps the zoom continuously on touch, so the +/- buttons are redundant
+     clutter there; keep just the live percentage and the fit button. */
+  .diagram-zoom-controls button:first-child,
+  .diagram-zoom-controls button:nth-child(3) {
+    display: none;
+  }
+  .diagram-zoom-controls button:nth-child(2) {
+    border-radius: 8px;
+  }
 }

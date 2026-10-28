@@ -197,6 +197,23 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
     setLiveDiagram(diagram);
   }, [diagram]);
 
+  // Touch-action alone isn't enough on some mobile browsers: a pinch that strays onto the
+  // toolbar/inspector chrome can still fall through to the browser's own page-zoom gesture.
+  // Locking the viewport's scale while the editor is open hands pinch entirely to our own
+  // zoom handling, and the previous viewport is restored so the rest of the app (reading
+  // notes) keeps normal pinch-to-zoom-to-read-text.
+  useEffect(() => {
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
+    if (!meta) {
+      return;
+    }
+    const previous = meta.content;
+    meta.content = `${previous}, maximum-scale=1, user-scalable=no`;
+    return () => {
+      meta.content = previous;
+    };
+  }, []);
+
   useEffect(() => {
     if (!elementMenuOpen) {
       return;
