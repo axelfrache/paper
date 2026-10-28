@@ -448,7 +448,11 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
       setSelectedEdgeId(null);
       setPendingFromId(null);
       if (tool === "select") {
-        startSelectionBox(event.nativeEvent);
+        if (event.pointerType === "touch") {
+          startCanvasPan(event.nativeEvent);
+        } else {
+          startSelectionBox(event.nativeEvent);
+        }
       } else {
         setSelectedIds([]);
       }
@@ -503,75 +507,140 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
       return;
     }
 
-    const clickedIds = forceIds ?? [nodeId];
-    const currentlyWholeGroup = diagramRef.current.groups?.some(
-      (group) => group.members.length === selectedIds.length && group.members.every((id) => selectedIds.includes(id)),
-    );
-    const movingIds =
-      !currentlyWholeGroup && clickedIds.every((id) => selectedIds.includes(id)) ? selectedIds : clickedIds;
-    setSelectedIds(movingIds);
-    setSelectedEdgeId(null);
-    const svg = svgRef.current;
-    const movingNodes = diagramRef.current.nodes.filter((item) => movingIds.includes(item.id));
-    if (!svg || !movingNodes.length) {
+    const beginDrag = (startEvent: { clientX: number; clientY: number }, trackMove: boolean) => {
+      const clickedIds = forceIds ?? [nodeId];
+      const currentlyWholeGroup = diagramRef.current.groups?.some(
+        (group) => group.members.length === selectedIds.length && group.members.every((id) => selectedIds.includes(id)),
+      );
+      const movingIds =
+        !currentlyWholeGroup && clickedIds.every((id) => selectedIds.includes(id)) ? selectedIds : clickedIds;
+      setSelectedIds(movingIds);
+      setSelectedEdgeId(null);
+      if (!trackMove) {
+        return;
+      }
+      const svg = svgRef.current;
+      const movingNodes = diagramRef.current.nodes.filter((item) => movingIds.includes(item.id));
+      if (!svg || !movingNodes.length) {
+        return;
+      }
+
+      const start = screenToDiagramPoint(startEvent, svg, diagramRef.current);
+      const startPositions = new Map(movingNodes.map((node) => [node.id, { x: node.x, y: node.y }]));
+      // Boxes are taken from the layout, so snapping happens in the space that is drawn:
+      // in isometric mode that is the projected shape, which is what the user is aiming at.
+      const startLayout = layoutDiagram(diagramRef.current);
+      const toBox = (node: { id: string; hx: number; hy: number; hw: number; hh: number }): GuideBox => ({
+        id: node.id,
+        x: node.hx,
+        y: node.hy,
+        w: node.hw,
+        h: node.hh,
+      });
+      const movingBoxes = startLayout.nodes.filter((node) => startPositions.has(node.id)).map(toBox);
+      const staticBoxes = startLayout.nodes.filter((node) => !startPositions.has(node.id)).map(toBox);
+
+      const move = (moveEvent: PointerEvent) => {
+        const currentSvg = svgRef.current;
+        if (!currentSvg) {
+          return;
+        }
+        const point = screenToDiagramPoint(moveEvent, currentSvg, diagramRef.current);
+        const raw = diagramToLayoutPoint(diagramRef.current.mode, point.x - start.x, point.y - start.y);
+        // Alt drags freely, so alignment stays an aid rather than a constraint.
+        const snapped = moveEvent.altKey
+          ? { dx: raw.x, dy: raw.y, guides: [], spacing: [] }
+          : snapToGuides(movingBoxes, staticBoxes, raw.x, raw.y, snapThreshold(currentSvg));
+        const model = layoutToDiagramPoint(diagramRef.current.mode, snapped.dx, snapped.dy);
+        const dx = Math.round(model.x);
+        const dy = Math.round(model.y);
+        setGuides(snapped.guides);
+        setSpacing(snapped.spacing);
+        patchDiagram(
+          (current) => ({
+            ...current,
+            nodes: current.nodes.map((item) =>
+              startPositions.has(item.id) ? { ...item, x: (startPositions.get(item.id)?.x ?? item.x) + dx, y: (startPositions.get(item.id)?.y ?? item.y) + dy } : item,
+            ),
+          }),
+          { commit: false },
+        );
+      };
+
+      const up = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", up);
+        setGuides([]);
+        setSpacing([]);
+        resolveGroupMembershipAfterDrag(movingIds);
+        commitDiagram();
+      };
+
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", up);
+    };
+
+    if (event.pointerType === "touch") {
+      const pointerId = event.pointerId;
+      const startClient = { x: event.clientX, y: event.clientY };
+      const moveThreshold = 10;
+      let settled = false;
+      let longPressTimer: number;
+
+      const cleanup = () => {
+        window.clearTimeout(longPressTimer);
+        window.removeEventListener("pointermove", watchMove);
+        window.removeEventListener("pointerup", watchUp);
+        window.removeEventListener("pointercancel", watchCancel);
+      };
+
+      const watchMove = (moveEvent: PointerEvent) => {
+        if (moveEvent.pointerId !== pointerId || settled) {
+          return;
+        }
+        if (Math.hypot(moveEvent.clientX - startClient.x, moveEvent.clientY - startClient.y) > moveThreshold) {
+          settled = true;
+          cleanup();
+          beginDrag(moveEvent, true);
+        }
+      };
+
+      const watchUp = (upEvent: PointerEvent) => {
+        if (upEvent.pointerId !== pointerId || settled) {
+          return;
+        }
+        settled = true;
+        cleanup();
+        beginDrag(upEvent, false);
+      };
+
+      const watchCancel = (cancelEvent: PointerEvent) => {
+        if (cancelEvent.pointerId !== pointerId) {
+          return;
+        }
+        settled = true;
+        cleanup();
+      };
+
+      longPressTimer = window.setTimeout(() => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        cleanup();
+        setSelectedEdgeId(null);
+        setSelectedIds((current) => (current.includes(nodeId) ? current.filter((id) => id !== nodeId) : [...current, nodeId]));
+      }, 450);
+
+      window.addEventListener("pointermove", watchMove);
+      window.addEventListener("pointerup", watchUp);
+      window.addEventListener("pointercancel", watchCancel);
       return;
     }
 
-    const start = screenToDiagramPoint(event, svg, diagramRef.current);
-    const startPositions = new Map(movingNodes.map((node) => [node.id, { x: node.x, y: node.y }]));
-    // Boxes are taken from the layout, so snapping happens in the space that is drawn:
-    // in isometric mode that is the projected shape, which is what the user is aiming at.
-    const startLayout = layoutDiagram(diagramRef.current);
-    const toBox = (node: { id: string; hx: number; hy: number; hw: number; hh: number }): GuideBox => ({
-      id: node.id,
-      x: node.hx,
-      y: node.hy,
-      w: node.hw,
-      h: node.hh,
-    });
-    const movingBoxes = startLayout.nodes.filter((node) => startPositions.has(node.id)).map(toBox);
-    const staticBoxes = startLayout.nodes.filter((node) => !startPositions.has(node.id)).map(toBox);
-
-    const move = (moveEvent: PointerEvent) => {
-      const currentSvg = svgRef.current;
-      if (!currentSvg) {
-        return;
-      }
-      const point = screenToDiagramPoint(moveEvent, currentSvg, diagramRef.current);
-      const raw = diagramToLayoutPoint(diagramRef.current.mode, point.x - start.x, point.y - start.y);
-      // Alt drags freely, so alignment stays an aid rather than a constraint.
-      const snapped = moveEvent.altKey
-        ? { dx: raw.x, dy: raw.y, guides: [], spacing: [] }
-        : snapToGuides(movingBoxes, staticBoxes, raw.x, raw.y, snapThreshold(currentSvg));
-      const model = layoutToDiagramPoint(diagramRef.current.mode, snapped.dx, snapped.dy);
-      const dx = Math.round(model.x);
-      const dy = Math.round(model.y);
-      setGuides(snapped.guides);
-      setSpacing(snapped.spacing);
-      patchDiagram(
-        (current) => ({
-          ...current,
-          nodes: current.nodes.map((item) =>
-            startPositions.has(item.id) ? { ...item, x: (startPositions.get(item.id)?.x ?? item.x) + dx, y: (startPositions.get(item.id)?.y ?? item.y) + dy } : item,
-          ),
-        }),
-        { commit: false },
-      );
-    };
-
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", up);
-      setGuides([]);
-      setSpacing([]);
-      resolveGroupMembershipAfterDrag(movingIds);
-      commitDiagram();
-    };
-
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", up);
+    beginDrag(event, true);
   };
 
   const handleResizePointerDown = (event: React.PointerEvent<SVGRectElement>, nodeId: string) => {

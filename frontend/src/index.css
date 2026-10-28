@@ -4378,6 +4378,7 @@ span.account-avatar-lg {
   .diagram-editor .diagram-inspector { display: none; top: 64px; right: 12px; width: min(360px, calc(100vw - 24px)); max-height: calc(var(--visible-height, 100dvh) - 230px); z-index: 5; }
   .diagram-editor.properties-open .diagram-inspector { display: block; }
   .diagram-toolbar { flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; max-width: calc(100vw - 20px); bottom: max(12px, env(safe-area-inset-bottom)); }
+  .diagram-zoom-controls { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 64px); }
   .diagram-element-menu-wrap { position: static; }
   .diagram-element-menu { position: fixed; left: 16px; bottom: 90px; transform: none; width: calc(100vw - 32px); max-height: calc(var(--visible-height, 100dvh) - 180px); }
   .diagram-toolbar:has(.diagram-element-menu:not(.is-hidden)) { overflow: visible; flex-wrap: wrap; }

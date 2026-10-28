@@ -700,6 +700,95 @@ describe("touch diagram navigation", () => {
     touch("pointerup", 2, 300);
     expect(p.value()).toEqual(diagram);
   });
+  it("pans instead of marquee-selecting on a one-finger touch drag over empty canvas", () => {
+    const p = mount(rowOfThree());
+    const svg = p.host.querySelector<SVGSVGElement>(".diagram-canvas")!;
+    svg.getScreenCTM = vi.fn(() => null);
+    svg.setPointerCapture = vi.fn();
+    svg.releasePointerCapture = vi.fn();
+    svg.hasPointerCapture = vi.fn(() => false);
+
+    const initialViewBox = svg.getAttribute("viewBox");
+    const down = new MouseEvent("pointerdown", { clientX: 100, clientY: 150, bubbles: true, cancelable: true, button: 0 });
+    Object.defineProperties(down, { pointerType: { value: "touch" }, pointerId: { value: 1 } });
+    act(() => svg.dispatchEvent(down));
+
+    const move = new MouseEvent("pointermove", { clientX: 140, clientY: 150, bubbles: true });
+    Object.defineProperties(move, { pointerId: { value: 1 } });
+    act(() => window.dispatchEvent(move));
+
+    expect(svg.getAttribute("viewBox")).not.toBe(initialViewBox);
+    expect(p.host.querySelector(".diagram-selection-box")).toBeNull();
+
+    act(() => window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true })));
+  });
+
+  it("still marquee-selects on a mouse drag over empty canvas, unchanged", () => {
+    const p = mount(rowOfThree());
+    const svg = p.host.querySelector<SVGSVGElement>(".diagram-canvas")!;
+    svg.getScreenCTM = vi.fn(() => null);
+    svg.setPointerCapture = vi.fn();
+    svg.releasePointerCapture = vi.fn();
+    svg.hasPointerCapture = vi.fn(() => false);
+
+    const initialViewBox = svg.getAttribute("viewBox");
+    act(() => svg.dispatchEvent(new MouseEvent("pointerdown", { clientX: 100, clientY: 150, bubbles: true, cancelable: true, button: 0 })));
+    act(() => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 140, clientY: 150, bubbles: true })));
+
+    expect(svg.getAttribute("viewBox")).toBe(initialViewBox);
+    expect(p.host.querySelector(".diagram-selection-box")).not.toBeNull();
+
+    act(() => window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, clientX: 140, clientY: 150 })));
+  });
+
+  it("long-presses a node on touch to toggle it into the selection, without moving it or starting a drag", () => {
+    const p = mount(rowOfThree());
+    const svg = p.host.querySelector<SVGSVGElement>(".diagram-canvas")!;
+    svg.setPointerCapture = vi.fn();
+    const nodeEl = p.host.querySelectorAll(".diagram-node")[0];
+    const before = p.x("left");
+
+    const down = new MouseEvent("pointerdown", { clientX: 50, clientY: 50, bubbles: true, cancelable: true, button: 0 });
+    Object.defineProperties(down, { pointerType: { value: "touch" }, pointerId: { value: 5 } });
+    act(() => nodeEl.dispatchEvent(down));
+
+    expect(p.host.querySelector(".diagram-resize-handle")).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(p.host.querySelector(".diagram-resize-handle")).not.toBeNull();
+    expect(p.x("left")).toBe(before);
+
+    act(() => window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, clientX: 50, clientY: 50 })));
+  });
+
+  it("still moves a node on a quick touch drag, same as before long-press was added", () => {
+    const p = mount(rowOfThree());
+    const svg = p.host.querySelector<SVGSVGElement>(".diagram-canvas")!;
+    svg.getScreenCTM = vi.fn(() => null);
+    svg.setPointerCapture = vi.fn();
+    const nodeEl = p.host.querySelectorAll(".diagram-node")[0];
+    const before = p.x("left");
+
+    const down = new MouseEvent("pointerdown", { clientX: 50, clientY: 50, bubbles: true, cancelable: true, button: 0 });
+    Object.defineProperties(down, { pointerType: { value: "touch" }, pointerId: { value: 7 } });
+    act(() => nodeEl.dispatchEvent(down));
+
+    const promote = new MouseEvent("pointermove", { clientX: 90, clientY: 50, bubbles: true });
+    Object.defineProperties(promote, { pointerId: { value: 7 } });
+    act(() => window.dispatchEvent(promote));
+
+    const drag = new MouseEvent("pointermove", { clientX: 130, clientY: 50, bubbles: true });
+    Object.defineProperties(drag, { pointerId: { value: 7 } });
+    act(() => window.dispatchEvent(drag));
+
+    act(() => window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, clientX: 130, clientY: 50 })));
+
+    expect(p.x("left")).not.toBe(before);
+  });
+
   it("allows properties to be opened explicitly after selecting an element", () => {
     const p = mount(rowOfThree());
     p.select(0);
