@@ -119,7 +119,7 @@ describe("note summary preview", () => {
 
 describe("note context menu", () => {
   function mountColumn(note: Note) {
-    const spies = { onDuplicateNote: vi.fn(), onDeleteNote: vi.fn(), onFavoriteNote: vi.fn() };
+    const spies = { onSelect: vi.fn(), onSelectionChange: vi.fn(), onDuplicateNote: vi.fn(), onDeleteNote: vi.fn(), onFavoriteNote: vi.fn() };
     const host = document.createElement("div");
     document.body.replaceChildren(host);
     root = createRoot(host);
@@ -139,7 +139,8 @@ describe("note context menu", () => {
           onRemoveTag={vi.fn()}
           onClearFilters={vi.fn()}
           onNew={vi.fn()}
-          onSelect={vi.fn()}
+          onSelect={spies.onSelect}
+          onSelectionChange={spies.onSelectionChange}
           onFavoriteNote={spies.onFavoriteNote}
           onDuplicateNote={spies.onDuplicateNote}
           onDeleteNote={spies.onDeleteNote}
@@ -155,14 +156,31 @@ describe("note context menu", () => {
     return { host, spies };
   }
 
+  it("offers actions from a tap without opening the note", () => {
+    const { host, spies } = mountColumn(noteWith("Body"));
+    act(() => host.querySelector<HTMLButtonElement>(".row-actions")!.click());
+    expect(document.querySelector('[role="menu"]')).not.toBeNull();
+    expect(spies.onSelect).not.toHaveBeenCalled();
+  });
+  it("selects a note without navigating when selection mode is active", () => {
+    const { host, spies } = mountColumn(noteWith("Body"));
+    act(() => host.querySelector<HTMLButtonElement>(".selection-toggle")!.click());
+    act(() => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    expect(spies.onSelectionChange).toHaveBeenLastCalledWith(["n1"]);
+    expect(spies.onSelect).not.toHaveBeenCalled();
+    act(() => host.querySelector<HTMLButtonElement>(".selection-toggle")!.click());
+    expect(host.querySelector('input[type="checkbox"]')).toBeNull();
+    expect(spies.onSelectionChange).toHaveBeenLastCalledWith([]);
+  });
+
   it("opens on right-click and runs the chosen action", () => {
     const { host, spies } = mountColumn(noteWith("Body"));
-    expect(host.querySelector(".note-context-menu")).toBeNull();
+    expect(document.querySelector(".note-context-menu")).toBeNull();
 
     act(() => {
       host.querySelector(".note-card")?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     });
-    const menu = host.querySelector(".note-context-menu");
+    const menu = document.querySelector(".note-context-menu");
     expect(menu).not.toBeNull();
 
     const duplicate = Array.from(menu!.querySelectorAll("button")).find((button) => /duplicate/i.test(button.textContent ?? ""));
@@ -170,6 +188,6 @@ describe("note context menu", () => {
 
     expect(spies.onDuplicateNote).toHaveBeenCalledOnce();
     expect(spies.onDuplicateNote.mock.calls[0][0].id).toBe("n1");
-    expect(host.querySelector(".note-context-menu")).toBeNull();
+    expect(document.querySelector(".note-context-menu")).toBeNull();
   });
 });

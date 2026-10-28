@@ -1,6 +1,8 @@
+import { ActionMenu } from "../components/ActionMenu";
+import { useBackLayer } from "../lib/useBackLayer";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Moon, Redo2, Search, Sparkles, Star, Sun, Trash2, Undo2, X } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, MoreHorizontal, ArrowLeft, Moon, Redo2, Search, Sparkles, Star, Sun, Trash2, Undo2, X } from "lucide-react";
 import { DiagramEditor } from "../components/DiagramEditor";
 import { MarkdownEditor } from "../components/MarkdownEditor";
 import { MarkdownView } from "../components/MarkdownView";
@@ -16,6 +18,8 @@ export type AIResult = {
 
 type NoteEditorProps = {
   folderControl?: ReactNode;
+  listHidden?: boolean;
+  onToggleList?: () => void;
   note: Note | null;
   tagDraft: string;
   aiResult: AIResult | null;
@@ -66,6 +70,8 @@ type DiagramEditTarget = {
 
 export function NoteEditor({
   folderControl,
+  listHidden,
+  onToggleList,
   note,
   tagDraft,
   aiResult,
@@ -100,6 +106,7 @@ export function NoteEditor({
   const latestContentRef = useRef(note?.content ?? "");
   const [contentFocusTarget, setContentFocusTarget] = useState<ContentFocusTarget | null>(null);
   const [diagramEdit, setDiagramEdit] = useState<DiagramEditTarget | null>(null);
+  useBackLayer(diagramEdit !== null, () => setDiagramEdit(null));
   const [diagramDescribeRequest, setDiagramDescribeRequest] = useState<{ key: string; prompt: string } | null>(null);
 
   useEffect(() => {
@@ -216,6 +223,8 @@ export function NoteEditor({
     return (
       <main className="editor-shell">
         <EditorTopbar
+          listHidden={listHidden}
+          onToggleList={onToggleList}
           label="No note selected"
           favorite={false}
           disabledNoteActions
@@ -234,6 +243,8 @@ export function NoteEditor({
   return (
     <main className="editor-shell">
       <EditorTopbar
+        listHidden={listHidden}
+        onToggleList={onToggleList}
         label={`Edited ${formatRelative(note.updatedAt)}`}
         favorite={note.favorite}
         onToggleFavorite={onToggleFavorite}
@@ -406,6 +417,8 @@ export function NoteEditor({
 }
 
 function EditorTopbar({
+  listHidden,
+  onToggleList,
   label,
   favorite,
   disabledNoteActions = false,
@@ -418,6 +431,8 @@ function EditorTopbar({
   theme,
   onBackToNotes,
 }: {
+  listHidden?: boolean;
+  onToggleList?: () => void;
   label: string;
   favorite: boolean;
   disabledNoteActions?: boolean;
@@ -430,11 +445,14 @@ function EditorTopbar({
   theme: "light" | "dark";
   onBackToNotes: () => void;
 }) {
+  const [actions, setActions] = useState<{x: number; y: number} | null>(null);
+  const run = (action: () => void) => { setActions(null); action(); };
   return (
     <header className="editor-topbar">
       <button className="editor-back-button" type="button" onClick={onBackToNotes} aria-label="Back to notes">
         <ArrowLeft size={16} strokeWidth={1.9} />
       </button>
+      {onToggleList ? <button className="editor-list-toggle topbar-icon-button" onClick={onToggleList} aria-label={listHidden ? "Show note list" : "Hide note list"} title={listHidden ? "Show note list" : "Hide note list"}>{listHidden ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}</button> : null}
       <span>{label}</span>
       {onUndo && onRedo ? (
         <div className="editor-topbar-history">
@@ -446,7 +464,7 @@ function EditorTopbar({
           </button>
         </div>
       ) : null}
-      <div>
+      <div className="editor-desktop-actions">
         <button
           className={favorite ? "topbar-button favorite" : "topbar-button"}
           onClick={onToggleFavorite}
@@ -474,6 +492,17 @@ function EditorTopbar({
           <span>Delete</span>
         </button>
       </div>
+      <button className="editor-mobile-actions topbar-button" aria-label="Note actions" aria-haspopup="menu" aria-expanded={actions !== null} onClick={(event) => {
+        const bounds = event.currentTarget.getBoundingClientRect(); setActions({x: bounds.right, y: bounds.bottom});
+      }}><MoreHorizontal size={20} /></button>
+      {actions ? <ActionMenu {...actions} label="Note actions" onClose={() => setActions(null)}>
+        <button role="menuitem" disabled={disabledNoteActions} onClick={() => run(onToggleFavorite)}>{favorite ? "Remove favorite" : "Add to favorites"}</button>
+        <button role="menuitem" onClick={() => run(onSearch)}>Search notes</button>
+        <button role="menuitem" onClick={() => run(onToggleTheme)}>{theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}</button>
+        <button role="menuitem" className="danger" disabled={disabledNoteActions} onClick={() => {
+          if (window.confirm("Delete this note?")) run(onDelete);
+        }}>Delete note</button>
+      </ActionMenu> : null}
     </header>
   );
 }

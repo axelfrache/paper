@@ -140,6 +140,11 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
   const [tool, setTool] = useState<DiagramTool>("select");
   const [showGrid, setShowGrid] = useState(true);
   const [viewport, setViewportState] = useState(defaultViewport);
+  const [propertiesOpen, setPropertiesOpen] = useState(false);
+  const touchPoints = useRef(new Map<number, {clientX: number; clientY: number}>());
+  const pinch = useRef<{distance: number; width: number; height: number; anchor: {x: number; y: number}} | null>(null);
+  const pinching = useRef(false);
+
   const [liveDiagram, setLiveDiagram] = useState(diagram);
   const [titleDraft, setTitleDraft] = useState<string | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -387,6 +392,44 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
     setViewportState(next);
   };
 
+  const touchStart = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (event.pointerType !== "touch") return;
+    touchPoints.current.set(event.pointerId, {clientX: event.clientX, clientY: event.clientY});
+    event.currentTarget.setPointerCapture(event.pointerId);
+    if (touchPoints.current.size === 2) {
+      const [a, b] = [...touchPoints.current.values()];
+      pinch.current = {
+        distance: Math.max(1, Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)),
+        width: viewportRef.current.width, height: viewportRef.current.height,
+        anchor: screenToViewportPoint({clientX: (a.clientX + b.clientX) / 2, clientY: (a.clientY + b.clientY) / 2}, event.currentTarget),
+      };
+      pinching.current = true;
+      event.preventDefault(); event.stopPropagation();
+    } else if (tool === "pan") {
+      event.preventDefault(); event.stopPropagation(); startCanvasPan(event.nativeEvent);
+    }
+  };
+  const touchMove = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (!touchPoints.current.has(event.pointerId)) return;
+    touchPoints.current.set(event.pointerId, {clientX: event.clientX, clientY: event.clientY});
+    if (!pinching.current) return;
+    event.preventDefault(); event.stopPropagation();
+    if (touchPoints.current.size !== 2 || !pinch.current) return;
+    const [a, b] = [...touchPoints.current.values()];
+    const start = pinch.current;
+    const distance = Math.max(1, Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY));
+    const width = Math.max(fitViewportRef.current.width / maxZoom, Math.min(fitViewportRef.current.width / minZoom, start.width * start.distance / distance));
+    const height = start.height * width / start.width;
+    const current = viewportRef.current;
+    const center = screenToViewportPoint({clientX: (a.clientX + b.clientX) / 2, clientY: (a.clientY + b.clientY) / 2}, event.currentTarget);
+    setViewport({x: start.anchor.x - (center.x - current.x) / current.width * width,
+      y: start.anchor.y - (center.y - current.y) / current.height * height, width, height});
+  };
+  const touchEnd = (event: React.PointerEvent<SVGSVGElement>) => {
+    touchPoints.current.delete(event.pointerId);
+    if (!touchPoints.current.size) { pinch.current = null; pinching.current = false; }
+  };
+
   const handleCanvasPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
     if (event.button === 2 && event.target === event.currentTarget) {
       event.preventDefault();
@@ -519,6 +562,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
       setGuides([]);
       setSpacing([]);
       resolveGroupMembershipAfterDrag(movingIds);
@@ -527,6 +571,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
 
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   };
 
   const handleResizePointerDown = (event: React.PointerEvent<SVGRectElement>, nodeId: string) => {
@@ -565,11 +610,13 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
       commitDiagram();
     };
 
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   };
 
   const handleGroupResizePointerDown = (
@@ -610,11 +657,13 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
       commitDiagram();
     };
 
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   };
 
   const handleEdgePointerDown = (event: React.PointerEvent<SVGGElement>, edgeId: string) => {
@@ -700,11 +749,13 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
       commitDiagram();
     };
 
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   };
 
   const startSelectionBox = (event: PointerEvent) => {
@@ -733,8 +784,13 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
     const up = (upEvent: PointerEvent) => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
       if (svg.hasPointerCapture(event.pointerId)) {
         svg.releasePointerCapture(event.pointerId);
+      }
+      if (pinching.current || upEvent.type === "pointercancel") {
+        setSelectionBox(null);
+        return;
       }
       if (!moved) {
         setSelectedIds([]);
@@ -750,6 +806,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
 
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   };
 
   const deleteSelected = () => {
@@ -1103,6 +1160,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
     const start = { x: event.clientX, y: event.clientY, viewport: viewportRef.current };
 
     const move = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== event.pointerId || pinching.current) return;
       const rect = svg.getBoundingClientRect();
       const scaleX = start.viewport.width / Math.max(1, rect.width);
       const scaleY = start.viewport.height / Math.max(1, rect.height);
@@ -1116,6 +1174,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
       if (temporary) {
         setContextPanning(false);
       }
@@ -1123,6 +1182,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
 
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   };
 
   const zoomTo = (nextZoom: number) => {
@@ -1232,7 +1292,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
   });
 
   return (
-    <div className="diagram-editor" role="dialog" aria-modal="true" aria-label="Diagram editor" onPointerDownCapture={handleEditorPointerDownCapture}>
+    <div className={`diagram-editor${propertiesOpen ? " properties-open" : ""}`} role="dialog" aria-modal="true" aria-label="Diagram editor" onPointerDownCapture={handleEditorPointerDownCapture}>
       <header className="diagram-editor-topbar">
         <div className="diagram-editor-crumb">
           <div className="diagram-editor-identity">
@@ -1354,6 +1414,10 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
           ref={svgRef}
           className={["diagram-canvas", liveDiagram.mode === "iso" ? "is-iso" : "", tool === "pan" || contextPanning ? "is-panning" : ""].filter(Boolean).join(" ")}
           viewBox={`${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}`}
+          onPointerDownCapture={touchStart}
+          onPointerMoveCapture={touchMove}
+          onPointerUpCapture={touchEnd}
+          onPointerCancelCapture={touchEnd}
           onPointerDown={handleCanvasPointerDown}
           onContextMenu={(event) => {
             if (event.target === event.currentTarget) {
@@ -1506,6 +1570,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
                 opacity={selectedIds.includes(node.id) || pendingFromId === node.id ? 1 : 0}
               />
               {selectedIds.length === 1 && selectedIds.includes(node.id) && tool !== "pan" ? (
+                <>
                 <rect
                   className="diagram-resize-handle"
                   x={node.hx + node.hw - 7}
@@ -1515,6 +1580,16 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
                   rx="4"
                   onPointerDown={(event) => handleResizePointerDown(event, node.id)}
                 />
+                <rect
+                  className="diagram-touch-handle"
+                  x={node.hx + node.hw - 7}
+                  y={node.hy + node.hh - 7}
+                  width="14"
+                  height="14"
+                  rx="4"
+                  onPointerDown={(event) => handleResizePointerDown(event, node.id)}
+                />
+                </>
               ) : null}
             </g>
           ))}
@@ -1588,8 +1663,8 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
                   { x: activeGroup.hx, y: activeGroup.hy + activeGroup.hh, signX: -1, signY: 1 },
                 ];
                 return corners.map((corner) => (
+                  <g key={`${corner.signX}-${corner.signY}`}>
                   <rect
-                    key={`${corner.signX}-${corner.signY}`}
                     className="diagram-group-resize-handle"
                     x={corner.x - 6}
                     y={corner.y - 6}
@@ -1598,6 +1673,16 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
                     rx="3"
                     onPointerDown={(event) => handleGroupResizePointerDown(event, activeGroup.id, corner.signX, corner.signY)}
                   />
+                  <rect
+                    className="diagram-touch-handle"
+                    x={corner.x - 6}
+                    y={corner.y - 6}
+                    width="12"
+                    height="12"
+                    rx="3"
+                    onPointerDown={(event) => handleGroupResizePointerDown(event, activeGroup.id, corner.signX, corner.signY)}
+                  />
+                  </g>
                 ));
               })()
             : null}
@@ -1759,6 +1844,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
           ))}
         </div>
 
+        {(selectedNode || selectedGroup || selectedNodes.length > 1 || selectedEdge) ? <button className="diagram-properties-toggle" aria-expanded={propertiesOpen} onClick={() => setPropertiesOpen(!propertiesOpen)}>{propertiesOpen ? "Close properties" : "Properties"}</button> : null}
         {selectedNode ? (
           <aside className="diagram-inspector">
             <strong>Selected</strong>

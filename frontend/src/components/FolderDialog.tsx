@@ -1,3 +1,4 @@
+import { useBackLayer } from "../lib/useBackLayer";
 import { useEffect, useRef, useState } from "react";
 import { Check, Folder as FolderIcon, Plus, Search, X } from "lucide-react";
 import type { Folder, FolderDraft } from "../types/note";
@@ -47,6 +48,7 @@ export function FolderDialog({
     state.kind === "edit" && state.confirmDelete === true,
   );
   const [busy, setBusy] = useState(false);
+  useBackLayer(true, () => busy ? false : onClose());
   const [error, setError] = useState("");
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;

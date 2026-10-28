@@ -1,3 +1,4 @@
+import { useBackLayer } from "../lib/useBackLayer";
 import { InstallPaper } from "./InstallPaper";
 import { LogOut, Pencil, ShieldCheck, UserRound, X } from "lucide-react";
 import { useRef, useState } from "react";
@@ -16,10 +17,12 @@ type AccountMenuProps = {
 
 export function AccountMenu({ user, onLogout }: AccountMenuProps) {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const [open, setOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [account, setAccount] = useState<AuthUser>(user);
   const [nameDraft, setNameDraft] = useState(user.name);
   const [busy, setBusy] = useState(false);
+  useBackLayer(open, () => { if (busy) return false; dialogRef.current?.close(); setOpen(false); });
   const [error, setError] = useState<string>("");
   const label = account.name || account.email || "Account";
 
@@ -51,7 +54,7 @@ export function AccountMenu({ user, onLogout }: AccountMenuProps) {
       <button
         className="account-trigger"
         type="button"
-        onClick={() => dialogRef.current?.showModal()}
+        onClick={() => { setOpen(true); dialogRef.current?.showModal(); }}
       >
         {account.avatarUrl ? (
           <img className="account-avatar" src={account.avatarUrl} alt="" />
@@ -67,7 +70,7 @@ export function AccountMenu({ user, onLogout }: AccountMenuProps) {
       <dialog
         className="account-dialog"
         ref={dialogRef}
-        onClose={() => setError("")}
+        onClose={() => { setError(""); setOpen(false); }}
       >
         <header>
           <div className="account-dialog-icon">

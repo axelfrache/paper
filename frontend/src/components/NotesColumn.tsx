@@ -1,6 +1,7 @@
+import { ActionMenu } from "./ActionMenu";
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { PointerEvent } from "react";
-import { Copy, PanelLeftOpen, Plus, PanelRightOpen, Search, Star, StarOff, Trash2, X } from "lucide-react";
+import { MoreHorizontal, Copy, PanelLeftOpen, Plus, PanelRightOpen, Search, Star, StarOff, Trash2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { parseInline } from "../lib/markdown/inline";
 import type { MarkdownInline } from "../lib/markdown/inline";
@@ -18,6 +19,8 @@ type NotesColumnProps = {
   showFolders?: boolean;
   onMoveNotes?: (ids: string[]) => void;
   onSearchAll?: () => void;
+  onSelectionChange?: (ids: string[]) => void;
+  onDeleteSelected?: () => void;
   title: string;
   notes: Note[];
   activeId: string | null;
@@ -44,7 +47,7 @@ type NotesColumnProps = {
 };
 
 export function NotesColumn({
-  folders = [], showFolders = false, onMoveNotes, onSearchAll,
+  folders = [], showFolders = false, onMoveNotes, onSearchAll, onSelectionChange, onDeleteSelected,
   title,
   notes,
   activeId,
@@ -74,35 +77,8 @@ export function NotesColumn({
   const focusAfterNavigationRef = useRef(false);
   const handledFocusRequestRef = useRef(0);
   const [menu, setMenu] = useState<{ note: Note; x: number; y: number } | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!menu) {
-      return;
-    }
-    const close = () => setMenu(null);
-    const onPointerDown = (event: MouseEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) {
-        close();
-      }
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        close();
-      }
-    };
-    window.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("keydown", onKeyDown, true);
-    window.addEventListener("resize", close);
-    window.addEventListener("scroll", close, true);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("keydown", onKeyDown, true);
-      window.removeEventListener("resize", close);
-      window.removeEventListener("scroll", close, true);
-    };
-  }, [menu]);
-
+  const [selecting, setSelecting] = useState(false);
+  useEffect(() => setSelecting(false), [title]);
   const runMenuAction = (action: (note: Note) => void) => {
     if (menu) {
       action(menu.note);
@@ -179,16 +155,27 @@ export function NotesColumn({
       ) : null}
 
       {onSearchAll ? <button className="folder-search-all" onClick={onSearchAll}>Search in all notes →</button> : null}
-      {selectedIds.length > 1 && onMoveNotes ? <div className="folder-selection-actions"><span>{selectedIds.length} selected</span><button onClick={() => onMoveNotes(selectedIds)}>Move to…</button></div> : null}
+      {(selecting || selectedIds.length > 1) && onMoveNotes ? <div className="folder-selection-actions">
+        <span>{selectedIds.length} selected</span>
+        {selecting ? <button onClick={() => onSelectionChange?.(notes.map(note => note.id))}>All</button> : null}
+        <button disabled={!selectedIds.length} onClick={() => onMoveNotes(selectedIds)}>Move to…</button>
+        {onDeleteSelected ? <button disabled={!selectedIds.length} onClick={() => {
+          if (window.confirm(`Delete ${selectedIds.length} selected notes?`)) onDeleteSelected();
+        }}>Delete</button> : null}
+      </div> : null}
       <div className="list-title">
         <strong>{title}</strong>
         <span>{notes.length}</span>
+        {onSelectionChange ? <button className="selection-toggle" onClick={() => {
+          setSelecting(!selecting); onSelectionChange([]);
+        }}>{selecting ? "Done" : "Select"}</button> : null}
       </div>
 
       <div className="note-cards">
         {notes.map((note) => (
+          <div className="note-card-row" key={note.id}>
+          {selecting ? <input type="checkbox" aria-label={`Select ${note.title || "Untitled"}`} checked={selected.has(note.id)} onChange={() => onSelectionChange?.(selected.has(note.id) ? selectedIds.filter(id => id !== note.id) : [...selectedIds, note.id])} /> : null}
           <button
-            key={note.id}
             ref={(element) => {
               if (element) {
                 cardRefs.current.set(note.id, element);
@@ -198,17 +185,24 @@ export function NotesColumn({
             }}
             className={noteCardClass(note.id, activeId, selected)}
             aria-selected={selected.has(note.id)}
-            draggable={Boolean(onMoveNotes)}
+            draggable={!selecting && Boolean(onMoveNotes)}
             onDragStart={(event) => {
               event.dataTransfer.effectAllowed = "move";
               event.dataTransfer.setData(noteDragType, JSON.stringify(selected.has(note.id) ? selectedIds : [note.id]));
             }}
-            onClick={(event) => onSelect(note, event.shiftKey)}
+            onClick={(event) => selecting ? onSelectionChange?.(selected.has(note.id) ? selectedIds.filter(id => id !== note.id) : [...selectedIds, note.id]) : onSelect(note, event.shiftKey)}
             onContextMenu={(event) => {
               event.preventDefault();
               setMenu({ note, x: event.clientX, y: event.clientY });
             }}
             onKeyDown={(event) => {
+              if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+                event.preventDefault();
+                event.currentTarget.focus();
+                const bounds = event.currentTarget.getBoundingClientRect();
+                setMenu({note, x: bounds.left, y: bounds.bottom});
+                return;
+              }
               if ((event.key === "Enter" || event.key === "ArrowRight") && !event.ctrlKey && !event.metaKey && !event.altKey) {
                 event.preventDefault();
                 onFocusContent();
@@ -242,6 +236,11 @@ export function NotesColumn({
               </div>
             </div>
           </button>
+          {!selecting ? <button className="row-actions" aria-haspopup="menu" aria-expanded={menu?.note.id === note.id} aria-label={`Actions for ${note.title || "Untitled"}`} onClick={(event) => {
+            const bounds = event.currentTarget.getBoundingClientRect();
+            setMenu({ note, x: bounds.right, y: bounds.bottom });
+          }}><MoreHorizontal size={18} /></button> : null}
+          </div>
         ))}
         {notes.length === 0 ? (
           <div className="empty-state">
@@ -266,12 +265,7 @@ export function NotesColumn({
       />
 
       {menu ? (
-        <div
-          ref={menuRef}
-          className="note-context-menu"
-          role="menu"
-          style={{ left: menu.x, top: menu.y }}
-        >
+        <ActionMenu x={menu.x} y={menu.y} label={`Actions for ${menu.note.title || "Untitled"}`} onClose={() => setMenu(null)}>
           <button type="button" role="menuitem" onClick={() => runMenuAction((note) => onSelect(note, false))}>
             <PanelRightOpen size={14} strokeWidth={1.8} />
             <span>Open</span>
@@ -290,7 +284,7 @@ export function NotesColumn({
             <Trash2 size={14} strokeWidth={1.8} />
             <span>Delete</span>
           </button>
-        </div>
+        </ActionMenu>
       ) : null}
     </section>
   );

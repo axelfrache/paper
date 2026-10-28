@@ -1,3 +1,4 @@
+import { useBackLayer } from "../lib/useBackLayer";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { FileText, Search, Sparkles } from "lucide-react";
@@ -50,6 +51,7 @@ export function CommandPalette({
   onSelectNote,
   onClose,
 }: CommandPaletteProps) {
+  useBackLayer(open, onClose);
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);

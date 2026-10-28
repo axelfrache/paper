@@ -51,7 +51,7 @@ it("replaces the options button with edit and delete actions on right click", ()
   expect(p.onSelect).not.toHaveBeenCalled();
   const actions =
     document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]');
-  expect(actions).toHaveLength(2);
+  expect(actions).toHaveLength(3);
   act(() => actions[0].click());
   expect(p.onEdit).toHaveBeenCalledWith(folder);
   expect(document.querySelector('[role="menu"]')).toBeNull();
@@ -92,4 +92,11 @@ it("opens from the keyboard and restores focus on Escape", () => {
   );
   expect(document.querySelector('[role="menu"]')).toBeNull();
   expect(document.activeElement).toBe(p.row);
+});
+
+it("opens folder actions by tapping without changing the selected folder", () => {
+  const p = mount();
+  act(() => p.host.querySelector<HTMLButtonElement>(".row-actions")!.click());
+  expect(document.querySelector('[role="menu"]')).not.toBeNull();
+  expect(p.onSelect).not.toHaveBeenCalled();
 });

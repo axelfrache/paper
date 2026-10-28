@@ -37,7 +37,7 @@ export function Sidebar({ foldersSlot, folderSelected, notes, view, activeTags, 
   const tagCounts = tagCountsFor(notes);
 
   return (
-    <aside className={hidden ? "sidebar is-hidden" : "sidebar"}>
+    <aside inert={hidden} onKeyDown={(event) => { if (event.key === "Escape") onToggleCollapse(); }} className={hidden ? "sidebar is-hidden" : "sidebar"}>
       <div className="brand">
         <img className="brand-lockup brand-lockup-light" src="/paper-lockup.svg" alt="Paper" />
         <img className="brand-lockup brand-lockup-dark" src="/paper-lockup-dark.svg" alt="Paper" />

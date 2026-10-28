@@ -1,6 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { Folder as FolderIcon, Pencil, Plus, Trash2 } from "lucide-react";
+import { useRef, useState } from "react";
+import { ActionMenu } from "./ActionMenu";
+import {
+  Folder as FolderIcon,
+  Pencil,
+  Plus,
+  Trash2,
+  MoreHorizontal,
+} from "lucide-react";
 import type { Folder, Note } from "../types/note";
 import { folderColors } from "./FolderDialog";
 export const noteDragType = "application/x-paper-notes";
@@ -30,31 +36,7 @@ export function FolderNav({
     x: number;
     y: number;
   } | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
-  useLayoutEffect(() => {
-    if (!menu || !menuRef.current) return;
-    const element = menuRef.current;
-    const bounds = element.getBoundingClientRect();
-    element.style.left = `${Math.max(8, Math.min(menu.x, window.innerWidth - bounds.width - 8))}px`;
-    element.style.top = `${Math.max(8, Math.min(menu.y, window.innerHeight - bounds.height - 8))}px`;
-    element.querySelector<HTMLButtonElement>("button")?.focus();
-  }, [menu]);
-  useEffect(() => {
-    if (!menu) return;
-    const close = () => setMenu(null);
-    const outside = (event: PointerEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) close();
-    };
-    window.addEventListener("pointerdown", outside, true);
-    window.addEventListener("resize", close);
-    window.addEventListener("scroll", close, true);
-    return () => {
-      window.removeEventListener("pointerdown", outside, true);
-      window.removeEventListener("resize", close);
-      window.removeEventListener("scroll", close, true);
-    };
-  }, [menu]);
   const runAction = (action: (folder: Folder) => void) => {
     if (!menu) return;
     triggerRef.current?.focus();
@@ -159,70 +141,55 @@ export function FolderNav({
               }
             </em>
           </button>
-        </div>
-      ))}
-      {menu
-        ? createPortal(
-            <div
-              ref={menuRef}
-              className="note-context-menu"
-              role="menu"
-              aria-label={`Actions for ${menu.folder.name}`}
-              style={{ left: menu.x, top: menu.y }}
-              onKeyDown={(event) => {
-                if (event.key === "Escape" || event.key === "Tab") {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setMenu(null);
-                  triggerRef.current?.focus();
-                } else if (
-                  ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)
-                ) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  const buttons = Array.from(
-                    event.currentTarget.querySelectorAll<HTMLButtonElement>(
-                      "button",
-                    ),
-                  );
-                  const index = buttons.indexOf(
-                    document.activeElement as HTMLButtonElement,
-                  );
-                  const next =
-                    event.key === "Home"
-                      ? 0
-                      : event.key === "End"
-                        ? buttons.length - 1
-                        : (index +
-                            (event.key === "ArrowDown" ? 1 : -1) +
-                            buttons.length) %
-                          buttons.length;
-                  buttons[next]?.focus();
-                }
+          {folder.id ? (
+            <button
+              className="row-actions"
+              aria-haspopup="menu"
+              aria-expanded={menu?.folder.id === folder.id}
+              aria-label={`Actions for ${folder.name}`}
+              onClick={(event) => {
+                const bounds = event.currentTarget.getBoundingClientRect();
+                triggerRef.current = event.currentTarget;
+                setMenu({
+                  folder: folder as Folder,
+                  x: bounds.right,
+                  y: bounds.bottom,
+                });
               }}
             >
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => runAction(onEdit)}
-              >
-                <Pencil size={14} strokeWidth={1.8} />
-                <span>Edit folder…</span>
-              </button>
-              <span className="note-context-menu-sep" aria-hidden="true" />
-              <button
-                type="button"
-                role="menuitem"
-                className="danger"
-                onClick={() => runAction(onDelete)}
-              >
-                <Trash2 size={14} strokeWidth={1.8} />
-                <span>Delete folder…</span>
-              </button>
-            </div>,
-            document.body,
-          )
-        : null}
+              <MoreHorizontal size={18} />
+            </button>
+          ) : null}
+        </div>
+      ))}
+      {menu ? (
+        <ActionMenu
+          returnFocus={triggerRef.current}
+          x={menu.x}
+          y={menu.y}
+          label={`Actions for ${menu.folder.name}`}
+          onClose={() => setMenu(null)}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => runAction(onEdit)}
+          >
+            <Pencil size={14} strokeWidth={1.8} />
+            <span>Edit folder…</span>
+          </button>
+          <span className="note-context-menu-sep" aria-hidden="true" />
+          <button
+            type="button"
+            role="menuitem"
+            className="danger"
+            onClick={() => runAction(onDelete)}
+          >
+            <Trash2 size={14} strokeWidth={1.8} />
+            <span>Delete folder…</span>
+          </button>
+        </ActionMenu>
+      ) : null}
     </section>
   );
 }

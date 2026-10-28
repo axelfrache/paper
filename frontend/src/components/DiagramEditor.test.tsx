@@ -676,3 +676,38 @@ describe("label paint order", () => {
     expect(firstLabelIndex).toBeGreaterThan(lastShapeIndex);
   });
 });
+
+describe("touch diagram navigation", () => {
+  it("zooms with two fingers without changing diagram data", () => {
+    const p = mount(rowOfThree());
+    const svg = p.host.querySelector<SVGSVGElement>(".diagram-canvas")!;
+    svg.getScreenCTM = vi.fn(() => null);
+    svg.setPointerCapture = vi.fn();
+    svg.hasPointerCapture = vi.fn(() => false);
+    const touch = (type: string, id: number, x: number) => {
+      const event = new MouseEvent(type, { clientX: x, clientY: 150, bubbles: true, cancelable: true, button: 0 });
+      Object.defineProperties(event, { pointerType: { value: "touch" }, pointerId: { value: id } });
+      act(() => svg.dispatchEvent(event));
+    };
+    const initial = svg.getAttribute("viewBox")!.split(" ").map(Number);
+    const diagram = p.value();
+    touch("pointerdown", 1, 100);
+    touch("pointerdown", 2, 200);
+    touch("pointermove", 2, 300);
+    const zoomed = svg.getAttribute("viewBox")!.split(" ").map(Number);
+    expect(zoomed[2]).toBeLessThan(initial[2]);
+    touch("pointerup", 1, 100);
+    touch("pointerup", 2, 300);
+    expect(p.value()).toEqual(diagram);
+  });
+  it("allows properties to be opened explicitly after selecting an element", () => {
+    const p = mount(rowOfThree());
+    p.select(0);
+    const toggle = p.host.querySelector<HTMLButtonElement>(".diagram-properties-toggle")!;
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    act(() => toggle.click());
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    act(() => toggle.click());
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  });
+});

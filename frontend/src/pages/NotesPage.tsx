@@ -1,3 +1,5 @@
+import { useMobileViewport } from "../lib/useMobileViewport";
+import { useBackLayer } from "../lib/useBackLayer";
 import { AutosaveQueue, type SaveState } from "../lib/autosave";
 import { prepareNavigation, registerDraftGuard } from "../lib/pwa";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -67,8 +69,13 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
   const [paletteMode, setPaletteMode] = useState<PaletteMode>("search");
   const [theme, setTheme] = useState<Theme>(() => initialTheme());
   const [sidebarHidden, setSidebarHidden] = useState(() => matchesCompactNavigation());
+  useBackLayer(!sidebarHidden && matchesCompactNavigation(), () => setSidebarHidden(true));
   const [navPinned, setNavPinned] = useState(false);
+  const [listHidden, setListHidden] = useState(false);
   const [mobilePane, setMobilePane] = useState<MobilePane>("notes");
+  useMobileViewport();
+  useBackLayer(mobilePane === "editor" && (window.innerWidth <= 900), () => setMobilePane("notes"));
+
   const [navigationWidth, setNavigationWidth] = useState(() => initialColumnWidth("navigation"));
   const [notesWidth, setNotesWidth] = useState(() => initialColumnWidth("notes"));
   const [aiResult, setAIResult] = useState<AIResult | null>(null);
@@ -839,6 +846,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
   const moveTo = (ids: string[], folderId: string | null) =>
     applyMoves(ids.map((noteId) => ({ noteId, folderId })));
   const chooseFolder = (id: string | null) => {
+    setListHidden(false);
     setNavPinned(true);
     setFolderScope(id);
     setView("all");
@@ -862,7 +870,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
   } as CSSProperties;
 
   return (
-    <div className={`app-shell mobile-${mobilePane}`} style={shellStyle}>
+    <div className={`app-shell mobile-${mobilePane}${listHidden ? " editor-focused" : ""}`} style={shellStyle}>
       <Sidebar
         foldersSlot={
           <FolderNav
@@ -956,6 +964,8 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
         onClearFilters={clearFilters}
         onNew={() => void handleNew()}
         onSelect={selectNote}
+        onSelectionChange={setSelectedIds}
+        onDeleteSelected={() => void handleDelete().then(() => { setMobilePane("notes"); setSelectedIds([]); })}
         onFavoriteNote={favoriteNote}
         onDuplicateNote={(note) => void duplicateNote(note)}
         onDeleteNote={(note) => void deleteSingleNote(note)}
@@ -971,6 +981,8 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       />
 
       <NoteEditor
+        listHidden={listHidden}
+        onToggleList={() => setListHidden(!listHidden)}
         folderControl={
           activeNote ? (
             <button
@@ -1200,7 +1212,7 @@ function matchesCompactNavigation() {
 }
 
 function matchesMobileLayout() {
-  return window.matchMedia?.("(max-width: 720px)").matches ?? window.innerWidth <= 720;
+  return window.matchMedia?.("(max-width: 900px)").matches ?? window.innerWidth <= 900;
 }
 
 function initialColumnWidth(column: ResizableColumn) {
