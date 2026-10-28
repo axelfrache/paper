@@ -174,7 +174,7 @@ export function NotesColumn({
       <div className="note-cards">
         {notes.map((note) => (
           <div className="note-card-row" key={note.id}>
-          {selecting ? <input type="checkbox" aria-label={`Select ${note.title || "Untitled"}`} checked={selected.has(note.id)} onChange={() => onSelectionChange?.(selected.has(note.id) ? selectedIds.filter(id => id !== note.id) : [...selectedIds, note.id])} /> : null}
+          {selecting ? <input type="checkbox" className="note-select-checkbox" aria-label={`Select ${note.title || "Untitled"}`} checked={selected.has(note.id)} onChange={() => onSelectionChange?.(selected.has(note.id) ? selectedIds.filter(id => id !== note.id) : [...selectedIds, note.id])} /> : null}
           <button
             ref={(element) => {
               if (element) {
