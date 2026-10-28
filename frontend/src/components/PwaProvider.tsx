@@ -2,11 +2,11 @@ import {
   createContext,
   useContext,
   useEffect,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { hasPendingChanges, prepareNavigation } from "../lib/pwa";
+import { activateUpdate } from "../lib/pwa-update";
 type InstallEvent = Event & {
   prompt: () => Promise<{ outcome: "accepted" | "dismissed" }>;
 };
@@ -21,7 +21,6 @@ export function PwaProvider({ children }: { children: ReactNode }) {
   const [waiting, setWaiting] = useState<ServiceWorker | null>(null);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState("");
-  const reloading = useRef(false);
   useEffect(() => {
     const media = window.matchMedia("(display-mode: standalone)");
     const checkInstalled = () =>
@@ -70,13 +69,6 @@ export function PwaProvider({ children }: { children: ReactNode }) {
       if (document.visibilityState === "visible")
         void registration?.update().catch(() => {});
     };
-    const controllerChanged = () => {
-      if (reloading.current) window.location.reload();
-    };
-    navigator.serviceWorker.addEventListener(
-      "controllerchange",
-      controllerChanged,
-    );
     document.addEventListener("visibilitychange", refresh);
     void navigator.serviceWorker
       .register("/sw.js", { scope: "/", updateViaCache: "none" })
@@ -94,10 +86,6 @@ export function PwaProvider({ children }: { children: ReactNode }) {
       disposed = true;
       registration?.removeEventListener("updatefound", found);
       document.removeEventListener("visibilitychange", refresh);
-      navigator.serviceWorker.removeEventListener(
-        "controllerchange",
-        controllerChanged,
-      );
     };
   }, []);
   const update = async () => {
@@ -111,22 +99,11 @@ export function PwaProvider({ children }: { children: ReactNode }) {
       await prepareNavigation();
       if (document.querySelector("dialog[open], .diagram-editor"))
         throw new Error("Finish editing and close the dialog before updating.");
-      reloading.current = true;
-      await new Promise<void>((resolve, reject) => {
-        const channel = new MessageChannel();
-        const timer = setTimeout(() => {
-          channel.port1.close();
-          reject(new Error("Update unavailable. Please try again."));
-        }, 10000);
-        channel.port1.onmessage = (event) => {
-          clearTimeout(timer);
-          channel.port1.close();
-          event.data.ok ? resolve() : reject(new Error(event.data.error));
-        };
-        waiting.postMessage({ type: "APPLY_UPDATE" }, [channel.port2]);
-      });
+      await activateUpdate(waiting);
+      if (hasPendingChanges())
+        throw new Error("Please save your changes before reloading Paper.");
+      window.location.reload();
     } catch (caught) {
-      reloading.current = false;
       setUpdating(false);
       setError(
         caught instanceof Error ? caught.message : "Could not update Paper.",
