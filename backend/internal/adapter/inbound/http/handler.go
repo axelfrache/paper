@@ -95,6 +95,15 @@ func (h *Handler) DeleteNote(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	w.WriteHeader(stdhttp.StatusNoContent)
 }
 
+func (h *Handler) RestoreNote(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	note, err := h.service.RestoreNote(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, stdhttp.StatusOK, newNoteDTO(note))
+}
+
 func (h *Handler) AssistNote(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	var dto assistRequestDTO
 	if err := decodeJSON(w, r, &dto); err != nil {

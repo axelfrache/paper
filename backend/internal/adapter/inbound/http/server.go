@@ -47,6 +47,7 @@ func NewRouter(notes port.NoteService, images port.NoteImageService, auth port.A
 	mux.Handle("GET /api/notes/{id}", requireAuth(auth, stdhttp.HandlerFunc(handler.GetNote)))
 	mux.Handle("PATCH /api/notes/{id}", requireAuth(auth, stdhttp.HandlerFunc(handler.UpdateNote)))
 	mux.Handle("DELETE /api/notes/{id}", requireAuth(auth, stdhttp.HandlerFunc(handler.DeleteNote)))
+	mux.Handle("POST /api/notes/{id}/restore", requireAuth(auth, stdhttp.HandlerFunc(handler.RestoreNote)))
 	mux.Handle("POST /api/notes/{id}/assist", ai(handler.AssistNote))
 	mux.Handle("POST /api/notes/{id}/images", requireAuth(auth, stdhttp.HandlerFunc(handler.UploadNoteImage)))
 	mux.Handle("GET /api/images/{imageID}", requireAuth(auth, stdhttp.HandlerFunc(handler.GetNoteImage)))

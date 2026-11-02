@@ -4192,7 +4192,7 @@ span.account-avatar-lg {
   color: var(--danger);
   margin-bottom: 0;
 }
-.folder-move-toast {
+.action-toast {
   position: fixed;
   bottom: 58px;
   left: 50%;
@@ -4210,7 +4210,7 @@ span.account-avatar-lg {
   font-size: 13px;
   white-space: nowrap;
 }
-.folder-move-toast button {
+.action-toast button {
   border: 0;
   background: transparent;
   color: var(--accent);
@@ -4341,7 +4341,7 @@ span.account-avatar-lg {
 .action-menu-heading { padding: 8px 9px; font-weight: 600; overflow-wrap: anywhere; max-width: 300px; }
 .action-menu .action-menu-cancel { display: none; }
 .action-menu-scrim { position: fixed; inset: 0; z-index: 119; background: transparent; }
-.folder-move-toast { max-width: calc(100vw - 24px); white-space: normal; }
+.action-toast { max-width: calc(100vw - 24px); white-space: normal; }
 @media (any-pointer: coarse), (max-width: 900px) {
   .row-actions { opacity: 1; pointer-events: auto; right: 2px; width: 44px; height: 44px; }
   .folder-nav-row > .nav-item { min-height: 48px; padding-right: 48px; }
@@ -4371,7 +4371,7 @@ span.account-avatar-lg {
   .palette { max-height: calc(var(--visible-height, 100dvh) * .85); }
   .palette-body { max-height: calc(var(--visible-height, 100dvh) * .6); }
   .note-save-status { bottom: max(4px, env(safe-area-inset-bottom)); }
-  .folder-move-toast { bottom: max(44px, calc(env(safe-area-inset-bottom) + 32px)); }
+  .action-toast { bottom: max(44px, calc(env(safe-area-inset-bottom) + 32px)); }
   .pwa-update { bottom: max(100px, calc(env(safe-area-inset-bottom) + 88px)); }
 }
 .editor-topbar > .editor-mobile-actions, .diagram-properties-toggle { display: none; }
@@ -4431,7 +4431,7 @@ span.account-avatar-lg {
   .diagram-touch-handle { display: block; fill: transparent; stroke: transparent; stroke-width: 40px; vector-effect: non-scaling-stroke; pointer-events: all; }
 }
 @media (any-pointer: coarse), (max-width: 900px) {
-  .pwa-update button, .note-save-status button, .folder-move-toast button { min-height: 44px; min-width: 44px; }
+  .pwa-update button, .note-save-status button, .action-toast button { min-height: 44px; min-width: 44px; }
 }
 @media (any-pointer: coarse) {
   /* Pinch already steps the zoom continuously on touch, so the +/- buttons are redundant

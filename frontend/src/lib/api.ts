@@ -125,6 +125,12 @@ export function deleteNote(id: string) {
   });
 }
 
+export function restoreNote(id: string) {
+  return request<Note>(`/api/notes/${id}/restore`, {
+    method: "POST",
+  });
+}
+
 export function searchNotes(query: string, tags: string[] = []) {
   return request<Note[]>("/api/search", {
     method: "POST",

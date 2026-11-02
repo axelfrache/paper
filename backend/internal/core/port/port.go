@@ -3,6 +3,7 @@ package port
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/axelfrache/paper/backend/internal/core/domain"
 )
@@ -18,6 +19,7 @@ type NoteService interface {
 	ListNotes(ctx context.Context) ([]domain.Note, error)
 	SearchNotes(ctx context.Context, query domain.SearchQuery) ([]domain.Note, error)
 	DeleteNote(ctx context.Context, id string) error
+	RestoreNote(ctx context.Context, id string) (domain.Note, error)
 	AssistNote(ctx context.Context, id string, action domain.AIAction) (domain.AISuggestion, error)
 	AskNotes(ctx context.Context, req domain.AskRequest) (domain.AskAnswer, error)
 	GenerateAI(ctx context.Context, req domain.AICompletionRequest) (domain.AICompletion, error)
@@ -33,6 +35,8 @@ type NoteRepository interface {
 	GetByID(ctx context.Context, ownerID, id string) (domain.Note, error)
 	List(ctx context.Context, ownerID string) ([]domain.Note, error)
 	Delete(ctx context.Context, ownerID, id string) error
+	Restore(ctx context.Context, ownerID, id string) (domain.Note, error)
+	PurgeExpired(ctx context.Context, olderThan time.Duration) ([]domain.NoteImageRecord, error)
 }
 
 type NoteAssistant interface {

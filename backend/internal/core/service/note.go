@@ -85,6 +85,14 @@ func (s *Note) DeleteNote(ctx context.Context, id string) error {
 	return s.repo.Delete(ctx, user.ID, id)
 }
 
+func (s *Note) RestoreNote(ctx context.Context, id string) (domain.Note, error) {
+	user, err := domain.RequireUser(ctx)
+	if err != nil {
+		return domain.Note{}, err
+	}
+	return s.repo.Restore(ctx, user.ID, id)
+}
+
 func (s *Note) AssistNote(ctx context.Context, id string, action domain.AIAction) (domain.AISuggestion, error) {
 	user, err := domain.RequireUser(ctx)
 	if err != nil {

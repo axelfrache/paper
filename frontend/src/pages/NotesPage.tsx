@@ -15,7 +15,7 @@ import type { Folder, NoteMove } from "../types/note";
 import { Folder as FolderIcon, ChevronDown } from "lucide-react";
 import { Toast } from "../components/Toast";
 import { NoteEditor, type AIResult } from "../features/NoteEditor";
-import { askNotes, assistNote, createNote, deleteNote, listNotes, searchNotes, updateNote, uploadNoteImage } from "../lib/api";
+import { askNotes, assistNote, createNote, deleteNote, listNotes, restoreNote, searchNotes, updateNote, uploadNoteImage } from "../lib/api";
 import { recordDraft, historyLimit, type NoteHistory } from "../lib/noteHistory";
 import { matchesFilter } from "../lib/notesFilter";
 import { useShortcuts } from "../lib/useShortcuts";
@@ -55,6 +55,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
   const [folderScope, setFolderScope] = useState<string | null | undefined>(undefined);
   const [folderDialog, setFolderDialog] = useState<FolderDialogState | null>(null);
   const [moveUndo, setMoveUndo] = useState<NoteMove[] | null>(null);
+  const [deleteUndo, setDeleteUndo] = useState<DeletedNotesAction | null>(null);
   const [moving, setMoving] = useState(false);
   const folderBusy = useRef(false);
   const sortedFolders = useMemo(() => [...folders].sort((a,b) => a.name.localeCompare(b.name)), [folders]);
@@ -101,6 +102,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
     return () => { window.removeEventListener("online", change); window.removeEventListener("offline", change); };
   }, [saveQueue]);
   const toastTimer = useRef<number | null>(null);
+  const deleteUndoTimer = useRef<number | null>(null);
   const aiRequestRef = useRef(0);
   const editorLineRef = useRef<number | null>(null);
   const lastSelectedIdRef = useRef<string | null>(null);
@@ -174,6 +176,9 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       if (toastTimer.current) {
         window.clearTimeout(toastTimer.current);
       }
+      if (deleteUndoTimer.current) {
+        window.clearTimeout(deleteUndoTimer.current);
+      }
     };
   }, []);
 
@@ -237,6 +242,14 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       window.clearTimeout(toastTimer.current);
     }
     toastTimer.current = window.setTimeout(() => setToast(""), 1900);
+  }, []);
+
+  const armDeleteUndo = useCallback((action: DeletedNotesAction) => {
+    setDeleteUndo(action);
+    if (deleteUndoTimer.current) {
+      window.clearTimeout(deleteUndoTimer.current);
+    }
+    deleteUndoTimer.current = window.setTimeout(() => setDeleteUndo(null), 8000);
   }, []);
 
   const setColumnWidth = useCallback((column: ResizableColumn, width: number) => {
@@ -332,8 +345,12 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
     if (!action) {
       return false;
     }
+    setDeleteUndo(null);
+    if (deleteUndoTimer.current) {
+      window.clearTimeout(deleteUndoTimer.current);
+    }
     try {
-      const restored = await Promise.all(action.notes.map((note) => createNote({ ...toDraft(note), folderId: folders.some((folder) => folder.id === note.folderId) ? note.folderId : null })));
+      const restored = await Promise.all(action.notes.map((note) => restoreNote(note.id)));
       setNotes((current) => {
         const next = [...current];
         next.splice(Math.min(action.index, next.length), 0, ...restored);
@@ -350,7 +367,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       flash(action.notes.length === 1 ? "Could not restore note" : "Could not restore notes");
       return true;
     }
-  }, [flash, folders]);
+  }, [flash]);
 
   const redoDeletedNotes = useCallback(async () => {
     const action = deletedHistoryRef.current.redo.pop();
@@ -541,12 +558,13 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       lastSelectedIdRef.current = nextActive?.id ?? null;
       deletedHistoryRef.current.undo.push({ notes: deletedNotes, index: deleteIndex });
       deletedHistoryRef.current.redo = [];
+      armDeleteUndo({ notes: deletedNotes, index: deleteIndex });
       setAIResult(null);
       flash(ids.length === 1 ? "Note deleted" : `${ids.length} notes deleted`);
     } catch {
       flash(ids.length === 1 ? "Could not delete note" : "Could not delete notes");
     }
-  }, [activeNote, selectedIds, notes, flash]);
+  }, [activeNote, selectedIds, notes, flash, armDeleteUndo]);
 
   const toggleFavorite = useCallback(() => {
     if (!activeNote) {
@@ -596,12 +614,13 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
         }
         deletedHistoryRef.current.undo.push({ notes: [note], index });
         deletedHistoryRef.current.redo = [];
+        armDeleteUndo({ notes: [note], index });
         flash("Note deleted");
       } catch {
         flash("Could not delete note");
       }
     },
-    [notes, flash],
+    [notes, flash, armDeleteUndo],
   );
 
   const toggleFilterTag = useCallback((tag: string) => {
@@ -1112,7 +1131,7 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
         />
       ) : null}
       {moveUndo ? (
-        <div className="folder-move-toast" role="status">
+        <div className="action-toast" role="status">
           <span>
             {moveUndo.length === 1
               ? "Note moved"
@@ -1131,6 +1150,22 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
           <button
             aria-label="Dismiss move notification"
             onClick={() => setMoveUndo(null)}
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
+      {deleteUndo ? (
+        <div className="action-toast" role="status">
+          <span>
+            {deleteUndo.notes.length === 1
+              ? "Note deleted"
+              : `${deleteUndo.notes.length} notes deleted`}
+          </span>
+          <button onClick={() => void undoDeletedNotes()}>Undo</button>
+          <button
+            aria-label="Dismiss delete notification"
+            onClick={() => setDeleteUndo(null)}
           >
             ×
           </button>

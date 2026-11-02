@@ -11,19 +11,23 @@ import (
 )
 
 type NoteRepository struct {
-	mu      sync.RWMutex
-	nextID  int
-	notes   map[string]domain.Note
-	images  map[string]domain.NoteImageRecord
-	folders map[string]domain.Folder
+	mu        sync.RWMutex
+	nextID    int
+	notes     map[string]domain.Note
+	deletedAt map[string]time.Time
+	images    map[string]domain.NoteImageRecord
+	folders   map[string]domain.Folder
 }
+
+const restoreWindow = 30 * 24 * time.Hour
 
 func NewNoteRepository() *NoteRepository {
 	return &NoteRepository{
-		nextID:  1,
-		folders: make(map[string]domain.Folder),
-		notes:   make(map[string]domain.Note),
-		images:  make(map[string]domain.NoteImageRecord),
+		nextID:    1,
+		folders:   make(map[string]domain.Folder),
+		notes:     make(map[string]domain.Note),
+		deletedAt: make(map[string]time.Time),
+		images:    make(map[string]domain.NoteImageRecord),
 	}
 }
 
@@ -58,7 +62,7 @@ func (r *NoteRepository) Update(_ context.Context, ownerID, id string, draft dom
 	defer r.mu.Unlock()
 
 	note, ok := r.notes[id]
-	if !ok || note.OwnerID != ownerID {
+	if !ok || note.OwnerID != ownerID || r.isDeleted(id) {
 		return domain.Note{}, domain.NewNotFoundError("Note %q was not found.", id)
 	}
 
@@ -76,7 +80,7 @@ func (r *NoteRepository) GetByID(_ context.Context, ownerID, id string) (domain.
 	defer r.mu.RUnlock()
 
 	note, ok := r.notes[id]
-	if !ok || note.OwnerID != ownerID {
+	if !ok || note.OwnerID != ownerID || r.isDeleted(id) {
 		return domain.Note{}, domain.NewNotFoundError("Note %q was not found.", id)
 	}
 	return cloneNote(note), nil
@@ -88,7 +92,7 @@ func (r *NoteRepository) List(_ context.Context, ownerID string) ([]domain.Note,
 
 	notes := make([]domain.Note, 0, len(r.notes))
 	for _, note := range r.notes {
-		if note.OwnerID == ownerID {
+		if note.OwnerID == ownerID && !r.isDeleted(note.ID) {
 			notes = append(notes, cloneNote(note))
 		}
 	}
@@ -103,11 +107,54 @@ func (r *NoteRepository) Delete(_ context.Context, ownerID, id string) error {
 	defer r.mu.Unlock()
 
 	note, ok := r.notes[id]
-	if !ok || note.OwnerID != ownerID {
+	if !ok || note.OwnerID != ownerID || r.isDeleted(id) {
 		return domain.NewNotFoundError("Note %q was not found.", id)
 	}
-	delete(r.notes, id)
+	r.deletedAt[id] = time.Now().UTC()
 	return nil
+}
+
+func (r *NoteRepository) Restore(_ context.Context, ownerID, id string) (domain.Note, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	note, ok := r.notes[id]
+	deletedAt, wasDeleted := r.deletedAt[id]
+	if !ok || note.OwnerID != ownerID || !wasDeleted || time.Since(deletedAt) > restoreWindow {
+		return domain.Note{}, domain.NewNotFoundError("Note %q was not found.", id)
+	}
+	delete(r.deletedAt, id)
+	return cloneNote(note), nil
+}
+
+func (r *NoteRepository) isDeleted(id string) bool {
+	_, ok := r.deletedAt[id]
+	return ok
+}
+
+func (r *NoteRepository) PurgeExpired(_ context.Context, olderThan time.Duration) ([]domain.NoteImageRecord, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	expired := make(map[string]bool)
+	for id, deletedAt := range r.deletedAt {
+		if time.Since(deletedAt) >= olderThan {
+			expired[id] = true
+		}
+	}
+
+	purgedImages := make([]domain.NoteImageRecord, 0)
+	for imageID, image := range r.images {
+		if expired[image.NoteID] {
+			purgedImages = append(purgedImages, image)
+			delete(r.images, imageID)
+		}
+	}
+	for id := range expired {
+		delete(r.notes, id)
+		delete(r.deletedAt, id)
+	}
+	return purgedImages, nil
 }
 
 func (r *NoteRepository) SaveImage(_ context.Context, image domain.NoteImageRecord) error {

@@ -90,3 +90,60 @@ func TestFolderMigrationAndTransactions(t *testing.T) {
 		t.Fatal("deletion changed note", err)
 	}
 }
+
+func TestSoftDeleteRestoreRoundTrip(t *testing.T) {
+	url := os.Getenv("PAPER_FOLDER_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("requires disposable PAPER_FOLDER_TEST_DATABASE_URL")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err := pool.Exec(ctx, `drop table if exists note_images,notes,folders cascade`); err != nil {
+		t.Fatal(err)
+	}
+	r, err := NewNoteRepository(ctx, url, "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	note, err := r.Create(ctx, "a", domain.NoteDraft{Title: "Has an image", Content: "![img](/api/images/img1.png)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SaveImage(ctx, domain.NoteImageRecord{ID: "img1.png", NoteID: note.ID, OwnerID: "a", StorageKey: "images/img1.png"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := r.Delete(ctx, "a", note.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.GetByID(ctx, "a", note.ID); err == nil {
+		t.Fatal("expected a soft-deleted note to be hidden from GetByID")
+	}
+	if list, err := r.List(ctx, "a"); err != nil || len(list) != 0 {
+		t.Fatalf("expected a soft-deleted note to be hidden from List, got %#v %v", list, err)
+	}
+	if _, err := r.GetImage(ctx, "a", "img1.png"); err != nil {
+		t.Fatal("expected the image row to survive a soft delete", err)
+	}
+
+	restored, err := r.Restore(ctx, "a", note.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.Content != note.Content {
+		t.Fatalf("restored note content changed: %#v", restored)
+	}
+	if _, err := r.GetImage(ctx, "a", "img1.png"); err != nil {
+		t.Fatal("expected the image to still be reachable after restore", err)
+	}
+
+	if _, err := r.Restore(ctx, "a", note.ID); err == nil {
+		t.Fatal("expected restoring a note that is not deleted to fail")
+	}
+}

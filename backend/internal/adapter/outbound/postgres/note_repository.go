@@ -78,7 +78,7 @@ func (r *NoteRepository) Update(ctx context.Context, ownerID, id string, draft d
 	row := r.pool.QueryRow(ctx, `
 		update notes
 		set title = $2, content = $3, tags = $4, favorite = $5, updated_at = $6
-		where id = $1 and owner_id = $7
+		where id = $1 and owner_id = $7 and deleted_at is null
 		returning id, title, content, tags, favorite, created_at, updated_at, folder_id
 	`, id, draft.Title, draft.Content, tags, draft.Favorite, now, ownerID)
 	return scanNote(row, id)
@@ -88,7 +88,7 @@ func (r *NoteRepository) GetByID(ctx context.Context, ownerID, id string) (domai
 	row := r.pool.QueryRow(ctx, `
 		select id, title, content, tags, favorite, created_at, updated_at, folder_id
 		from notes
-		where id = $1 and owner_id = $2
+		where id = $1 and owner_id = $2 and deleted_at is null
 	`, id, ownerID)
 	return scanNote(row, id)
 }
@@ -97,7 +97,7 @@ func (r *NoteRepository) List(ctx context.Context, ownerID string) ([]domain.Not
 	rows, err := r.pool.Query(ctx, `
 		select id, title, content, tags, favorite, created_at, updated_at, folder_id
 		from notes
-		where owner_id = $1
+		where owner_id = $1 and deleted_at is null
 		order by updated_at desc
 	`, ownerID)
 	if err != nil {
@@ -120,7 +120,7 @@ func (r *NoteRepository) List(ctx context.Context, ownerID string) ([]domain.Not
 }
 
 func (r *NoteRepository) Delete(ctx context.Context, ownerID, id string) error {
-	command, err := r.pool.Exec(ctx, `delete from notes where id = $1 and owner_id = $2`, id, ownerID)
+	command, err := r.pool.Exec(ctx, `update notes set deleted_at = now() where id = $1 and owner_id = $2 and deleted_at is null`, id, ownerID)
 	if err != nil {
 		return err
 	}
@@ -128,6 +128,56 @@ func (r *NoteRepository) Delete(ctx context.Context, ownerID, id string) error {
 		return domain.NewNotFoundError("Note %q was not found.", id)
 	}
 	return nil
+}
+
+func (r *NoteRepository) Restore(ctx context.Context, ownerID, id string) (domain.Note, error) {
+	row := r.pool.QueryRow(ctx, `
+		update notes
+		set deleted_at = null
+		where id = $1 and owner_id = $2 and deleted_at is not null and deleted_at > now() - interval '30 days'
+		returning id, title, content, tags, favorite, created_at, updated_at, folder_id
+	`, id, ownerID)
+	return scanNote(row, id)
+}
+
+func (r *NoteRepository) PurgeExpired(ctx context.Context, olderThan time.Duration) ([]domain.NoteImageRecord, error) {
+	cutoff := time.Now().UTC().Add(-olderThan)
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	rows, err := tx.Query(ctx, `
+		select note_images.id, note_images.note_id, note_images.owner_id, note_images.storage_key, note_images.name, note_images.content_type, note_images.size
+		from note_images
+		join notes on notes.id = note_images.note_id
+		where notes.deleted_at is not null and notes.deleted_at < $1
+	`, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	images := make([]domain.NoteImageRecord, 0)
+	for rows.Next() {
+		var image domain.NoteImageRecord
+		if err := rows.Scan(&image.ID, &image.NoteID, &image.OwnerID, &image.StorageKey, &image.Name, &image.ContentType, &image.Size); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		images = append(images, image)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if _, err := tx.Exec(ctx, `delete from notes where deleted_at is not null and deleted_at < $1`, cutoff); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return images, nil
 }
 
 func (r *NoteRepository) SaveImage(ctx context.Context, image domain.NoteImageRecord) error {
@@ -209,7 +259,8 @@ func (r *NoteRepository) migrate(ctx context.Context, legacyOwnerID string) erro
 		`create table if not exists folders (id text primary key, owner_id text not null, name text not null, color text not null, created_at timestamptz not null, updated_at timestamptz not null)`,
 		`alter table notes add column if not exists folder_id text references folders(id) on delete set null`,
 		`create index if not exists folders_owner_idx on folders(owner_id)`,
-		`create index if not exists notes_owner_folder_idx on notes(owner_id, folder_id)`)
+		`create index if not exists notes_owner_folder_idx on notes(owner_id, folder_id)`,
+		`alter table notes add column if not exists deleted_at timestamptz`)
 	for _, statement := range statements[:2] {
 		if _, err := tx.Exec(ctx, statement); err != nil {
 			return err

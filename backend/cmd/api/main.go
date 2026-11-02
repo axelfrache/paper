@@ -127,6 +127,8 @@ func main() {
 	}
 	imageService := service.NewImage(notes, notes, imageStorage)
 
+	go purgeExpiredNotesPeriodically(notes, imageStorage)
+
 	profiles, err := postgres.NewUserProfileRepository(startupCtx, cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("profile database connection failed: %v", err)
@@ -165,5 +167,32 @@ func main() {
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Printf("unclean shutdown: %v", err)
+	}
+}
+
+const (
+	noteRetention = 30 * 24 * time.Hour
+	purgeInterval = 6 * time.Hour
+	purgeTimeout  = 30 * time.Second
+)
+
+func purgeExpiredNotesPeriodically(notes port.NoteRepository, images port.ImageStorage) {
+	ticker := time.NewTicker(purgeInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		ctx, cancel := context.WithTimeout(context.Background(), purgeTimeout)
+		purged, err := notes.PurgeExpired(ctx, noteRetention)
+		cancel()
+		if err != nil {
+			log.Printf("purge expired notes failed: %v", err)
+			continue
+		}
+		for _, image := range purged {
+			deleteCtx, cancel := context.WithTimeout(context.Background(), purgeTimeout)
+			if err := images.Delete(deleteCtx, image.StorageKey); err != nil {
+				log.Printf("purge expired note image %q failed: %v", image.ID, err)
+			}
+			cancel()
+		}
 	}
 }
