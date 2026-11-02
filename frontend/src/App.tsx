@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { LoginPage } from "./components/LoginPage";
-import { APIError, getAuthConfig, getCurrentUser, logout } from "./lib/api";
+import { APIError, getAuthConfig, getCurrentUser, logout, registerUnauthorizedHandler } from "./lib/api";
 import { NotesPage } from "./pages/NotesPage";
 import type { AuthConfig, AuthUser } from "./types/auth";
 
@@ -48,6 +48,8 @@ export default function App() {
     };
     void load();
   }, []);
+
+  useEffect(() => registerUnauthorizedHandler(() => setUser(null)), []);
 
   if (loading) {
     return <div className="auth-loading" aria-label="Loading" />;

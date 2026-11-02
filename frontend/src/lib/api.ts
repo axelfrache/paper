@@ -13,6 +13,25 @@ export class APIError extends Error {
   }
 }
 
+let onUnauthorized: (() => void) | undefined;
+
+export function registerUnauthorizedHandler(handler: () => void) {
+  onUnauthorized = handler;
+  return () => {
+    if (onUnauthorized === handler) {
+      onUnauthorized = undefined;
+    }
+  };
+}
+
+async function throwForErrorResponse(response: Response): Promise<never> {
+  if (response.status === 401) {
+    onUnauthorized?.();
+  }
+  const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+  throw new APIError(payload?.error ?? "Request failed", response.status);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return trackMutation(init?.method, async () => {
     const response = await apiFetch(path, {
@@ -25,8 +44,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     });
 
     if (!response.ok) {
-      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-      throw new APIError(payload?.error ?? "Request failed", response.status);
+      await throwForErrorResponse(response);
     }
 
     if (response.status === 204) {
@@ -73,8 +91,7 @@ export async function uploadAvatar(file: File) {
     body.append("file", file);
     const response = await apiFetch("/api/profile/avatar", { method: "POST", body, credentials: "same-origin" });
     if (!response.ok) {
-      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-      throw new APIError(payload?.error ?? "Avatar upload failed", response.status);
+      await throwForErrorResponse(response);
     }
     return response.json() as Promise<AuthUser>;
   });
@@ -146,8 +163,7 @@ export async function uploadNoteImage(noteId: string, file: File) {
       credentials: "same-origin",
     });
     if (!response.ok) {
-      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-      throw new Error(payload?.error ?? "Image upload failed");
+      await throwForErrorResponse(response);
     }
     return response.json() as Promise<NoteImage>;
   });
