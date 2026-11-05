@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultDiagram, createDiagramGroup, serializeDiagramMarker } from "./diagram";
+import { createDefaultDiagram, createDiagramGroup, serializeDiagramMarker, layoutDiagram } from "./diagram";
 import type { Diagram, DiagramMode } from "./diagram";
 import { buildStandaloneSvg, clampScale, exportFileName, svgPixelSize } from "./diagramExport";
 
@@ -18,6 +18,17 @@ function withIcons(mode: DiagramMode): Diagram {
 }
 
 describe("standalone diagram SVG", () => {
+  it("exports the projected isometric arrowheads from the shared layout", async () => {
+    const diagram = withIcons("iso");
+    Object.assign(diagram.edges[0], { route: "iso", start: "arrow", end: "arrow" });
+    const edge = layoutDiagram(diagram).edges[0];
+    const svg = await buildStandaloneSvg(diagram, undefined, fakeIcon);
+    expect(edge.arrowStart).toBeTruthy();
+    expect(edge.arrowEnd).toBeTruthy();
+    expect(svg).toContain(`d="${edge.arrowStart}"`);
+    expect(svg).toContain(`d="${edge.arrowEnd}"`);
+    expect(svg).toContain(`d="${edge.d}"`);
+  });
   it("is self-contained: xmlns, no CSS variables, no external hrefs", async () => {
     const svg = await buildStandaloneSvg(withIcons("iso"), undefined, fakeIcon);
 

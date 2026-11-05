@@ -2,7 +2,7 @@ import { act, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { DiagramEditor } from "./DiagramEditor";
-import { createDiagramGroup, defaultGroupPadding } from "../lib/diagram";
+import { createDiagramGroup, defaultGroupPadding, layoutDiagram, layoutToDiagramPoint } from "../lib/diagram";
 import type { Diagram, DiagramMode } from "../lib/diagram";
 import type { Root } from "react-dom/client";
 
@@ -798,5 +798,102 @@ describe("touch diagram navigation", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     act(() => toggle.click());
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  });
+});
+
+it.each(["iso", "flat"] as const)("offers isometric routing only in %s mode when applicable", (mode) => {
+  const initial = rowOfThree(mode);
+  initial.edges = [{ id: "edge", from: "left", to: "right", color: "blue", route: "straight" }];
+  const editor = mount(initial);
+  act(() => {
+    editor.host.querySelector('[data-edge-id="edge"]')!.dispatchEvent(new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true }));
+    window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+  });
+  const iso = Array.from(editor.host.querySelectorAll<HTMLButtonElement>(".diagram-inspector button")).find((button) => button.textContent === "Iso");
+  expect(Boolean(iso)).toBe(mode === "iso");
+  if (iso) {
+    act(() => { iso.click(); vi.advanceTimersByTime(500); });
+    expect(editor.value().edges[0].route).toBe("iso");
+    expect(iso.classList.contains("active")).toBe(true);
+    expect(editor.host.querySelector('[data-edge-id="visible-edge"]')!.getAttribute("d")).not.toBeNull();
+  }
+});
+
+describe("editing isometric route waypoints", () => {
+  const setup = () => {
+    const initial = rowOfThree("iso");
+    initial.nodes = [initial.nodes[0], { ...initial.nodes[2], y: 200 }];
+    initial.edges = [{ id: "edge", from: "left", to: "right", color: "blue", route: "iso" }];
+    const editor = mount(initial);
+    act(() => editor.host.querySelector('[data-edge-id="edge"]')!.dispatchEvent(new MouseEvent("pointerdown", { button: 0, bubbles: true })));
+    const handle = editor.host.querySelector('[data-edge-waypoint="0"]')!;
+    expect(handle).not.toBeNull();
+    const drag = (end: "pointerup" | "pointercancel") => {
+      act(() => handle.dispatchEvent(new MouseEvent("pointerdown", { button: 0, clientX: 100, clientY: 100, bubbles: true })));
+      act(() => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 140, clientY: 100, bubbles: true })));
+      act(() => window.dispatchEvent(new MouseEvent(end, { clientX: 140, clientY: 100, bubbles: true })));
+    };
+    return { ...editor, initial, drag };
+  };
+
+  it("drags a bend in diagram coordinates, keeps nodes still and resets the route", () => {
+    const editor = setup();
+    const before = layoutDiagram(editor.initial).edges[0];
+    const original = layoutToDiagramPoint("iso", before.routePoints![1].x, before.routePoints![1].y);
+    editor.drag("pointerup");
+    const point = editor.value().edges[0].waypoints![0];
+    expect(point.x - original.x).toBeCloseTo(40 * editor.unitsPerPixel / (2 * 0.866));
+    expect(point.y - original.y).toBeCloseTo(-40 * editor.unitsPerPixel / (2 * 0.866));
+    expect(editor.value().nodes).toEqual(editor.initial.nodes);
+    expect(layoutDiagram(editor.value()).edges[0].routePoints).toHaveLength(before.routePoints!.length);
+    expect(editor.host.querySelectorAll("[data-edge-waypoint]")).toHaveLength(before.routePoints!.length - 2);
+    expect(layoutDiagram(editor.value()).edges[0].d).not.toBe(before.d);
+    const reset = Array.from(editor.host.querySelectorAll("button")).find((button) => button.textContent === "Reset route")!;
+    act(() => reset.click());
+    expect(editor.value().edges[0].waypoints).toBeUndefined();
+    expect(layoutDiagram(editor.value()).edges[0].d).toBe(before.d);
+  });
+
+  it("restores the original route after a cancelled drag", () => {
+    const editor = setup();
+    const before = editor.host.querySelector('[data-edge-id="visible-edge"]')!.getAttribute("d");
+    editor.drag("pointercancel");
+    expect(editor.value().edges[0].waypoints).toBeUndefined();
+    expect(editor.host.querySelector('[data-edge-id="visible-edge"]')!.getAttribute("d")).toBe(before);
+  });
+
+  it("moves only the selected point over repeated drags without creating handles", () => {
+    const initial = rowOfThree("iso");
+    const waypoints = [{ x: 160, y: -90 }, { x: 340, y: -90 }];
+    initial.edges = [{ id: "edge", from: "left", to: "right", color: "blue", route: "iso", waypoints }];
+    const editor = mount(initial);
+    act(() => editor.host.querySelector('[data-edge-id="edge"]')!.dispatchEvent(new MouseEvent("pointerdown", { button: 0, bubbles: true })));
+    for (let i = 0; i < 3; i++) {
+      const handle = editor.host.querySelector('[data-edge-waypoint="0"]')!;
+      act(() => handle.dispatchEvent(new MouseEvent("pointerdown", { button: 0, clientX: 100, clientY: 100, bubbles: true })));
+      act(() => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 140, clientY: 120, bubbles: true })));
+      expect(editor.host.querySelectorAll("[data-edge-waypoint]")).toHaveLength(2);
+      act(() => window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true })));
+      expect(editor.value().edges[0].waypoints).toHaveLength(2);
+      expect(editor.value().edges[0].waypoints![0]).not.toEqual(waypoints[0]);
+      expect(editor.value().edges[0].waypoints![1]).toEqual(waypoints[1]);
+      expect(layoutDiagram(editor.value()).edges[0].routePoints).toHaveLength(4);
+    }
+  });
+
+  it("offsets saved waypoints when connected nodes are duplicated or pasted", () => {
+    const editor = setup();
+    editor.drag("pointerup");
+    const points = editor.value().edges[0].waypoints!;
+    editor.select(0);
+    act(() => {
+      editor.host.querySelectorAll(".diagram-node")[1].dispatchEvent(new MouseEvent("pointerdown", { button: 0, bubbles: true, shiftKey: true }));
+      window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+    });
+    editor.press("c", { ctrlKey: true });
+    editor.press("v", { ctrlKey: true });
+    expect(editor.value().edges[1].waypoints).toEqual(points.map((point) => ({ x: point.x + 24, y: point.y + 24 })));
+    act(() => Array.from(editor.host.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Duplicate")!.click());
+    expect(editor.value().edges[2].waypoints).toEqual(points.map((point) => ({ x: point.x + 48, y: point.y + 48 })));
   });
 });

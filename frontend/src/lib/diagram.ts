@@ -9,7 +9,7 @@ type BaseDiagramKind = "box" | "server" | "service" | "database" | "user" | "que
 export type DiagramKind = BaseDiagramKind | DiagramIconKind;
 
 export type DiagramColor = "slate" | "blue" | "green" | "amber" | "violet";
-export type DiagramEdgeRoute = "orthogonal" | "straight" | "curved";
+export type DiagramEdgeRoute = "orthogonal" | "straight" | "curved" | "iso";
 export type DiagramEdgeCorner = "rounded" | "square";
 export type DiagramEdgeEnd = "none" | "arrow";
 export type DiagramEdgeWidth = "thin" | "medium" | "thick";
@@ -30,6 +30,7 @@ export type DiagramNode = {
 };
 
 export type DiagramEdge = {
+  waypoints?: Array<{ x: number; y: number }>;
   id: string;
   from: string;
   to: string;
@@ -97,6 +98,10 @@ export type DiagramLayoutNode = {
 };
 
 export type DiagramLayoutEdge = {
+  routePoints?: Array<{ x: number; y: number }>;
+  arrowStart?: string;
+  arrowEnd?: string;
+  points?: Array<{ x: number; y: number }>;
   id: string;
   d: string;
   color: string;
@@ -386,8 +391,10 @@ export function layoutDiagram(diagram: Diagram): DiagramLayout {
     const strokeWidth = edgeStrokeWidth(edge.width);
     const trimStart = edge.start === "arrow" ? arrowMarkerLength(strokeWidth) : 0;
     const trimEnd = edge.end === "none" ? 0 : arrowMarkerLength(strokeWidth);
-    const path =
-      route === "curved"
+    const path: { d: string; mid: { x: number; y: number }; points?: Array<{ x: number; y: number }>; routePoints?: Array<{ x: number; y: number }>; arrowStart?: string; arrowEnd?: string } =
+      route === "iso" && iso
+        ? isoEdgePath(from, to, nodes, edge.corner ?? "square", trimStart, trimEnd, edge.labelPosition ?? 0.5, edge.waypoints)
+        : route === "curved"
         ? curvedEdgePath(from, to, fromSource, toSource, trimStart, trimEnd, edge.labelPosition ?? 0.5)
         : route === "straight"
         ? straightEdgePath(from, to, fromSource, toSource, trimStart, trimEnd, edge.labelPosition ?? 0.5)
@@ -396,10 +403,14 @@ export function layoutDiagram(diagram: Diagram): DiagramLayout {
     return [
       {
         id: edge.id,
+        ...(path.points ? { points: path.points } : {}),
+        ...(path.routePoints ? { routePoints: path.routePoints } : {}),
+        ...(path.arrowStart ? { arrowStart: path.arrowStart } : {}),
+        ...(path.arrowEnd ? { arrowEnd: path.arrowEnd } : {}),
         d: path.d,
         color: color.stroke,
-        markerStart: edge.start === "arrow" ? marker : "",
-        markerEnd: edge.end === "none" ? "" : marker,
+        markerStart: edge.start === "arrow" && !(iso && route === "iso") ? marker : "",
+        markerEnd: edge.end === "none" || (iso && route === "iso") ? "" : marker,
         dashed: edge.dashed === true,
         width: strokeWidth,
         label: (edge.label ?? "").trim(),
@@ -414,7 +425,7 @@ export function layoutDiagram(diagram: Diagram): DiagramLayout {
     .filter((group): group is DiagramLayoutGroup => group !== null);
 
   const pad = 44;
-  const groupPoints = groups.flatMap((group) => parsePoints(group.points).concat(group.tab ? parsePoints(group.tab.points) : []));
+  const groupPoints = groups.flatMap((group) => parsePoints(group.points).concat(group.tab ? parsePoints(group.tab.points) : [])).concat(edges.flatMap((edge) => edge.points ?? []));
   const xs = nodes.flatMap((node) => [node.hx, node.hx + node.hw]).concat(groupPoints.map((p) => p.x), [0]);
   const ys = nodes.flatMap((node) => [node.hy, node.hy + node.hh]).concat(groupPoints.map((p) => p.y), [0]);
   const minX = Math.min(...xs) - pad;
@@ -554,8 +565,8 @@ export function diagramToSvgMarkup(diagram: Diagram, maxHeight = 340) {
   const body = [
     ...layout.groups.map((group) => groupRegionSvg(group)),
     ...layout.edges.map((edge) => {
-      const lineCap = edge.markerStart || edge.markerEnd ? "butt" : "round";
-      return `<path d="${edge.d}" fill="none" stroke="${edge.color}" stroke-width="${edge.width}" stroke-linecap="${lineCap}" stroke-linejoin="round"${edge.markerStart ? ` marker-start="${edge.markerStart}"` : ""}${edge.markerEnd ? ` marker-end="${edge.markerEnd}"` : ""}${edge.dashed ? ' stroke-dasharray="7 6"' : ""}/>`;
+      const lineCap = edge.markerStart || edge.markerEnd || edge.arrowStart || edge.arrowEnd ? "butt" : "round";
+      return `<path d="${edge.d}" fill="none" stroke="${edge.color}" stroke-width="${edge.width}" stroke-linecap="${lineCap}" stroke-linejoin="round"${edge.markerStart ? ` marker-start="${edge.markerStart}"` : ""}${edge.markerEnd ? ` marker-end="${edge.markerEnd}"` : ""}${edge.dashed ? ' stroke-dasharray="7 6"' : ""}/>${edgeArrowSvg(edge)}`;
     }),
     ...layout.nodes.map((node) => {
       const faces = node.faces
@@ -711,7 +722,7 @@ function contentBounds(layout: DiagramLayout) {
   }
 
   const pad = 20;
-  const groupPoints = layout.groups.flatMap((group) => parsePoints(group.points).concat(group.tab ? parsePoints(group.tab.points) : []));
+  const groupPoints = layout.groups.flatMap((group) => parsePoints(group.points).concat(group.tab ? parsePoints(group.tab.points) : [])).concat(layout.edges.flatMap((edge) => edge.points ?? []));
   const minX = Math.min(...layout.nodes.map((node) => node.hx), ...groupPoints.map((p) => p.x)) - pad;
   const minY = Math.min(...layout.nodes.map((node) => node.hy), ...groupPoints.map((p) => p.y)) - pad;
   const maxX = Math.max(...layout.nodes.map((node) => node.hx + node.hw), ...groupPoints.map((p) => p.x)) + pad;
@@ -1279,6 +1290,119 @@ function orthogonalEdgePath(
   };
 }
 
+function isoEdgePath(
+  from: DiagramLayoutNode,
+  to: DiagramLayoutNode,
+  nodes: DiagramLayoutNode[],
+  corner: DiagramEdgeCorner,
+  trimStart: number,
+  trimEnd: number,
+  labelPosition: number,
+  waypoints?: Array<{ x: number; y: number }>,
+) {
+  const bounds = nodes.map((node) => {
+    const [x, y] = unprojectIso(node.cx, node.cy);
+    const size = sizeForNode(node.source);
+    const radius = node.bare ? Math.min(node.iconSize / (2 * isoCos), node.iconSize / (2 * isoSin)) : null;
+    return { id: node.id, x, y, rx: radius ?? size.w / 2, ry: radius ?? size.h / 2 };
+  });
+  const a = bounds.find((node) => node.id === from.id)!;
+  const b = bounds.find((node) => node.id === to.id)!;
+  const ports = (node: typeof a) => [
+    { x: node.x + node.rx, y: node.y, nx: 1, ny: 0 },
+    { x: node.x - node.rx, y: node.y, nx: -1, ny: 0 },
+    { x: node.x, y: node.y + node.ry, nx: 0, ny: 1 },
+    { x: node.x, y: node.y - node.ry, nx: 0, ny: -1 },
+  ];
+  const left = Math.min(...bounds.map((node) => node.x - node.rx)) - 32;
+  const right = Math.max(...bounds.map((node) => node.x + node.rx)) + 32;
+  const top = Math.min(...bounds.map((node) => node.y - node.ry)) - 32;
+  const bottom = Math.max(...bounds.map((node) => node.y + node.ry)) + 32;
+  type Point = { x: number; y: number };
+  let best: Point[] = [];
+  let bestScore = Infinity;
+  if (waypoints?.length) {
+    const attach = (node: typeof a, point: Point) => {
+      const dx = point.x - node.x, dy = point.y - node.y;
+      const scale = Math.max(Math.abs(dx) / node.rx, Math.abs(dy) / node.ry);
+      return scale > 0 ? { x: node.x + dx / scale, y: node.y + dy / scale } : { x: node.x + node.rx, y: node.y };
+    };
+    best = [attach(a, waypoints[0]), ...waypoints, attach(b, waypoints[waypoints.length - 1])];
+  } else {
+    for (const start of ports(a)) {
+      for (const end of ports(b)) {
+        if (Math.hypot(start.x - end.x, start.y - end.y) < 0.001) continue;
+        const exit = { x: start.x + start.nx * 32, y: start.y + start.ny * 32 };
+        const entry = { x: end.x + end.nx * 32, y: end.y + end.ny * 32 };
+        const candidates: Point[][] = [
+          [start, exit, { x: entry.x, y: exit.y }, entry, end],
+          [start, exit, { x: exit.x, y: entry.y }, entry, end],
+          [start, { x: end.x, y: start.y }, end],
+          [start, { x: start.x, y: end.y }, end],
+          ...[(start.x + end.x) / 2, left, right].map((x) => [start, { x, y: start.y }, { x, y: end.y }, end]),
+          ...[(start.y + end.y) / 2, top, bottom].map((y) => [start, { x: start.x, y }, { x: end.x, y }, end]),
+        ];
+        for (const candidate of candidates) {
+          const points = candidate.filter((point, index) => !index || Math.hypot(point.x - candidate[index - 1].x, point.y - candidate[index - 1].y) > 0.001);
+          if (points.length < 2) continue;
+          const first = points[1], last = points[points.length - 2];
+          if ((first.x - start.x) * start.nx + (first.y - start.y) * start.ny <= 0.001) continue;
+          if ((last.x - end.x) * end.nx + (last.y - end.y) * end.ny <= 0.001) continue;
+          let score = (points.length - 2) * 16;
+          for (let i = 1; i < points.length; i++) {
+            const p = points[i - 1], q = points[i];
+            const previous = points[i - 2];
+            if (previous && (p.x - previous.x) * (q.x - p.x) + (p.y - previous.y) * (q.y - p.y) < -0.001) score += 1e7;
+            score += Math.hypot(q.x - p.x, q.y - p.y);
+            for (const node of bounds) {
+              const crosses = Math.abs(p.x - q.x) < 0.001
+                ? p.x > node.x - node.rx + 0.001 && p.x < node.x + node.rx - 0.001 && Math.max(p.y, q.y) > node.y - node.ry + 0.001 && Math.min(p.y, q.y) < node.y + node.ry - 0.001
+                : p.y > node.y - node.ry + 0.001 && p.y < node.y + node.ry - 0.001 && Math.max(p.x, q.x) > node.x - node.rx + 0.001 && Math.min(p.x, q.x) < node.x + node.rx - 0.001;
+              if (crosses) score += node.id === from.id || node.id === to.id ? 1e8 : 1e6;
+            }
+          }
+          if (score < bestScore) { bestScore = score; best = points; }
+        }
+      }
+    }
+  }
+  const projected = best.map((point) => {
+    const [x, y] = projectIso(point.x, point.y);
+    return { x, y };
+  }).filter((point, index, points) => {
+    if (!index || index === points.length - 1) return true;
+    if (waypoints?.length) return true;
+    const prev = points[index - 1], next = points[index + 1];
+    return Math.abs((point.x - prev.x) * (next.y - point.y) - (point.y - prev.y) * (next.x - point.x)) > 0.001
+      || (point.x - prev.x) * (next.x - point.x) + (point.y - prev.y) * (next.y - point.y) < 0;
+  });
+  const trimmed = trimPolylineEndpoints(projected, trimStart, trimEnd);
+  const startArrow = trimStart && projected.length > 1 ? isoArrowPoints(projected[0], trimmed[0]) : [];
+  const endArrow = trimEnd && projected.length > 1 ? isoArrowPoints(projected[projected.length - 1], trimmed[trimmed.length - 1]) : [];
+  return {
+    points: [...projected, ...startArrow, ...endArrow],
+    routePoints: projected,
+    arrowStart: startArrow.length ? `${polylinePath(startArrow)}z` : undefined,
+    arrowEnd: endArrow.length ? `${polylinePath(endArrow)}z` : undefined,
+    d: corner === "rounded" ? roundedPolylinePath(trimmed, 10) : polylinePath(trimmed),
+    mid: pointOnPolyline(trimmed, labelPosition),
+  };
+}
+
+function isoArrowPoints(tip: { x: number; y: number }, base: { x: number; y: number }) {
+  const [tx, ty] = unprojectIso(tip.x, tip.y);
+  const [bx, by] = unprojectIso(base.x, base.y);
+  const dx = (tx - bx) * 4 / 9;
+  const dy = (ty - by) * 4 / 9;
+  const [ax, ay] = projectIso(bx - dy, by + dx);
+  const [cx, cy] = projectIso(bx + dy, by - dx);
+  return [{ x: ax, y: ay }, tip, { x: cx, y: cy }];
+}
+
+export function edgeArrowSvg(edge: DiagramLayoutEdge) {
+  return [edge.arrowStart, edge.arrowEnd].filter(Boolean).map((d) => `<path d="${d}" fill="${edge.color}"/>`).join("");
+}
+
 function edgePoint(cx: number, cy: number, size: { w: number; h: number }, ux: number, uy: number) {
   const tx = Math.abs(ux) > 0.0001 ? size.w / 2 / Math.abs(ux) : Number.POSITIVE_INFINITY;
   const ty = Math.abs(uy) > 0.0001 ? size.h / 2 / Math.abs(uy) : Number.POSITIVE_INFINITY;
@@ -1485,6 +1609,9 @@ function normalizeNode(value: unknown): DiagramNode {
 function normalizeEdge(value: unknown): DiagramEdge {
   const edge = typeof value === "object" && value ? (value as Partial<DiagramEdge>) : {};
   return {
+    waypoints: Array.isArray(edge.waypoints) && edge.waypoints.length
+      ? edge.waypoints.filter((point) => point && typeof point.x === "number" && Number.isFinite(point.x) && typeof point.y === "number" && Number.isFinite(point.y)).map(({ x, y }) => ({ x, y }))
+      : undefined,
     id: typeof edge.id === "string" && edge.id ? edge.id : uniqueId("e"),
     from: typeof edge.from === "string" ? edge.from : "",
     to: typeof edge.to === "string" ? edge.to : "",
@@ -1549,7 +1676,7 @@ function isDiagramColor(value: unknown): value is DiagramColor {
 }
 
 function isDiagramEdgeRoute(value: unknown): value is DiagramEdgeRoute {
-  return value === "orthogonal" || value === "straight" || value === "curved";
+  return value === "orthogonal" || value === "straight" || value === "curved" || value === "iso";
 }
 
 function isDiagramEdgeCorner(value: unknown): value is DiagramEdgeCorner {

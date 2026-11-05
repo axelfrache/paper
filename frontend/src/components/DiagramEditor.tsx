@@ -108,6 +108,7 @@ const edgeRoutes: Array<{ label: string; value: DiagramEdgeRoute }> = [
   { label: "Direct", value: "straight" },
   { label: "Curve", value: "curved" },
   { label: "Elbow", value: "orthogonal" },
+  { label: "Iso", value: "iso" },
 ];
 const edgeCorners: Array<{ label: string; value: DiagramEdgeCorner }> = [
   { label: "Square", value: "square" },
@@ -134,6 +135,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
   const labelInputRef = useRef<HTMLTextAreaElement | null>(null);
   const diagramRef = useRef(diagram);
   const clipboardRef = useRef<DiagramClipboard | null>(null);
+  const waypointDragCleanupRef = useRef<(() => void) | null>(null);
   const layoutRef = useRef(layoutDiagram(diagram));
   const fitViewportRef = useRef(defaultViewport);
   const viewportRef = useRef(defaultViewport);
@@ -181,6 +183,9 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
       (group) => group.members.length === selectedIds.length && group.members.every((id) => selectedIds.includes(id)),
     ) ?? null;
   const selectedEdge = liveDiagram.edges.find((edge) => edge.id === selectedEdgeId) ?? null;
+  const edgeWaypoints = liveDiagram.mode === "iso" && selectedEdge?.route === "iso"
+    ? selectedEdge.waypoints?.length ? selectedEdge.waypoints : (layout.edges.find((edge) => edge.id === selectedEdgeId)?.routePoints ?? []).slice(1, -1).map((point) => layoutToDiagramPoint("iso", point.x, point.y))
+    : [];
   const selectedNodeIcon = selectedNode ? diagramIconForKind(selectedNode.kind) : null;
   const selectedNodeHasTones = liveDiagram.mode === "iso" && selectedNodeIcon !== null && diagramIconHasTones(selectedNodeIcon);
   const selectedNodeHasPalette = liveDiagram.mode === "iso" && selectedNodeIcon !== null && diagramIconHasPalette(selectedNodeIcon);
@@ -196,6 +201,8 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
     diagramRef.current = diagram;
     setLiveDiagram(diagram);
   }, [diagram]);
+
+  useEffect(() => () => waypointDragCleanupRef.current?.(), []);
 
   // Touch-action alone isn't enough on some mobile browsers: a pinch that strays onto the
   // toolbar/inspector chrome can still fall through to the browser's own page-zoom gesture.
@@ -763,6 +770,48 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
     setPendingFromId(null);
   };
 
+  const handleWaypointPointerDown = (event: React.PointerEvent<SVGElement>, index: number) => {
+    if (event.button !== 0 || tool !== "select" || !selectedEdge || !svgRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    waypointDragCleanupRef.current?.();
+    const edgeId = selectedEdge.id;
+    const original = selectedEdge.waypoints;
+    const points = edgeWaypoints.map((point) => ({ ...point }));
+    const start = screenToDiagramPoint(event.nativeEvent, svgRef.current, diagramRef.current);
+    const pointerId = event.pointerId;
+    let moved = false;
+    const move = (next: PointerEvent) => {
+      if (next.pointerId !== pointerId || !svgRef.current) return;
+      const point = screenToDiagramPoint(next, svgRef.current, diagramRef.current);
+      const dx = point.x - start.x, dy = point.y - start.y;
+      if (!moved && Math.hypot(next.clientX - event.clientX, next.clientY - event.clientY) < 3) return;
+      moved = true;
+      patchDiagram((current) => ({ ...current, edges: current.edges.map((edge) => edge.id === edgeId
+        ? { ...edge, waypoints: points.map((p, i) => i === index ? { x: p.x + dx, y: p.y + dy } : p) } : edge) }), { commit: false });
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+      waypointDragCleanupRef.current = null;
+    };
+    const up = (next: PointerEvent) => {
+      if (next.pointerId !== pointerId) return;
+      cleanup();
+      if (moved) commitDiagram();
+    };
+    const cancel = (next: PointerEvent) => {
+      if (next.pointerId !== pointerId) return;
+      cleanup();
+      if (moved) patchDiagram((current) => ({ ...current, edges: current.edges.map((edge) => edge.id === edgeId ? { ...edge, waypoints: original } : edge) }), { commit: false });
+    };
+    waypointDragCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
+  };
+
   const handleEdgeLabelPointerDown = (event: React.PointerEvent<SVGElement>, edgeId: string) => {
     event.preventDefault();
     event.stopPropagation();
@@ -1034,7 +1083,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
       .filter((edge) => selected.has(edge.from) && selected.has(edge.to))
       .map((edge) => {
         const clone = createDiagramEdge(idMap.get(edge.from) ?? edge.from, idMap.get(edge.to) ?? edge.to, edge.color);
-        return { ...edge, id: clone.id, from: clone.from, to: clone.to };
+        return { ...edge, id: clone.id, from: clone.from, to: clone.to, waypoints: edge.waypoints?.map((point) => ({ x: point.x + clones[0].x - sources[0].x, y: point.y + clones[0].y - sources[0].y })) };
       });
     patchDiagram((current) => ({ ...current, nodes: [...current.nodes, ...clones], edges: [...current.edges, ...edges] }));
     setSelectedIds(clones.map((node) => node.id));
@@ -1065,7 +1114,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
     const idMap = new Map(clipboard.nodes.map((node, index) => [node.id, clones[index].id]));
     const edges = clipboard.edges.map((edge) => {
       const clone = createDiagramEdge(idMap.get(edge.from) ?? edge.from, idMap.get(edge.to) ?? edge.to, edge.color);
-      return { ...edge, id: clone.id, from: clone.from, to: clone.to };
+      return { ...edge, id: clone.id, from: clone.from, to: clone.to, waypoints: edge.waypoints?.map((point) => ({ x: point.x + clones[0].x - clipboard.nodes[0].x, y: point.y + clones[0].y - clipboard.nodes[0].y })) };
     });
     patchDiagram((current) => ({ ...current, nodes: [...current.nodes, ...clones], edges: [...current.edges, ...edges] }));
     clipboardRef.current = { nodes: clones, edges };
@@ -1567,12 +1616,15 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
                 fill="none"
                 stroke={selectedEdgeId === edge.id ? "var(--accent)" : edge.color}
                 strokeWidth={selectedEdgeId === edge.id ? edge.width + 0.8 : edge.width}
-                strokeLinecap={edge.markerStart || edge.markerEnd ? "butt" : "round"}
+                strokeLinecap={edge.markerStart || edge.markerEnd || edge.arrowStart || edge.arrowEnd ? "butt" : "round"}
                 strokeLinejoin="round"
                 strokeDasharray={edge.dashed ? "7 6" : undefined}
                 markerStart={edge.markerStart ? edge.markerStart.replace("#diagram-arrow-", "#diagram-editor-arrow-") : undefined}
                 markerEnd={edge.markerEnd ? edge.markerEnd.replace("#diagram-arrow-", "#diagram-editor-arrow-") : undefined}
               />
+              {[edge.arrowStart, edge.arrowEnd].map((d, index) => d ? (
+                <path key={index} d={d} fill={selectedEdgeId === edge.id ? "var(--accent)" : edge.color} />
+              ) : null)}
               {editingId === edge.id ? (
                 <foreignObject
                   x={edge.labelX - inlineEdgeLabelWidth / 2}
@@ -1828,6 +1880,17 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
               height={groupSelectionBox.height}
             />
           ) : null}
+          {tool === "select" && edgeWaypoints.map((point, index) => {
+            const position = diagramToLayoutPoint("iso", point.x, point.y);
+            const scale = viewport.width / (svgRef.current?.getBoundingClientRect().width || 800);
+            return (
+              <g key={index} data-edge-waypoint={index} transform={`translate(${position.x} ${position.y})`} style={{ cursor: "move" }} onPointerDown={(event) => handleWaypointPointerDown(event, index)} onDoubleClick={(event) => event.stopPropagation()}>
+                <title>Drag to adjust route</title>
+                <circle r={12 * scale} fill="transparent" />
+                <circle r={5 * scale} fill="var(--bg)" stroke="var(--accent)" strokeWidth={1.5 * scale} pointerEvents="none" />
+              </g>
+            );
+          })}
         </svg>
 
         <div className="diagram-zoom-controls" aria-label="Zoom controls">
@@ -2173,11 +2236,11 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
             </div>
             <div className="diagram-inspector-style">
               <span>Route</span>
-              <div className="diagram-inspector-three">
-                {edgeRoutes.map((route) => (
+              <div className={liveDiagram.mode === "iso" ? "diagram-inspector-four" : "diagram-inspector-three"}>
+                {edgeRoutes.filter((route) => route.value !== "iso" || liveDiagram.mode === "iso").map((route) => (
                   <button
                     key={route.value}
-                    className={(selectedEdge.route ?? (liveDiagram.mode === "iso" ? "straight" : "orthogonal")) === route.value ? "active" : ""}
+                    className={(selectedEdge.route === "iso" && liveDiagram.mode !== "iso" ? "orthogonal" : selectedEdge.route ?? (liveDiagram.mode === "iso" ? "straight" : "orthogonal")) === route.value ? "active" : ""}
                     onClick={() => patchSelectedEdge({ route: route.value })}
                   >
                     {route.label}
@@ -2185,7 +2248,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
                 ))}
               </div>
             </div>
-            {(selectedEdge.route ?? (liveDiagram.mode === "iso" ? "straight" : "orthogonal")) === "orthogonal" ? (
+            {selectedEdge.route === "iso" || (selectedEdge.route ?? (liveDiagram.mode === "iso" ? "straight" : "orthogonal")) === "orthogonal" ? (
               <div className="diagram-inspector-style">
                 <span>Corner</span>
                 <div>
@@ -2200,6 +2263,9 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
                   ))}
                 </div>
               </div>
+            ) : null}
+            {selectedEdge.route === "iso" && liveDiagram.mode === "iso" && selectedEdge.waypoints?.length ? (
+              <button onClick={() => patchSelectedEdge({ waypoints: undefined })}>Reset route</button>
             ) : null}
             <div className="diagram-inspector-style">
               <span>Ends</span>

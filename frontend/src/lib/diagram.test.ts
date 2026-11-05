@@ -8,6 +8,7 @@ import {
   diagramIconForKind,
   diagramKinds,
   diagramToSvgMarkup,
+  layoutToDiagramPoint,
   edgeLabelHalo,
   layoutDiagram,
   minGroupPadding,
@@ -594,4 +595,105 @@ it("validates diagram source edits and preserves edge label positions", () => {
   expect(() => parseDiagramSource("{}")).toThrow("version 1");
   expect(() => parseDiagramSource(JSON.stringify({ ...diagram, edges: [{ id: "bad", from: "missing", to: diagram.nodes[0].id }] }))).toThrow("existing nodes");
   expect(() => parseDiagramSource(JSON.stringify({ ...diagram, nodes: [diagram.nodes[0], diagram.nodes[0]] }))).toThrow("unique id");
+});
+
+describe("isometric connection routes", () => {
+  const build = (x: number, y: number): Diagram => ({
+    version: 1, mode: "iso",
+    nodes: [
+      { id: "a", kind: "box", x: 0, y: 0, w: 100, h: 60, label: "A", color: "blue" },
+      { id: "b", kind: "box", x, y, w: 100, h: 60, label: "B", color: "green" },
+    ],
+    edges: [{ id: "e", from: "a", to: "b", color: "blue", route: "iso", end: "none", label: "Traffic" }],
+  });
+
+  it.each([[300, 170], [-300, 170], [300, -170], [-300, -170], [0, 300], [300, 0], [20, 20], [0, 0]])("follows only the projected grid axes toward (%s, %s)", (x, y) => {
+    const diagram = build(x, y);
+    const edge = layoutDiagram(diagram).edges[0];
+    const coordinates = edge.d.match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/gi)!.map(Number);
+    expect(coordinates.length).toBeGreaterThanOrEqual(4);
+    expect(coordinates.every(Number.isFinite)).toBe(true);
+    for (let i = 2; i < coordinates.length; i += 2) {
+      const dx = coordinates[i] - coordinates[i - 2], dy = coordinates[i + 1] - coordinates[i - 1];
+      expect(Math.abs(dy / dx)).toBeCloseTo(0.5 / 0.866, 5);
+    }
+    expect(Number.isFinite(edge.labelX) && Number.isFinite(edge.labelY)).toBe(true);
+    expect(diagramToSvgMarkup(diagram)).toContain(edge.d);
+  });
+
+  it("preserves exactly the manual waypoints through source, storage, previews and node moves", () => {
+    const diagram = build(320, 180);
+    diagram.edges[0].waypoints = [{ x: 180, y: -80 }, { x: 490, y: 120 }];
+    const restored = parseDiagramSource(JSON.stringify(parseDiagramMarker(serializeDiagramMarker(diagram))));
+    expect(restored.edges[0].waypoints).toEqual(diagram.edges[0].waypoints);
+    for (const offset of [0, 70]) {
+      restored.nodes[1].x += offset;
+      const edge = layoutDiagram(restored).edges[0];
+      const points = edge.routePoints!.map((point) => layoutToDiagramPoint("iso", point.x, point.y));
+      expect(points).toHaveLength(restored.edges[0].waypoints!.length + 2);
+      for (const [index, waypoint] of restored.edges[0].waypoints!.entries()) {
+        expect(points[index + 1].x).toBeCloseTo(waypoint.x, 8);
+        expect(points[index + 1].y).toBeCloseTo(waypoint.y, 8);
+      }
+      expect(diagramToSvgMarkup(restored)).toContain(edge.d);
+      expect(edge.d).not.toMatch(/NaN|Infinity/);
+    }
+  });
+
+  it("ignores invalid waypoint coordinates in stored diagrams", () => {
+    const diagram = build(320, 180);
+    const source = { ...diagram, edges: [{ ...diagram.edges[0], waypoints: [null, {}, { x: "1", y: 2 }, { x: 5, y: 8 }] }] };
+    expect(parseDiagramSource(JSON.stringify(source)).edges[0].waypoints).toEqual([{ x: 5, y: 8 }]);
+  });
+
+  it("does not add bends even when a manual point moves past the target", () => {
+    const diagram = build(320, 70);
+    diagram.edges[0].waypoints = [{ x: 580, y: 30 }];
+    const points = layoutDiagram(diagram).edges[0].routePoints!.map((point) => layoutToDiagramPoint("iso", point.x, point.y));
+    expect(points).toHaveLength(3);
+    expect(points[1].x).toBeCloseTo(580, 8);
+    expect(points[1].y).toBeCloseTo(30, 8);
+  });
+
+  it("retains route settings and supports rounded corners and both arrows", () => {
+    const diagram = build(320, 180);
+    Object.assign(diagram.edges[0], { corner: "rounded", start: "arrow", end: "arrow", width: "thick", dashed: true, labelPosition: 0.3 });
+    const restored = parseDiagramMarker(serializeDiagramMarker(diagram))!;
+    expect(restored.edges[0]).toMatchObject(diagram.edges[0]);
+    const edge = layoutDiagram(restored).edges[0];
+    expect(edge.d).toContain("Q");
+    expect(edge.arrowStart).toBeTruthy();
+    expect(edge.arrowEnd).toBeTruthy();
+    expect(edge.markerStart).toBe("");
+    expect(edge.markerEnd).toBe("");
+    expect(edge.width).toBe(2.8);
+    expect(edge.d).not.toMatch(/NaN|Infinity/);
+    expect(edge.dashed).toBe(true);
+    const flat = { ...restored, mode: "flat" as const };
+    expect(layoutDiagram(flat).edges[0].d).toBe(layoutDiagram({ ...flat, edges: [{ ...flat.edges[0], route: "orthogonal" }] }).edges[0].d);
+  });
+
+  it("routes a self connection around its node", () => {
+    const diagram = build(300, 170);
+    diagram.edges[0].to = "a";
+    expect(layoutDiagram(diagram).edges[0].d.match(/L/g)!.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it.each([[320, 180], [-320, 180], [320, -180], [-320, -180]])("projects both arrowheads onto the grid plane toward (%s, %s)", (x, y) => {
+    const diagram = build(x, y);
+    Object.assign(diagram.edges[0], { start: "arrow", end: "arrow" });
+    const edge = layoutDiagram(diagram).edges[0];
+    const coordinates = (path: string) => path.match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/gi)!.map(Number);
+    const line = coordinates(edge.d);
+    for (const [arrow, base] of [[edge.arrowStart!, line.slice(0, 2)], [edge.arrowEnd!, line.slice(-2)]] as const) {
+      const [ax, ay, tx, ty, cx, cy] = coordinates(arrow);
+      expect((ax + cx) / 2).toBeCloseTo(base[0], 6);
+      expect((ay + cy) / 2).toBeCloseTo(base[1], 6);
+      const unproject = (sx: number, sy: number) => [(sx / 0.866 + sy / 0.5) / 2, (sy / 0.5 - sx / 0.866) / 2];
+      const a = unproject(ax, ay), t = unproject(tx, ty), c = unproject(cx, cy);
+      expect(Math.hypot(a[0] - t[0], a[1] - t[1])).toBeCloseTo(Math.hypot(c[0] - t[0], c[1] - t[1]), 6);
+      expect(Math.abs(Math.hypot(ax - tx, ay - ty) - Math.hypot(cx - tx, cy - ty))).toBeGreaterThan(1);
+      expect(diagramToSvgMarkup(diagram)).toContain(`d="${arrow}"`);
+    }
+  });
 });

@@ -1,6 +1,7 @@
 import { diagramIconHref } from "./diagramIcons";
 import {
   diagramPalette,
+  edgeArrowSvg,
   edgeLabelHalo,
   edgeLabelPlate,
   labelLines,
@@ -104,8 +105,8 @@ function renderBody(layout: DiagramLayout, mode: DiagramMode, iconHref: (n: Diag
   const groupRegions = layout.groups.map((group) => groupRegionMarkup(group)).join("");
   const edges = layout.edges
     .map((edge) => {
-      const cap = edge.markerStart || edge.markerEnd ? "butt" : "round";
-      return `<path d="${edge.d}" fill="none" stroke="${edge.color}" stroke-width="${edge.width}" stroke-linecap="${cap}" stroke-linejoin="round"${edge.markerStart ? ` marker-start="${edge.markerStart}"` : ""}${edge.markerEnd ? ` marker-end="${edge.markerEnd}"` : ""}${edge.dashed ? ' stroke-dasharray="7 6"' : ""}/>`;
+      const cap = edge.markerStart || edge.markerEnd || edge.arrowStart || edge.arrowEnd ? "butt" : "round";
+      return `<path d="${edge.d}" fill="none" stroke="${edge.color}" stroke-width="${edge.width}" stroke-linecap="${cap}" stroke-linejoin="round"${edge.markerStart ? ` marker-start="${edge.markerStart}"` : ""}${edge.markerEnd ? ` marker-end="${edge.markerEnd}"` : ""}${edge.dashed ? ' stroke-dasharray="7 6"' : ""}/>${edgeArrowSvg(edge)}`;
     })
     .join("");
   const nodeShapes = layout.nodes
