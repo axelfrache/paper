@@ -4,11 +4,12 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import {
-  forceCenter,
   forceCollide,
   forceLink,
   forceManyBody,
   forceSimulation,
+  forceX,
+  forceY,
 } from "d3-force";
 import type { Simulation, SimulationNodeDatum } from "d3-force";
 import {
@@ -32,7 +33,8 @@ import { buildNoteGraph, colorForTag } from "../lib/noteGraph";
 import type { NoteGraphNode } from "../lib/noteGraph";
 import type { Folder, Note } from "../types/note";
 
-type SimNode = NoteGraphNode & SimulationNodeDatum;
+type SimNode = NoteGraphNode &
+  SimulationNodeDatum & { homeX?: number; homeY?: number };
 type SimLink = {
   id: string;
   source: string | SimNode;
@@ -92,6 +94,13 @@ export function GraphView({
   const nodeElsRef = useRef(new Map<string, SVGGElement>());
   const edgeElsRef = useRef(new Map<string, SVGLineElement>());
   const signatureRef = useRef("");
+  const draggedComponentRef = useRef(new Set<string>());
+  const heldNodesRef = useRef(
+    new Map<
+      SimNode,
+      { fx: number | null | undefined; fy: number | null | undefined }
+    >(),
+  );
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const dragRef = useRef<{
@@ -155,9 +164,9 @@ export function GraphView({
 
   useEffect(() => {
     const sim = forceSimulation<SimNode>([])
-      .force("charge", forceManyBody<SimNode>().strength(-220))
+      .velocityDecay(0.55)
+      .force("charge", forceManyBody<SimNode>().strength(-100).distanceMax(220))
       .force("collide", forceCollide<SimNode>(28))
-      .force("center", forceCenter<SimNode>(0, 0))
       .on("tick", () => {
         for (const node of nodesRef.current) {
           const el = nodeElsRef.current.get(node.id);
@@ -184,6 +193,7 @@ export function GraphView({
         }
       });
     simulationRef.current = sim;
+    updatePositionForces();
     return () => {
       sim.stop();
       simulationRef.current = null;
@@ -216,6 +226,8 @@ export function GraphView({
       }
       return {
         ...node,
+        homeX: width / 2,
+        homeY: height / 2,
         x: width / 2 + (Math.random() - 0.5) * 40,
         y: height / 2 + (Math.random() - 0.5) * 40,
       };
@@ -235,7 +247,9 @@ export function GraphView({
       "link",
       forceLink<SimNode, SimLink>(edgesRef.current)
         .id((node) => node.id)
-        .distance(80),
+        .distance(80)
+        .strength(0.65)
+        .iterations(2),
     );
     sim.alpha(0.3).restart();
   }, [graph]);
@@ -258,10 +272,11 @@ export function GraphView({
           y: current.y + (height - previous.height) / 2,
         }));
       } else {
-        simulationRef.current?.force(
-          "center",
-          forceCenter<SimNode>(width / 2, height / 2),
-        );
+        for (const node of nodesRef.current) {
+          node.homeX = width / 2;
+          node.homeY = height / 2;
+        }
+        updatePositionForces();
       }
       sizeRef.current = { width, height };
     });
@@ -458,13 +473,71 @@ export function GraphView({
     return () => svg.removeEventListener("wheel", handleWheel);
   }, []);
 
+  function updatePositionForces() {
+    const strength = (node: SimNode) =>
+      draggedComponentRef.current.has(node.id) ? 0 : 0.035;
+    simulationRef.current?.force(
+      "x",
+      forceX<SimNode>((node) => node.homeX ?? 0).strength(strength),
+    );
+    simulationRef.current?.force(
+      "y",
+      forceY<SimNode>((node) => node.homeY ?? 0).strength(strength),
+    );
+  }
+
+  function beginNodeDrag(node: SimNode) {
+    const component = new Set<string>([node.id]);
+    const queue = [node.id];
+    for (let index = 0; index < queue.length; index++) {
+      for (const id of neighbors.get(queue[index]) ?? []) {
+        if (!component.has(id)) {
+          component.add(id);
+          queue.push(id);
+        }
+      }
+    }
+    draggedComponentRef.current = component;
+    for (const current of nodesRef.current) {
+      current.homeX = current.x;
+      current.homeY = current.y;
+      current.vx = 0;
+      current.vy = 0;
+      if (!component.has(current.id)) {
+        heldNodesRef.current.set(current, { fx: current.fx, fy: current.fy });
+        current.fx = current.x;
+        current.fy = current.y;
+      }
+    }
+    updatePositionForces();
+    simulationRef.current?.alpha(0.16).alphaTarget(0.12).restart();
+  }
+
   function releaseDrag() {
+    const moved = draggedComponentRef.current.size > 0;
     const node = dragRef.current?.node;
     if (node) {
       node.fx = null;
       node.fy = null;
     }
     dragRef.current = null;
+    if (moved) {
+      for (const current of nodesRef.current) {
+        if (draggedComponentRef.current.has(current.id)) {
+          current.homeX = current.x;
+          current.homeY = current.y;
+        }
+        current.vx = 0;
+        current.vy = 0;
+      }
+      for (const [current, fixed] of heldNodesRef.current) {
+        current.fx = fixed.fx;
+        current.fy = fixed.fy;
+      }
+      heldNodesRef.current.clear();
+      draggedComponentRef.current.clear();
+      updatePositionForces();
+    }
     simulationRef.current?.alphaTarget(0);
   }
 
@@ -530,7 +603,6 @@ export function GraphView({
     if (node) {
       node.fx = node.x;
       node.fy = node.y;
-      simulationRef.current?.alphaTarget(0.3).restart();
     }
   }
 
@@ -571,13 +643,19 @@ export function GraphView({
     const drag = dragRef.current;
     if (!drag || drag.id !== event.pointerId) return;
     if (
+      !drag.moved &&
       Math.hypot(event.clientX - drag.start.x, event.clientY - drag.start.y) > 4
-    )
+    ) {
       drag.moved = true;
+      if (drag.node) beginNodeDrag(drag.node);
+    }
     if (drag.node && drag.moved) {
       const point = clientToGraphPoint(event.clientX, event.clientY);
-      drag.node.fx = point.x;
-      drag.node.fy = point.y;
+      drag.node.x = drag.node.fx = point.x;
+      drag.node.y = drag.node.fy = point.y;
+      drag.node.vx = drag.node.vy = 0;
+      const sim = simulationRef.current;
+      sim?.on("tick")?.call(sim);
     } else if (!drag.node) {
       const current = viewRef.current;
       const next = {

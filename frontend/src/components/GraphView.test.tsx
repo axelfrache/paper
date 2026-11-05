@@ -69,7 +69,12 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-function mount(items = notes, activeId: string | null = "a", sidebarHidden = false, onToggleSidebar = () => {}) {
+function mount(
+  items = notes,
+  activeId: string | null = "a",
+  sidebarHidden = false,
+  onToggleSidebar = () => {},
+) {
   act(() =>
     root.render(
       <StrictMode>
@@ -257,6 +262,110 @@ function simulation() {
 }
 
 describe("Reliable graph interactions", () => {
+  it("does not restart settled physics when selecting a note", () => {
+    const svg = mount();
+    const sim = simulation().stop();
+    const restart = vi.spyOn(sim, "restart");
+    pointer(host.querySelector(".graph-node")!, "pointerdown", 1, 100, 100);
+    pointer(svg, "pointerup", 1, 100, 100);
+    expect(restart).not.toHaveBeenCalled();
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+  it("keeps linked notes close during a sustained drag without pushing unrelated notes away", () => {
+    const svg = mount(chain);
+    const sim = simulation().stop();
+    sim.tick(300);
+    const nodes = sim.nodes();
+    const first = nodes[0];
+    const orphan = nodes[4];
+    const orphanPosition = { x: orphan.x, y: orphan.y };
+    const before = camera();
+    const x = first.x! + 240;
+    const y = first.y! + 80;
+    pointer(
+      host.querySelector('[data-note-id="a"]')!,
+      "pointerdown",
+      1,
+      first.x!,
+      first.y!,
+    );
+    pointer(svg, "pointermove", 1, x, y);
+    sim.stop().tick(400);
+    expect({ x: first.x, y: first.y }).toEqual({ x, y });
+    expect({ x: orphan.x, y: orphan.y }).toEqual(orphanPosition);
+    for (let index = 0; index < 3; index++) {
+      expect(
+        Math.hypot(
+          nodes[index].x! - nodes[index + 1].x!,
+          nodes[index].y! - nodes[index + 1].y!,
+        ),
+      ).toBeLessThan(115);
+    }
+    pointer(svg, "pointerup", 1, x, y);
+    sim.tick(300);
+    expect(
+      Math.hypot(orphan.x! - orphanPosition.x!, orphan.y! - orphanPosition.y!),
+    ).toBeLessThan(30);
+    for (const node of nodes) {
+      expect(node.fx == null && node.fy == null).toBe(true);
+    }
+    expect(camera()).toEqual(before);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+  it.each(["pointercancel", "lostpointercapture", "blur"])(
+    "releases unrelated nodes after a drag ends through %s",
+    (type) => {
+      const svg = mount(chain);
+      const sim = simulation().stop();
+      sim.tick(200);
+      const first = sim.nodes()[0];
+      const orphan = sim.nodes()[4];
+      pointer(
+        host.querySelector('[data-note-id="a"]')!,
+        "pointerdown",
+        1,
+        first.x!,
+        first.y!,
+      );
+      pointer(svg, "pointermove", 1, first.x! + 100, first.y!);
+      expect(orphan.fx).toBe(orphan.x);
+      if (type === "blur") act(() => window.dispatchEvent(new Event("blur")));
+      else pointer(svg, type, 1, 200, 100);
+      for (const node of sim.nodes()) {
+        expect(node.fx == null && node.fy == null).toBe(true);
+      }
+      expect(sim.alphaTarget()).toBe(0);
+    },
+  );
+  it("relaxes stretched links after a quick drag without changing the zoom", () => {
+    const svg = mount(chain);
+    const sim = simulation().stop();
+    sim.tick(300);
+    const first = sim.nodes()[0];
+    const x = first.x! + 240;
+    const y = first.y!;
+    const before = camera();
+    pointer(
+      host.querySelector('[data-note-id="a"]')!,
+      "pointerdown",
+      1,
+      first.x!,
+      first.y!,
+    );
+    pointer(svg, "pointermove", 1, x, y);
+    pointer(svg, "pointerup", 1, x, y);
+    sim.stop().tick(300);
+    const nodes = sim.nodes();
+    for (let index = 0; index < 3; index++) {
+      expect(
+        Math.hypot(
+          nodes[index].x! - nodes[index + 1].x!,
+          nodes[index].y! - nodes[index + 1].y!,
+        ),
+      ).toBeLessThan(130);
+    }
+    expect(camera()).toEqual(before);
+  });
   it("opens a note on a tap but not after a drag, cancellation or right click", () => {
     const svg = mount();
     const node = host.querySelector(".graph-node")!;
@@ -598,24 +707,26 @@ describe("Overlay graph filters", () => {
   });
 });
 
-
 describe("Graph navigation in expanded mode", () => {
-  it.each(["button", "Escape"])("hides Paper while expanded and restores it after closing with %s", (method) => {
-    const onToggleSidebar = vi.fn();
-    mount(notes, "a", true, onToggleSidebar);
-    expect(button("Expand navigation")).not.toBeNull();
-    click("Expand graph");
-    expect(host.querySelector(".notes-brand")).toBeNull();
-    expect(host.querySelector(".graph-heading")?.textContent).toBe("Graph");
-    expect(onToggleSidebar).not.toHaveBeenCalled();
-    if (method === "button") click("Restore graph");
-    else key(host.querySelector(".graph-canvas")!, "Escape");
-    expect(button("Expand navigation")).not.toBeNull();
-    click("Expand navigation");
-    expect(onToggleSidebar).toHaveBeenCalledOnce();
-    click("Expand graph");
-    expect(host.querySelector(".notes-brand")).toBeNull();
-  });
+  it.each(["button", "Escape"])(
+    "hides Paper while expanded and restores it after closing with %s",
+    (method) => {
+      const onToggleSidebar = vi.fn();
+      mount(notes, "a", true, onToggleSidebar);
+      expect(button("Expand navigation")).not.toBeNull();
+      click("Expand graph");
+      expect(host.querySelector(".notes-brand")).toBeNull();
+      expect(host.querySelector(".graph-heading")?.textContent).toBe("Graph");
+      expect(onToggleSidebar).not.toHaveBeenCalled();
+      if (method === "button") click("Restore graph");
+      else key(host.querySelector(".graph-canvas")!, "Escape");
+      expect(button("Expand navigation")).not.toBeNull();
+      click("Expand navigation");
+      expect(onToggleSidebar).toHaveBeenCalledOnce();
+      click("Expand graph");
+      expect(host.querySelector(".notes-brand")).toBeNull();
+    },
+  );
   it("does not expose navigation if the sidebar state changes while expanded", () => {
     mount();
     click("Expand graph");
