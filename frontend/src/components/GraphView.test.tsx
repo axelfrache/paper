@@ -583,7 +583,11 @@ describe("Graph exploration controls", () => {
     tagFilter("work");
     click("Graph filters");
     act(() =>
-      host.querySelector<HTMLInputElement>(".graph-checkbox input")!.click(),
+      host
+        .querySelector<HTMLInputElement>(
+          '[aria-label="Hide notes without visible links"]',
+        )!
+        .click(),
     );
     expect(shownIds()).toEqual([]);
     click("Close graph panel");
@@ -735,5 +739,87 @@ describe("Graph navigation in expanded mode", () => {
     expect(host.querySelector(".notes-brand")).toBeNull();
     click("Restore graph");
     expect(button("Expand navigation")).not.toBeNull();
+  });
+});
+
+describe("Suggested graph connections", () => {
+  const related = [
+    { ...notes[0], title: "Deploy plan", tags: ["kubernetes"] },
+    { ...notes[0], id: "b", title: "Cluster notes", tags: ["kubernetes"] },
+    { ...notes[0], id: "c", title: "Grocery list" },
+  ];
+  const shownSuggestions = () =>
+    Array.from(
+      host.querySelectorAll<SVGLineElement>(".graph-related-edge"),
+    ).filter((edge) => edge.style.display !== "none");
+  it("reveals explainable suggestions on selection without counting them as references", () => {
+    mount(related);
+    expect(shownSuggestions()).toHaveLength(1);
+    expect(host.querySelectorAll(".graph-edge")).toHaveLength(0);
+    expect(host.querySelector(".graph-explorer-status")?.textContent).toContain(
+      "0 links",
+    );
+    expect(host.querySelector(".graph-related-panel")?.textContent).toContain(
+      "Shared tags: #kubernetes",
+    );
+    const panel = host.querySelector<HTMLDetailsElement>(
+      ".graph-related-panel",
+    )!;
+    act(() => {
+      panel.open = true;
+      panel.querySelector<HTMLButtonElement>("button")!.click();
+    });
+    expect(onSelect).toHaveBeenCalledWith(related[1], false);
+    expect(document.activeElement?.getAttribute("data-note-id")).toBe("b");
+  });
+  it("keeps suggested lines hidden at rest and reveals them on hover and keyboard focus", () => {
+    mount(related, null);
+    expect(shownSuggestions()).toHaveLength(0);
+    const node = host.querySelector('[data-note-id="a"]')!;
+    pointer(node, "pointerover", 1, 100, 100);
+    expect(shownSuggestions()).toHaveLength(1);
+    pointer(node, "pointerout", 1, 100, 100);
+    expect(shownSuggestions()).toHaveLength(0);
+    act(() => (node as SVGElement).focus());
+    expect(shownSuggestions()).toHaveLength(1);
+  });
+  it("includes suggestions in local views and can disable them without changing zoom", () => {
+    mount(related);
+    changeValue(host.querySelector('[aria-label="Graph scope"]')!, "1");
+    expect(shownIds()).toEqual(["a", "b"]);
+    const before = camera();
+    click("Graph filters");
+    act(() =>
+      host
+        .querySelector<HTMLInputElement>(
+          '[aria-label="Suggest related notes"]',
+        )!
+        .click(),
+    );
+    expect(shownIds()).toEqual(["a"]);
+    expect(host.querySelectorAll(".graph-related-edge")).toHaveLength(0);
+    expect(host.querySelector(".graph-related-panel")).toBeNull();
+    expect(camera()).toEqual(before);
+  });
+  it("hides suggestions whose other endpoint is filtered out", () => {
+    mount(
+      related.map((note, index) => ({
+        ...note,
+        tags: [...note.tags, index === 0 ? "first" : "second"],
+      })),
+    );
+    click("Graph filters");
+    click("Filter tag: first");
+    expect(shownSuggestions()).toHaveLength(0);
+    expect(host.querySelector(".graph-related-panel")).toBeNull();
+  });
+  it("removes outdated suggestions from both the drawing and physics", () => {
+    mount(related);
+    simulation().stop();
+    expect(shownSuggestions()).toHaveLength(1);
+    mount(related.map((note) => ({ ...note, tags: [] })));
+    expect(host.querySelectorAll(".graph-related-edge")).toHaveLength(0);
+    expect(() => simulation().stop().tick(10)).not.toThrow();
+    expect(host.querySelector(".graph-related-panel")).toBeNull();
   });
 });

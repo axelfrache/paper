@@ -4776,3 +4776,17 @@ span.account-avatar-lg {
 .graph-explorer-bar.has-brand .graph-filter-trigger { min-width: 32px; justify-content: center; }
 .graph-explorer .graph-toolbar { height: 36px; border-bottom: 0; }
 .graph-explorer-status, .graph-legend, .graph-active-filters { margin: 0 11px; }
+
+.graph-stage { position: relative; display: flex; flex: 1; min-height: 0; overflow: hidden; }
+.graph-related-edge { stroke: var(--muted-strong); stroke-width: 1; stroke-dasharray: 3 5; stroke-linecap: round; opacity: .65; vector-effect: non-scaling-stroke; }
+.graph-related-panel { position: absolute; bottom: 12px; left: 12px; max-width: min(300px, calc(100% - 24px)); max-height: calc(100% - 24px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); font-size: 11px; box-shadow: 0 4px 16px #0001; }
+.graph-related-panel summary { display: flex; align-items: center; gap: 8px; padding: 9px 11px; cursor: pointer; list-style: none; }
+.graph-related-panel summary::before { content: ""; width: 16px; border-top: 1px dashed var(--muted-strong); }
+.graph-related-panel summary span { color: var(--muted-strong); }
+.graph-related-panel summary:hover, .graph-related-panel button:hover { background: var(--hover); }
+.graph-related-panel > div { padding: 0 5px 5px; }
+.graph-related-panel p { margin: 0; padding: 4px 6px 8px; color: var(--muted-strong); font-size: 11px; overflow-wrap: anywhere; }
+.graph-related-panel button { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 8px 6px; border: 0; border-radius: 5px; background: transparent; color: var(--text); text-align: left; font: inherit; cursor: pointer; overflow-wrap: anywhere; }
+.graph-related-panel button span { color: var(--muted-strong); line-height: 1.4; }
+.graph-related-panel summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+@media (any-pointer: coarse) { .graph-related-panel summary, .graph-related-panel button { min-height: 44px; } }

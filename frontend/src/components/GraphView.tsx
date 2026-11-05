@@ -31,12 +31,14 @@ import {
 import { folderColors } from "./FolderDialog";
 import { buildNoteGraph, colorForTag } from "../lib/noteGraph";
 import type { NoteGraphNode } from "../lib/noteGraph";
+import { buildRelatedNotes, relatedReason } from "../lib/relatedNotes";
 import type { Folder, Note } from "../types/note";
 
 type SimNode = NoteGraphNode &
   SimulationNodeDatum & { homeX?: number; homeY?: number };
 type SimLink = {
   id: string;
+  related: boolean;
   source: string | SimNode;
   target: string | SimNode;
 };
@@ -75,6 +77,7 @@ export function GraphView({
   const [keyboardId, setKeyboardId] = useState<string | null>(null);
   const [locateRequest, setLocateRequest] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [showRelated, setShowRelated] = useState(true);
   const sectionRef = useRef<HTMLElement | null>(null);
   const expandButtonRef = useRef<HTMLButtonElement | null>(null);
   const sizeRef = useRef({ width: 0, height: 0 });
@@ -122,23 +125,57 @@ export function GraphView({
     [notes],
   );
 
-  const neighbors = useMemo(() => graphNeighbors(graph), [graph]);
+  const suggestions = useMemo(
+    () => buildRelatedNotes(notes, graph.edges),
+    [notes, graph],
+  );
+  const relatedEdges = useMemo(
+    () => (showRelated ? suggestions : []),
+    [showRelated, suggestions],
+  );
+  const layoutGraph = useMemo(
+    () => ({
+      ...graph,
+      edges: [...graph.edges, ...relatedEdges],
+      signature: JSON.stringify([
+        graph.signature,
+        relatedEdges.map((edge) => edgeId(edge.source, edge.target)).sort(),
+      ]),
+    }),
+    [graph, relatedEdges],
+  );
+  const neighbors = useMemo(() => graphNeighbors(layoutGraph), [layoutGraph]);
   const anchorId =
     exploredId && lookupById.has(exploredId) ? exploredId : activeId;
   const anchor = graph.nodes.find((node) => node.id === anchorId);
   const visibleIds = useMemo(
-    () => visibleGraphIds(graph, neighbors, filters, anchorId),
-    [graph, neighbors, filters, anchorId],
+    () => visibleGraphIds(layoutGraph, neighbors, filters, anchorId),
+    [layoutGraph, neighbors, filters, anchorId],
   );
   const visibleNodes = graph.nodes.filter((node) => visibleIds.has(node.id));
   const visibleEdges = graph.edges.filter(
     (edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target),
+  );
+  const visibleRelatedEdges = relatedEdges.filter(
+    (edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target),
+  );
+  const anchorSuggestions = visibleRelatedEdges.filter(
+    (edge) => edge.source === anchorId || edge.target === anchorId,
   );
   const candidateHighlight = hoveredId ?? keyboardId ?? anchorId;
   const highlightedId =
     candidateHighlight && visibleIds.has(candidateHighlight)
       ? candidateHighlight
       : null;
+  const relatedReasons = new Map(
+    visibleRelatedEdges.flatMap((edge) =>
+      edge.source === highlightedId
+        ? [[edge.target, relatedReason(edge)] as const]
+        : edge.target === highlightedId
+          ? [[edge.source, relatedReason(edge)] as const]
+          : [],
+    ),
+  );
   const highlightedIds = useMemo(
     () => neighborhood(neighbors, highlightedId, 1),
     [neighbors, highlightedId],
@@ -202,21 +239,21 @@ export function GraphView({
   }, []);
 
   useEffect(() => {
-    const metadata = new Map(graph.nodes.map((node) => [node.id, node]));
+    const metadata = new Map(layoutGraph.nodes.map((node) => [node.id, node]));
     for (const node of nodesRef.current) {
       const current = metadata.get(node.id);
       if (current) Object.assign(node, current);
     }
-    if (signatureRef.current === graph.signature) return;
+    if (signatureRef.current === layoutGraph.signature) return;
     cancelGesture();
-    signatureRef.current = graph.signature;
+    signatureRef.current = layoutGraph.signature;
 
     const existingById = new Map(
       nodesRef.current.map((node) => [node.id, node]),
     );
     const width = svgRef.current?.clientWidth || 600;
     const height = svgRef.current?.clientHeight || 400;
-    const mergedNodes: SimNode[] = graph.nodes.map((node) => {
+    const mergedNodes: SimNode[] = layoutGraph.nodes.map((node) => {
       const existing = existingById.get(node.id);
       if (existing) {
         existing.title = node.title;
@@ -233,8 +270,9 @@ export function GraphView({
       };
     });
     nodesRef.current = mergedNodes;
-    edgesRef.current = graph.edges.map((edge) => ({
+    edgesRef.current = layoutGraph.edges.map((edge) => ({
       id: edgeId(edge.source, edge.target),
+      related: "score" in edge,
       source: edge.source,
       target: edge.target,
     }));
@@ -247,12 +285,12 @@ export function GraphView({
       "link",
       forceLink<SimNode, SimLink>(edgesRef.current)
         .id((node) => node.id)
-        .distance(80)
-        .strength(0.65)
+        .distance((edge) => (edge.related ? 120 : 80))
+        .strength((edge) => (edge.related ? 0.045 : 0.65))
         .iterations(2),
     );
     sim.alpha(0.3).restart();
-  }, [graph]);
+  }, [layoutGraph]);
 
   useEffect(() => {
     const container = svgRef.current;
@@ -833,6 +871,9 @@ export function GraphView({
         visibleCount={visibleNodes.length}
         edgeCount={visibleEdges.length}
         colorBy={colorBy}
+        showRelated={showRelated}
+        onShowRelated={setShowRelated}
+        relatedCount={visibleRelatedEdges.length}
         issues={graph.issues}
         onOpenNote={(id) => {
           const note = lookupById.get(id);
@@ -849,7 +890,7 @@ export function GraphView({
           <p>
             {graph.nodes.length
               ? "Try another folder, tag or local view, or show notes without links."
-              : "Create a note, then use [[Note title]] to connect it to another note."}
+              : "Create notes with shared tags or similar topics to discover connections. Use [[Note title]] for a direct reference."}
           </p>
           {!!graph.nodes.length && (
             <button
@@ -861,163 +902,224 @@ export function GraphView({
           )}
         </div>
       )}
-      <svg
-        ref={svgRef}
-        className="graph-canvas"
-        tabIndex={0}
-        role="group"
-        aria-label="Note graph. Arrow keys pan, plus and minus zoom, Home fits all notes, 0 resets zoom, C centers the active note."
-        onKeyDown={handleCanvasKey}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={cancelGesture}
-        onLostPointerCapture={(event) => {
-          if (pointersRef.current.has(event.pointerId)) cancelGesture();
-        }}
-      >
-        <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
-          <g className="graph-edges">
-            {graph.edges.map((edge) => {
-              const id = edgeId(edge.source, edge.target);
-              return (
-                <line
-                  key={id}
-                  ref={(el) => registerEdgeEl(id, el)}
+      <div className="graph-stage">
+        <svg
+          ref={svgRef}
+          className="graph-canvas"
+          tabIndex={0}
+          role="group"
+          aria-label="Note graph. Arrow keys pan, plus and minus zoom, Home fits all notes, 0 resets zoom, C centers the active note."
+          onKeyDown={handleCanvasKey}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={cancelGesture}
+          onLostPointerCapture={(event) => {
+            if (pointersRef.current.has(event.pointerId)) cancelGesture();
+          }}
+        >
+          <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
+            <g className="graph-related-edges">
+              {relatedEdges.map((edge) => {
+                const id = edgeId(edge.source, edge.target);
+                return (
+                  <line
+                    key={id}
+                    ref={(el) => registerEdgeEl(id, el)}
+                    className="graph-related-edge"
+                    style={{
+                      display:
+                        visibleIds.has(edge.source) &&
+                        visibleIds.has(edge.target) &&
+                        (edge.source === highlightedId ||
+                          edge.target === highlightedId)
+                          ? undefined
+                          : "none",
+                    }}
+                  >
+                    <title>{relatedReason(edge)}</title>
+                  </line>
+                );
+              })}
+            </g>
+            <g className="graph-edges">
+              {graph.edges.map((edge) => {
+                const id = edgeId(edge.source, edge.target);
+                return (
+                  <line
+                    key={id}
+                    ref={(el) => registerEdgeEl(id, el)}
+                    style={{
+                      display:
+                        visibleIds.has(edge.source) &&
+                        visibleIds.has(edge.target)
+                          ? undefined
+                          : "none",
+                    }}
+                    className={`graph-edge${highlightedId ? (edge.source === highlightedId || edge.target === highlightedId ? " is-highlighted" : " is-dimmed") : ""}`}
+                  />
+                );
+              })}
+            </g>
+            <g className="graph-nodes">
+              {graph.nodes.map((node) => (
+                <g
+                  key={node.id}
+                  ref={(el) => registerNodeEl(node.id, el)}
                   style={{
-                    display:
-                      visibleIds.has(edge.source) && visibleIds.has(edge.target)
-                        ? undefined
-                        : "none",
+                    display: visibleIds.has(node.id) ? undefined : "none",
                   }}
-                  className={`graph-edge${highlightedId ? (edge.source === highlightedId || edge.target === highlightedId ? " is-highlighted" : " is-dimmed") : ""}`}
-                />
-              );
-            })}
-          </g>
-          <g className="graph-nodes">
-            {graph.nodes.map((node) => (
-              <g
-                key={node.id}
-                ref={(el) => registerNodeEl(node.id, el)}
-                style={{
-                  display: visibleIds.has(node.id) ? undefined : "none",
-                }}
-                className={`graph-node${node.id === activeId ? " is-active" : ""}${node.id === anchorId ? " is-explored" : ""}${highlightedId && !highlightedIds.has(node.id) ? " is-dimmed" : ""}`}
-                onPointerEnter={(event) => {
-                  if (event.pointerType !== "touch") setHoveredId(node.id);
-                }}
-                onPointerLeave={() => setHoveredId(null)}
-                data-note-id={node.id}
-                role="button"
-                aria-label={`Open note: ${node.title || "Untitled"}`}
-                aria-current={node.id === activeId ? "true" : undefined}
-                tabIndex={
-                  visibleIds.has(node.id) &&
-                  node.id ===
-                    (visibleIds.has(focusedId ?? "")
-                      ? focusedId
-                      : visibleIds.has(anchorId ?? "")
-                        ? anchorId
-                        : visibleNodes[0]?.id)
-                    ? 0
-                    : -1
-                }
-                onFocus={() => {
-                  setFocusedId(node.id);
-                  setKeyboardId(node.id);
-                }}
-                onBlur={() => setKeyboardId(null)}
-                onClick={(event) => {
-                  if (event.detail === 0) {
-                    const note = lookupById.get(node.id);
-                    if (note) selectGraphNote(note);
-                  }
-                }}
-                onKeyDown={(event) => {
-                  if (event.altKey || event.ctrlKey || event.metaKey) return;
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    const note = lookupById.get(node.id);
-                    if (note) selectGraphNote(note);
-                  } else if (
-                    [
-                      "ArrowLeft",
-                      "ArrowRight",
-                      "ArrowUp",
-                      "ArrowDown",
-                      "Home",
-                      "End",
-                    ].includes(event.key)
-                  ) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    const index = visibleNodes.findIndex(
-                      (item) => item.id === node.id,
-                    );
-                    const next =
-                      event.key === "Home"
-                        ? 0
-                        : event.key === "End"
-                          ? visibleNodes.length - 1
-                          : (index +
-                              (event.key === "ArrowLeft" ||
-                              event.key === "ArrowUp"
-                                ? -1
-                                : 1) +
-                              visibleNodes.length) %
-                            visibleNodes.length;
-                    focusNode(visibleNodes[next].id);
-                  }
-                }}
-              >
-                <circle r={10} fill={colorFor(node)} />
-                <title>{node.title || "Untitled"}</title>
-                <text
-                  className={
-                    node.id === highlightedId ||
-                    node.id === activeId ||
-                    node.id === anchorId
-                      ? "graph-label is-priority"
-                      : "graph-label"
-                  }
-                  style={{
-                    display:
-                      view.k >= 0.7 ||
-                      node.id === highlightedId ||
-                      node.id === activeId ||
-                      node.id === anchorId
-                        ? undefined
-                        : "none",
-                    fontSize:
-                      node.id === highlightedId ||
-                      node.id === activeId ||
-                      node.id === anchorId
-                        ? 11 / view.k
-                        : undefined,
+                  className={`graph-node${node.id === activeId ? " is-active" : ""}${node.id === anchorId ? " is-explored" : ""}${highlightedId && !highlightedIds.has(node.id) ? " is-dimmed" : ""}`}
+                  onPointerEnter={(event) => {
+                    if (event.pointerType !== "touch") setHoveredId(node.id);
                   }}
-                  dy={
-                    node.id === highlightedId ||
-                    node.id === activeId ||
-                    node.id === anchorId
-                      ? 12 + 12 / view.k
-                      : 22
+                  onPointerLeave={() => setHoveredId(null)}
+                  data-note-id={node.id}
+                  role="button"
+                  aria-label={`Open note: ${node.title || "Untitled"}`}
+                  aria-current={node.id === activeId ? "true" : undefined}
+                  tabIndex={
+                    visibleIds.has(node.id) &&
+                    node.id ===
+                      (visibleIds.has(focusedId ?? "")
+                        ? focusedId
+                        : visibleIds.has(anchorId ?? "")
+                          ? anchorId
+                          : visibleNodes[0]?.id)
+                      ? 0
+                      : -1
                   }
-                  textAnchor="middle"
+                  onFocus={() => {
+                    setFocusedId(node.id);
+                    setKeyboardId(node.id);
+                  }}
+                  onBlur={() => setKeyboardId(null)}
+                  onClick={(event) => {
+                    if (event.detail === 0) {
+                      const note = lookupById.get(node.id);
+                      if (note) selectGraphNote(note);
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.altKey || event.ctrlKey || event.metaKey) return;
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      const note = lookupById.get(node.id);
+                      if (note) selectGraphNote(note);
+                    } else if (
+                      [
+                        "ArrowLeft",
+                        "ArrowRight",
+                        "ArrowUp",
+                        "ArrowDown",
+                        "Home",
+                        "End",
+                      ].includes(event.key)
+                    ) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      const index = visibleNodes.findIndex(
+                        (item) => item.id === node.id,
+                      );
+                      const next =
+                        event.key === "Home"
+                          ? 0
+                          : event.key === "End"
+                            ? visibleNodes.length - 1
+                            : (index +
+                                (event.key === "ArrowLeft" ||
+                                event.key === "ArrowUp"
+                                  ? -1
+                                  : 1) +
+                                visibleNodes.length) %
+                              visibleNodes.length;
+                      focusNode(visibleNodes[next].id);
+                    }
+                  }}
                 >
-                  {(node.title || "Untitled").length > (view.k >= 1.3 ? 50 : 28)
-                    ? (node.title || "Untitled").slice(
-                        0,
-                        view.k >= 1.3 ? 49 : 27,
-                      ) + "…"
-                    : node.title || "Untitled"}
-                </text>
-              </g>
-            ))}
+                  <circle r={10} fill={colorFor(node)} />
+                  <title>
+                    {[node.title || "Untitled", relatedReasons.get(node.id)]
+                      .filter(Boolean)
+                      .join(" — ")}
+                  </title>
+                  <text
+                    className={
+                      node.id === highlightedId ||
+                      node.id === activeId ||
+                      node.id === anchorId
+                        ? "graph-label is-priority"
+                        : "graph-label"
+                    }
+                    style={{
+                      display:
+                        view.k >= 0.7 ||
+                        node.id === highlightedId ||
+                        node.id === activeId ||
+                        node.id === anchorId
+                          ? undefined
+                          : "none",
+                      fontSize:
+                        node.id === highlightedId ||
+                        node.id === activeId ||
+                        node.id === anchorId
+                          ? 11 / view.k
+                          : undefined,
+                    }}
+                    dy={
+                      node.id === highlightedId ||
+                      node.id === activeId ||
+                      node.id === anchorId
+                        ? 12 + 12 / view.k
+                        : 22
+                    }
+                    textAnchor="middle"
+                  >
+                    {(node.title || "Untitled").length >
+                    (view.k >= 1.3 ? 50 : 28)
+                      ? (node.title || "Untitled").slice(
+                          0,
+                          view.k >= 1.3 ? 49 : 27,
+                        ) + "…"
+                      : node.title || "Untitled"}
+                  </text>
+                </g>
+              ))}
+            </g>
           </g>
-        </g>
-      </svg>
+        </svg>
+        {anchorSuggestions.length > 0 && (
+          <details className="graph-related-panel" key={anchorId}>
+            <summary>
+              Related notes <span>{anchorSuggestions.length}</span>
+            </summary>
+            <div>
+              <p>
+                Suggested for <strong>{anchor?.title || "Untitled"}</strong> ·
+                dotted lines
+              </p>
+              {anchorSuggestions.map((edge) => {
+                const id = edge.source === anchorId ? edge.target : edge.source;
+                const note = lookupById.get(id)!;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => {
+                      selectGraphNote(note);
+                      setLocateRequest(id);
+                    }}
+                  >
+                    <strong>{note.title || "Untitled"}</strong>
+                    <span>{relatedReason(edge)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </details>
+        )}
+      </div>
       <div
         className="graph-navigation"
         role="group"

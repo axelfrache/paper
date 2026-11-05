@@ -27,6 +27,9 @@ type Props = {
   edgeCount: number;
   colorBy: "folder" | "tag";
   issues: NoteGraphIssue[];
+  showRelated: boolean;
+  onShowRelated: (show: boolean) => void;
+  relatedCount: number;
 };
 type Facet = {
   key: string | null;
@@ -49,6 +52,9 @@ export function GraphExplorerControls({
   edgeCount,
   colorBy,
   issues,
+  showRelated,
+  onShowRelated,
+  relatedCount,
 }: Props) {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -297,7 +303,7 @@ export function GraphExplorerControls({
           </option>
         </select>
         <span
-          title={`${visibleCount} of ${nodes.length} notes · ${edgeCount} links`}
+          title={`${visibleCount} of ${nodes.length} notes · ${edgeCount} references · ${relatedCount} suggestions`}
         >
           {visibleCount}/{nodes.length} notes · {edgeCount} links
         </span>
@@ -423,9 +429,30 @@ export function GraphExplorerControls({
                     {facets.tags.map((item) => facetButton(item, "tags"))}
                   </div>
                 </fieldset>
+                <fieldset>
+                  <legend>Connections</legend>
+                  <label className="graph-checkbox">
+                    <input
+                      type="checkbox"
+                      aria-label="Suggest related notes"
+                      checked={showRelated}
+                      onChange={(event) => onShowRelated(event.target.checked)}
+                    />
+                    Suggest related notes
+                  </label>
+                  <p>
+                    Shared tags and similar wording gently group notes. Select
+                    or hover a note to reveal dotted suggestions. Solid lines
+                    are your references.
+                  </p>
+                  <p>
+                    {relatedCount} suggestions in this view · up to 3 per note
+                  </p>
+                </fieldset>
                 <label className="graph-checkbox">
                   <input
                     type="checkbox"
+                    aria-label="Hide notes without visible links"
                     checked={filters.hideIsolated}
                     onChange={(event) =>
                       onFilters({
