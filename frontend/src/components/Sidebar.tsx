@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Clock3, Files, Hash, ListTodo, PanelLeftClose, Plus, Star } from "lucide-react";
+import { Clock3, Files, Hash, ListTodo, Network, PanelLeftClose, Plus, Star } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { PointerEvent } from "react";
 import type { Note } from "../types/note";
@@ -7,7 +7,7 @@ import type { AuthUser } from "../types/auth";
 import { AccountMenu } from "./AccountMenu";
 import { ShortcutsHelp } from "./ShortcutsDialog";
 
-export type ViewKey = "all" | "recent" | "favorites" | "tasks";
+export type ViewKey = "all" | "recent" | "favorites" | "tasks" | "graph";
 
 type SidebarProps = {
   foldersSlot?: ReactNode;
@@ -31,6 +31,7 @@ const viewDefs: Array<{ key: ViewKey; label: string; icon: LucideIcon }> = [
   { key: "recent", label: "Recent", icon: Clock3 },
   { key: "favorites", label: "Favorites", icon: Star },
   { key: "tasks", label: "Tasks", icon: ListTodo },
+  { key: "graph", label: "Graph", icon: Network },
 ];
 
 export function Sidebar({ foldersSlot, folderSelected, notes, view, activeTags, hidden, onViewChange, onToggleTag, onNew, onToggleCollapse, user, onLogout, onResizeStart, onResizeBy }: SidebarProps) {

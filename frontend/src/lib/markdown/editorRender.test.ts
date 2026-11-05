@@ -92,6 +92,31 @@ describe("editable markdown renderer", () => {
     expect(host.querySelector(".markdown-link-invalid")?.textContent).toBe("bad");
   });
 
+  it("renders a resolved wikilink as a clickable link to the target note", () => {
+    const noteIndex = new Map([["existing note", "id-1"]]);
+    const host = render(renderEditableMarkdown("See [[Existing Note]]", -1, -1, noteIndex));
+
+    const link = host.querySelector<HTMLAnchorElement>("a[data-open-note]");
+    expect(link?.dataset.openNote).toBe("id-1");
+    expect(link?.textContent).toBe("Existing Note");
+    expect(readSource(host as HTMLDivElement)).toBe("See [[Existing Note]]");
+  });
+
+  it("renders an unresolved wikilink as broken, without a note index", () => {
+    const host = render(renderEditableMarkdown("See [[Unknown]]", -1));
+
+    expect(host.querySelector("a[data-open-note]")).toBeNull();
+    expect(host.querySelector(".markdown-wikilink-broken")?.textContent).toBe("Unknown");
+    expect(readSource(host as HTMLDivElement)).toBe("See [[Unknown]]");
+  });
+
+  it("round-trips a wikilink title with internal spaces exactly", () => {
+    const noteIndex = new Map([["note", "id-1"]]);
+    const host = render(renderEditableMarkdown("[[ Note ]]", -1, -1, noteIndex));
+
+    expect(readSource(host as HTMLDivElement)).toBe("[[ Note ]]");
+  });
+
   it("escapes plain text before assigning it as HTML", () => {
     const host = render(renderEditableMarkdown("<script>alert(1)</script>", -1));
 
@@ -243,4 +268,24 @@ it("renders titles as escaped text without changing the diagram's Markdown sourc
   expect(readSource(host as HTMLDivElement)).toBe(marker + "\n");
   const untitled = render(renderEditableMarkdown(serializeDiagramMarker(createDefaultDiagram()), -1));
   expect(untitled.querySelector(".markdown-diagram-title-button")?.textContent).toBe("Add a title…");
+});
+
+
+it("preserves multi-backtick code source without creating wikilinks", () => {
+  const source = "Before ``a ` [[Literal]] b`` after [[Real]]";
+  const host = render(renderEditableMarkdown(source, -1, -1, new Map([["literal", "l"], ["real", "r"]])));
+  expect(host.querySelector("code")?.textContent).toBe("a ` [[Literal]] b");
+  expect(host.querySelectorAll("[data-open-note]")).toHaveLength(1);
+  expect(readSource(host)).toBe(source);
+});
+
+
+it.each([0, -1])("hides closed wikilink markers on active and inactive lines (%s)", (activeLine) => {
+  const source = "See [[Existing Note]] and [[Missing]]";
+  const host = render(renderEditableMarkdown(source, activeLine, -1, new Map([["existing note", "id-1"]])));
+  expect(readSource(host)).toBe(source);
+  const markers = [...host.querySelectorAll<HTMLElement>("[data-syntax-side]")];
+  expect(markers).toHaveLength(4);
+  expect(markers.every((marker) => marker.style.display === "none")).toBe(true);
+  expect(host.querySelector("a")?.textContent).toBe("Existing Note");
 });

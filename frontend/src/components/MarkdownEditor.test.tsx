@@ -1668,7 +1668,7 @@ it("handles mobile text replacement of a selected resource", () => {
 describe("visible caret at formatting boundaries", () => {
   const formats = [
     ["**test**", 2, 6], ["*test*", 1, 5], ["`test`", 1, 5],
-    ["~~test~~", 2, 6], ["<u>test</u>", 3, 7], ["***test***", 3, 7],
+    ["~~test~~", 2, 6], ["<u>test</u>", 3, 7], ["***test***", 3, 7], ["[[test]]", 2, 6],
   ] as const;
   const press = (editor: HTMLElement, key: string, shiftKey = false) => {
     act(() => {
@@ -1707,7 +1707,7 @@ describe("visible caret at formatting boundaries", () => {
     press(editor, "Backspace");
     expect(valueFrom(host)).toBe(`${source.replace("test", "tes")} next`);
   });
-  it.each(["**x**", "*x*", "`x`", "~~x~~", "<u>x</u>", "***x***"])("removes the empty wrapper when deleting the final character in %s", (source) => {
+  it.each(["**x**", "*x*", "`x`", "~~x~~", "<u>x</u>", "***x***", "[[x]]"])("removes the empty wrapper when deleting the final character in %s", (source) => {
     const host = mount(`${source} next`), editor = editorFrom(host);
     act(() => { editor.focus(); placeCaret(editor, { line: 0, col: source.indexOf("x") + 1 }); });
     press(editor, "Backspace");
@@ -1970,4 +1970,75 @@ it("saves the previous draft when switching directly between preview titles", ()
   act(() => editor.querySelector("[data-diagram-title-line='1']")!.dispatchEvent(new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true })));
   expect(parseDiagramMarker(valueFrom(host).split("\n")[0])?.title).toBe("First");
   expect(editor.querySelector("[data-line='1'] input")).toBe(document.activeElement);
+});
+
+
+describe("Note references", () => {
+  const referenceNotes = [
+    { id: "target", title: "Target", content: "", tags: [], favorite: false, createdAt: "", updatedAt: "" },
+    { id: "other", title: "Other", content: "", tags: [], favorite: false, createdAt: "", updatedAt: "" },
+  ];
+  const press = (editor: Element, key: string) => act(() => editor.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })));
+  function caretAt(editor: HTMLDivElement, col: number) {
+    act(() => { editor.focus(); placeCaret(editor, { line: 0, col }); editor.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowRight", bubbles: true })); });
+  }
+  it("formats immediately on the final bracket and lets typing continue outside the link", () => {
+    const host = mount("See [[Target]", null, undefined, { notes: referenceNotes });
+    const editor = editorFrom(host);
+    caretAt(editor, "See [[Target]".length);
+    expect(editor.querySelector("a[data-open-note]")).toBeNull();
+    press(editor, "]");
+    expect(valueFrom(host)).toBe("See [[Target]]");
+    expect(editor.querySelector("a[data-open-note]")?.textContent).toBe("Target");
+    expect([...editor.querySelectorAll<HTMLElement>("[data-syntax-side]")].every((mark) => mark.style.display === "none")).toBe(true);
+    expect(getSelectionRange(editor)?.end.col).toBe("See [[Target]]".length);
+    press(editor, "!");
+    expect(valueFrom(host)).toBe("See [[Target]]!");
+    expect(editor.querySelector("a")?.textContent).toBe("Target");
+    expect(host.querySelector(".wikilink-menu")).toBeNull();
+  });
+  it("opens the note picker from /note and inserts a selected reference without changing surrounding text", () => {
+    const host = mount("See /note after", null, undefined, { notes: referenceNotes });
+    const editor = editorFrom(host);
+    caretAt(editor, "See /note".length);
+    expect(host.querySelector(".slash-menu")?.textContent).toContain("Note reference");
+    press(editor, "Enter");
+    expect(valueFrom(host)).toBe("See [[ after");
+    expect(host.querySelector(".slash-menu")).toBeNull();
+    expect(host.querySelectorAll(".wikilink-menu-row")).toHaveLength(2);
+    press(editor, "ArrowDown");
+    press(editor, "Tab");
+    expect(valueFrom(host)).toBe("See [[Other]] after");
+    expect(editor.querySelector("a")?.getAttribute("data-open-note")).toBe("other");
+    expect(getSelectionRange(editor)?.end.col).toBe("See [[Other]]".length);
+  });
+  it("filters references as you type and supports mouse selection", () => {
+    const host = mount("/reference", null, undefined, { notes: referenceNotes });
+    const editor = editorFrom(host);
+    caretAt(editor, 10);
+    const command = host.querySelector<HTMLButtonElement>(".slash-menu-row")!;
+    act(() => command.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 })));
+    press(editor, "T");
+    press(editor, "a");
+    expect(host.querySelectorAll(".wikilink-menu-row")).toHaveLength(1);
+    act(() => host.querySelector(".wikilink-menu-row")!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 })));
+    expect(valueFrom(host)).toBe("[[Target]]");
+    expect(host.querySelector(".wikilink-menu")).toBeNull();
+  });
+  it("can dismiss the picker and finish a reference manually", () => {
+    const host = mount("[[Tar", null, undefined, { notes: referenceNotes });
+    const editor = editorFrom(host);
+    caretAt(editor, 5);
+    press(editor, "Escape");
+    expect(host.querySelector(".wikilink-menu")).toBeNull();
+    for (const key of "get]]") press(editor, key);
+    expect(editor.querySelector("a")?.textContent).toBe("Target");
+    expect(valueFrom(host)).toBe("[[Target]]");
+  });
+  it("shows an empty state instead of offering ambiguous or untitled targets", () => {
+    const host = mount("[[", null, undefined, { notes: [{ ...referenceNotes[0], title: "" }, referenceNotes[1], { ...referenceNotes[1], id: "duplicate" }] });
+    caretAt(editorFrom(host), 2);
+    expect(host.querySelectorAll(".wikilink-menu-row")).toHaveLength(0);
+    expect(host.querySelector(".wikilink-menu")?.textContent).toContain("No matching notes");
+  });
 });

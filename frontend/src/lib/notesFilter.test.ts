@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractTagTokens, highlightSegments, matchesFilter, takeTrailingTag } from "./notesFilter";
+import { extractTagTokens, filterNotesByTitle, highlightSegments, matchesFilter, takeTrailingTag } from "./notesFilter";
 import type { Note } from "../types/note";
 
 function note(overrides: Partial<Note>): Note {
@@ -62,6 +62,32 @@ describe("matchesFilter", () => {
   it("matches a #-prefixed tag typed as free text", () => {
     expect(matchesFilter(sample, { query: "#work", tags: [] })).toBe(true);
     expect(matchesFilter(sample, { query: "#missing", tags: [] })).toBe(false);
+  });
+});
+
+describe("filterNotesByTitle", () => {
+  const notes = [
+    { id: "a", title: "Deploy plan" },
+    { id: "b", title: "Grocery list" },
+    { id: "c", title: "Deployment checklist" },
+  ];
+
+  it("returns everything for an empty query, truncated to the limit", () => {
+    expect(filterNotesByTitle(notes, "")).toEqual(notes);
+    expect(filterNotesByTitle(notes, "", 2)).toEqual(notes.slice(0, 2));
+  });
+
+  it("matches a substring in the title, case-insensitively", () => {
+    expect(filterNotesByTitle(notes, "deploy").map((n) => n.id)).toEqual(["a", "c"]);
+    expect(filterNotesByTitle(notes, "DEPLOY").map((n) => n.id)).toEqual(["a", "c"]);
+  });
+
+  it("respects the limit", () => {
+    expect(filterNotesByTitle(notes, "", 1)).toEqual([notes[0]]);
+  });
+
+  it("returns an empty array when nothing matches", () => {
+    expect(filterNotesByTitle(notes, "xyzzy")).toEqual([]);
   });
 });
 

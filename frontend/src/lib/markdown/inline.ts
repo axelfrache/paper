@@ -1,9 +1,10 @@
 export type MarkdownInline =
   | { type: "escape"; text: string }
   | { type: "text"; text: string }
+  | { type: "wikilink"; title: string }
   | { type: "link"; text: MarkdownInline[]; href: string; source: string; title?: string; safe: boolean }
   | { type: "image"; alt: string; href: string; source: string; safe: boolean; width?: number }
-  | { type: "code"; text: string }
+  | { type: "code"; text: string; delimiter?: string }
   | { type: "strong"; children: MarkdownInline[] }
   | { type: "em"; children: MarkdownInline[] }
   | { type: "strike"; children: MarkdownInline[] }
@@ -38,6 +39,14 @@ export function parseInline(text: string): MarkdownInline[] {
       index += 2;
       continue;
     }
+    const wikilink = parseWikilink(text, index);
+    if (wikilink) {
+      pushBuffer();
+      nodes.push(wikilink.node);
+      index = wikilink.end;
+      continue;
+    }
+
     const image = parseImage(text, index);
     if (image) {
       pushBuffer();
@@ -68,13 +77,24 @@ export function parseInline(text: string): MarkdownInline[] {
     }
 
     if (text[index] === "`") {
-      const end = text.indexOf("`", index + 1);
-      if (end > index + 1) {
+      const delimiter = text.slice(index).match(/^`+/)![0];
+      let end = index + delimiter.length;
+      let closing = -1;
+      while (end < text.length) {
+        if (text[end] !== "`") { end += 1; continue; }
+        const run = text.slice(end).match(/^`+/)![0];
+        if (run.length === delimiter.length) { closing = end; break; }
+        end += run.length;
+      }
+      if (closing !== -1) {
         pushBuffer();
-        nodes.push({ type: "code", text: text.slice(index + 1, end) });
-        index = end + 1;
+        nodes.push({ type: "code", text: text.slice(index + delimiter.length, closing), ...(delimiter.length > 1 ? { delimiter } : {}) });
+        index = closing + delimiter.length;
         continue;
       }
+      buffer += delimiter;
+      index += delimiter.length;
+      continue;
     }
 
     if (text.startsWith("~~", index)) {
@@ -152,6 +172,21 @@ export function safeImageSrc(value: string) {
     return href;
   }
   return /^https?:\/\//i.test(href) ? href : "";
+}
+
+function parseWikilink(text: string, start: number): ParsedLink | null {
+  if (text[start] !== "[" || text[start + 1] !== "[") {
+    return null;
+  }
+  const end = findUnescaped(text, "]]", start + 2);
+  if (end < start + 2) {
+    return null;
+  }
+  const title = text.slice(start + 2, end);
+  if (!title.trim()) {
+    return null;
+  }
+  return { end: end + 2, node: { type: "wikilink", title } };
 }
 
 function parseImage(text: string, start: number): ParsedLink | null {

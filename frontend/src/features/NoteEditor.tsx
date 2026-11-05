@@ -28,6 +28,8 @@ type NoteEditorProps = {
   onTitleChange: (title: string) => void;
   onContentChange: (content: string) => void;
   onUploadImage: (file: File) => Promise<NoteImage>;
+  notes?: Note[];
+  onOpenNote?: (noteId: string) => void;
   onTagDraftChange: (tag: string) => void;
   onAddTag: () => void;
   onRemoveTag: (tag: string) => void;
@@ -80,6 +82,8 @@ export function NoteEditor({
   onTitleChange,
   onContentChange,
   onUploadImage,
+  notes = [],
+  onOpenNote,
   onTagDraftChange,
   onAddTag,
   onRemoveTag,
@@ -332,6 +336,8 @@ export function NoteEditor({
             onFocusPrevious={focusTags}
             onFocusNoteList={onFocusNoteList}
             onOpenDiagram={openDiagram}
+            notes={notes}
+            onOpenNote={onOpenNote}
             exportTitle={note.title}
             diagramDescribeRequest={diagramDescribeRequest}
             placeholder="Start writing... press / to insert a block"

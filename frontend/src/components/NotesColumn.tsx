@@ -366,6 +366,9 @@ function renderInlineNodes(nodes: MarkdownInline[], query: string): ReactNode {
     if (node.type === "link") {
       return <span key={index}>{renderInlineNodes(node.text, query)}</span>;
     }
+    if (node.type === "wikilink") {
+      return <span key={index}>{renderHighlighted(node.title, query)}</span>;
+    }
     if (node.type === "image") {
       return null;
     }

@@ -7,6 +7,7 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { AlignLeft, ListTodo, MessageCircleQuestion, Plus, Star } from "lucide-react";
 import { CommandPalette, type PaletteAction, type PaletteMode } from "../components/CommandPalette";
 import { NotesColumn } from "../components/NotesColumn";
+import { GraphView } from "../components/GraphView";
 import { Sidebar, type ViewKey } from "../components/Sidebar";
 import { FolderNav } from "../components/FolderNav";
 import { FolderDialog, folderColors, type FolderDialogState } from "../components/FolderDialog";
@@ -495,6 +496,16 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
     [visibleNotes, folderScope],
   );
 
+  const openNoteById = useCallback(
+    (noteId: string) => {
+      const target = notes.find((note) => note.id === noteId);
+      if (target) {
+        selectNote(target);
+      }
+    },
+    [notes, selectNote],
+  );
+
   const navigateNote = useCallback(
     (direction: "previous" | "next", extend = false) => {
       if (!visibleNotes.length) {
@@ -953,51 +964,67 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
         />
       ) : null}
 
-      <NotesColumn
-        title={
-          folderScope === undefined
-            ? titleForView(view)
-            : folderScope === null
-              ? "No folder"
-              : (folders.find((folder) => folder.id === folderScope)?.name ??
-                "Folder")
-        }
-        folders={folders}
-        showFolders={folderScope === undefined}
-        onMoveNotes={openMove}
-        onSearchAll={
-          folderScope !== undefined && (query.trim() || activeTags.length)
-            ? () => setFolderScope(undefined)
-            : undefined
-        }
-        notes={visibleNotes}
-        activeId={activeId}
-        selectedIds={selectedIds}
-        query={query}
-        activeTags={activeTags}
-        sidebarHidden={sidebarHidden}
-        focusRequest={noteCardFocusRequest}
-        onQueryChange={setQuery}
-        onAddTag={addFilterTag}
-        onRemoveTag={removeFilterTag}
-        onClearFilters={clearFilters}
-        onNew={() => void handleNew()}
-        onSelect={selectNote}
-        onSelectionChange={setSelectedIds}
-        onDeleteSelected={() => void handleDelete().then(() => { setMobilePane("notes"); setSelectedIds([]); })}
-        onFavoriteNote={favoriteNote}
-        onDuplicateNote={(note) => void duplicateNote(note)}
-        onDeleteNote={(note) => void deleteSingleNote(note)}
-        onNavigate={navigateNote}
-        onFocusTitle={focusActiveTitle}
-        onFocusContent={focusActiveContent}
-        onToggleSidebar={() => {
-          setNavPinned(true);
-          setSidebarHidden(false);
-        }}
-        onResizeStart={(event) => startColumnResize("notes", event)}
-        onResizeBy={(delta) => setColumnWidth("notes", notesWidth + delta)}
-      />
+      {view === "graph" ? (
+        <GraphView
+          sidebarHidden={sidebarHidden}
+          onToggleSidebar={() => {
+            setNavPinned(true);
+            setSidebarHidden(false);
+          }}
+          notes={notes}
+          folders={folders}
+          activeId={activeId}
+          onSelect={selectNote}
+          onResizeStart={(event) => startColumnResize("notes", event)}
+          onResizeBy={(delta) => setColumnWidth("notes", notesWidth + delta)}
+        />
+      ) : (
+        <NotesColumn
+          title={
+            folderScope === undefined
+              ? titleForView(view)
+              : folderScope === null
+                ? "No folder"
+                : (folders.find((folder) => folder.id === folderScope)?.name ??
+                  "Folder")
+          }
+          folders={folders}
+          showFolders={folderScope === undefined}
+          onMoveNotes={openMove}
+          onSearchAll={
+            folderScope !== undefined && (query.trim() || activeTags.length)
+              ? () => setFolderScope(undefined)
+              : undefined
+          }
+          notes={visibleNotes}
+          activeId={activeId}
+          selectedIds={selectedIds}
+          query={query}
+          activeTags={activeTags}
+          sidebarHidden={sidebarHidden}
+          focusRequest={noteCardFocusRequest}
+          onQueryChange={setQuery}
+          onAddTag={addFilterTag}
+          onRemoveTag={removeFilterTag}
+          onClearFilters={clearFilters}
+          onNew={() => void handleNew()}
+          onSelect={selectNote}
+          onSelectionChange={setSelectedIds}
+          onDeleteSelected={() => void handleDelete().then(() => { setMobilePane("notes"); setSelectedIds([]); })}
+          onFavoriteNote={favoriteNote}
+          onDuplicateNote={(note) => void duplicateNote(note)}
+          onDeleteNote={(note) => void deleteSingleNote(note)}
+          onNavigate={navigateNote}
+          onFocusTitle={focusActiveTitle}
+          onFocusContent={focusActiveContent}
+          onToggleSidebar={() => {
+            setNavPinned(true);
+            setSidebarHidden(false);
+          }}
+          onResizeStart={(event) => startColumnResize("notes", event)}
+          onResizeBy={(delta) => setColumnWidth("notes", notesWidth + delta)}
+        />
+      )}
 
       <NoteEditor
         listHidden={listHidden}
@@ -1030,6 +1057,8 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
           ) : null
         }
         note={activeNote}
+        notes={notes}
+        onOpenNote={openNoteById}
         tagDraft={tagDraft}
         aiResult={aiResult}
         titleFocusRequest={titleFocusRequest}
@@ -1227,6 +1256,7 @@ function titleForView(view: ViewKey) {
     recent: "Recent",
     favorites: "Favorites",
     tasks: "Tasks",
+    graph: "Graph",
   }[view];
 }
 

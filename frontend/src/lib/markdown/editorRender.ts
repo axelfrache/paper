@@ -9,19 +9,20 @@ import { isResourceLine, standaloneImage } from "./resource";
 
 const syntaxColor = "var(--muted)";
 const diagramPreviewCache = new Map<string, string>();
+const emptyNoteIndex = new Map<string, string>();
 
-export function renderEditableMarkdown(value: string, activeLine: number, selectedResourceLine = -1) {
+export function renderEditableMarkdown(value: string, activeLine: number, selectedResourceLine = -1, noteIndex: Map<string, string> = emptyNoteIndex) {
   const lines = value.split("\n");
   const contexts = codeLines(lines);
   const html = lines
     .map((line, index) => contexts[index]
       ? `<div data-line="${index}" class="markdown-editor-code${contexts[index] === "fence" ? " markdown-editor-code-fence" : ""}" style="min-height:1.75em;">${escapeHtml(line) || "<br />"}</div>`
-      : renderEditableLine(line, index === activeLine, index, index === selectedResourceLine))
+      : renderEditableLine(line, index === activeLine, index, index === selectedResourceLine, noteIndex))
     .join("");
   // Only a resource needs an extra line: the caret cannot sit inside an image or a
   // diagram, whereas a divider line holds it fine. The extra line is not part of the source.
   const lastLine = lines[lines.length - 1] ?? "";
-  return !contexts[lines.length - 1] && isResourceLine(lastLine) ? `${html}${renderEditableLine("", false, lines.length)}` : html;
+  return !contexts[lines.length - 1] && isResourceLine(lastLine) ? `${html}${renderEditableLine("", false, lines.length, false, noteIndex)}` : html;
 }
 
 export function hiddenPrefixLength(rawLine: string) {
@@ -45,7 +46,7 @@ export function hiddenPrefixLength(rawLine: string) {
   return 0;
 }
 
-export function renderEditableLine(rawLine: string, active: boolean, index: number, selectedResource = false) {
+export function renderEditableLine(rawLine: string, active: boolean, index: number, selectedResource = false, noteIndex: Map<string, string> = emptyNoteIndex) {
   const mermaid = parseMermaidMarker(rawLine);
   if (mermaid) {
     return resourceBlock(rawLine, index, "diagram", [
@@ -69,14 +70,14 @@ export function renderEditableLine(rawLine: string, active: boolean, index: numb
     const sizes = ["22px", "18px", "15.5px", "15px", "14.5px", "14px"];
     const level = match[1].length;
     const margin = level === 1 ? "18px 0 4px" : "14px 0 2px";
-    return `<div data-line="${index}" style="${base}font-size:${sizes[level - 1]};font-weight:640;letter-spacing:0;line-height:1.45;margin:${margin};">${syntaxMark(match[1] + match[2])}${inlineMarkdown(match[3], active)}${alignMark}</div>`;
+    return `<div data-line="${index}" style="${base}font-size:${sizes[level - 1]};font-weight:640;letter-spacing:0;line-height:1.45;margin:${margin};">${syntaxMark(match[1] + match[2])}${inlineMarkdown(match[3], active, noteIndex)}${alignMark}</div>`;
   }
 
   match = /^(-\s\[([ xX])\])(\s+)(.*)$/.exec(raw);
   if (match) {
     const done = match[2].toLowerCase() === "x";
     const check = `${deco(`<button type="button" role="checkbox" aria-checked="${done}" aria-label="Toggle task" contenteditable="false" data-check="${index}" style="cursor:pointer;font-size:13px;margin-right:8px;color:${done ? "var(--accent)" : "var(--muted)"};">${done ? "☑" : "☐"}</button>`)}${syntaxMark(match[1] + match[3])}`;
-    return `<div data-line="${index}" style="${base}display:flex;align-items:baseline;">${check}<span style="flex:1;min-width:0;${done ? "color:var(--muted);text-decoration:line-through;" : ""}">${inlineMarkdown(match[4], active)}</span>${alignMark}</div>`;
+    return `<div data-line="${index}" style="${base}display:flex;align-items:baseline;">${check}<span style="flex:1;min-width:0;${done ? "color:var(--muted);text-decoration:line-through;" : ""}">${inlineMarkdown(match[4], active, noteIndex)}</span>${alignMark}</div>`;
   }
 
   if (isDivider(raw)) {
@@ -86,18 +87,18 @@ export function renderEditableLine(rawLine: string, active: boolean, index: numb
 
   match = /^(\d+[.)])(\s+)(.*)$/.exec(raw);
   if (match) {
-    return `<div data-line="${index}" style="${base}display:flex;align-items:baseline;gap:8px;">${deco(escapeHtml(match[1]))}${syntaxMark(match[1] + match[2])}<span style="flex:1;min-width:0;">${inlineMarkdown(match[3], active)}</span>${alignMark}</div>`;
+    return `<div data-line="${index}" style="${base}display:flex;align-items:baseline;gap:8px;">${deco(escapeHtml(match[1]))}${syntaxMark(match[1] + match[2])}<span style="flex:1;min-width:0;">${inlineMarkdown(match[3], active, noteIndex)}</span>${alignMark}</div>`;
   }
 
   match = /^(-|\*)(\s+)(.*)$/.exec(raw);
   if (match) {
     const bullet = `${deco('<span style="margin-right:8px;">•</span>')}${syntaxMark(match[1] + match[2])}`;
-    return `<div data-line="${index}" style="${base}display:flex;align-items:baseline;padding-left:2px;">${bullet}<span style="flex:1;min-width:0;">${inlineMarkdown(match[3], active)}</span>${alignMark}</div>`;
+    return `<div data-line="${index}" style="${base}display:flex;align-items:baseline;padding-left:2px;">${bullet}<span style="flex:1;min-width:0;">${inlineMarkdown(match[3], active, noteIndex)}</span>${alignMark}</div>`;
   }
 
   match = /^(>)(\s+)(.*)$/.exec(raw);
   if (match) {
-    return `<div data-line="${index}" style="${base}border-left:2px solid var(--line);padding-left:12px;color:var(--muted);">${syntaxMark(match[1] + match[2])}${inlineMarkdown(match[3], active)}${alignMark}</div>`;
+    return `<div data-line="${index}" style="${base}border-left:2px solid var(--line);padding-left:12px;color:var(--muted);">${syntaxMark(match[1] + match[2])}${inlineMarkdown(match[3], active, noteIndex)}${alignMark}</div>`;
   }
 
   const diagram = parseDiagramMarker(raw);
@@ -133,7 +134,7 @@ export function renderEditableLine(rawLine: string, active: boolean, index: numb
   if (!raw.length) {
     return `<div data-line="${index}" style="${base}"><br /></div>`;
   }
-  return `<div data-line="${index}" style="${base}">${inlineMarkdown(raw, active)}${alignMark}</div>`;
+  return `<div data-line="${index}" style="${base}">${inlineMarkdown(raw, active, noteIndex)}${alignMark}</div>`;
 }
 
 function resourceBlock(
@@ -173,14 +174,21 @@ function diagramResourceActions(index: number) {
   return `<button type="button" data-resource-copy-line="${index}" class="markdown-editor-diagram-copy" aria-label="Copy diagram" title="Copy"></button><button type="button" data-resource-delete-line="${index}" class="markdown-editor-diagram-delete" aria-label="Delete diagram" title="Delete"></button>`;
 }
 
-function inlineMarkdown(raw: string, active: boolean) {
-  return raw.length ? parseInline(raw).map((node) => inlineNode(node, active)).join("") : "<br />";
+function inlineMarkdown(raw: string, active: boolean, noteIndex: Map<string, string>) {
+  return raw.length ? parseInline(raw).map((node) => inlineNode(node, active, noteIndex)).join("") : "<br />";
 }
 
-function inlineNode(node: MarkdownInline, active: boolean): string {
+function inlineNode(node: MarkdownInline, active: boolean, noteIndex: Map<string, string>): string {
   if (node.type === "escape") return `${syntaxMark("\\")}${escapeHtml(node.text)}`;
   if (node.type === "text") {
     return escapeHtml(node.text);
+  }
+  if (node.type === "wikilink") {
+    const id = noteIndex.get(node.title.trim().toLowerCase());
+    const content = id
+      ? `<a href="#" data-open-note="${escapeAttribute(id)}" class="markdown-wikilink">${escapeHtml(node.title)}</a>`
+      : `<span class="markdown-link-invalid markdown-wikilink-broken">${escapeHtml(node.title)}</span>`;
+    return `${syntaxMark("[[")}${content}${syntaxMark("]]", false, "close")}`;
   }
   if (node.type === "image") {
     const marker = imageMarker(node);
@@ -193,25 +201,25 @@ function inlineNode(node: MarkdownInline, active: boolean): string {
   }
   if (node.type === "code") {
     const content = `<code>${escapeHtml(node.text)}</code>`;
-    return `${syntaxMark("`")}${content}${syntaxMark("`", false, "close")}`;
+    return `${syntaxMark(node.delimiter ?? "`")}${content}${syntaxMark(node.delimiter ?? "`", false, "close")}`;
   }
   if (node.type === "strong") {
-    const content = `<strong>${node.children.map((child) => inlineNode(child, active)).join("")}</strong>`;
+    const content = `<strong>${node.children.map((child) => inlineNode(child, active, noteIndex)).join("")}</strong>`;
     return `${syntaxMark("**")}${content}${syntaxMark("**", false, "close")}`;
   }
   if (node.type === "em") {
-    const content = `<em>${node.children.map((child) => inlineNode(child, active)).join("")}</em>`;
+    const content = `<em>${node.children.map((child) => inlineNode(child, active, noteIndex)).join("")}</em>`;
     return `${syntaxMark("*")}${content}${syntaxMark("*", false, "close")}`;
   }
   if (node.type === "strike") {
-    const content = `<s>${node.children.map((child) => inlineNode(child, active)).join("")}</s>`;
+    const content = `<s>${node.children.map((child) => inlineNode(child, active, noteIndex)).join("")}</s>`;
     return `${syntaxMark("~~")}${content}${syntaxMark("~~", false, "close")}`;
   }
   if (node.type === "underline") {
-    const content = `<u>${node.children.map((child) => inlineNode(child, active)).join("")}</u>`;
+    const content = `<u>${node.children.map((child) => inlineNode(child, active, noteIndex)).join("")}</u>`;
     return `${syntaxMark("<u>")}${content}${syntaxMark("</u>", false, "close")}`;
   }
-  const children = node.text.map((child) => inlineNode(child, active)).join("");
+  const children = node.text.map((child) => inlineNode(child, active, noteIndex)).join("");
   const content = node.safe
     ? `<a href="${escapeAttribute(node.href)}" target="_blank" rel="noreferrer"${node.title ? ` title="${escapeAttribute(node.title)}"` : ""}>${children}</a>`
     : `<span class="markdown-link-invalid">${children}</span>`;

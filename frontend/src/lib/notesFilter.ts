@@ -48,6 +48,12 @@ export function matchesFilter(note: Note, filter: NoteFilter): boolean {
   return true;
 }
 
+export function filterNotesByTitle<T extends { id: string; title: string }>(notes: T[], query: string, limit = 50): T[] {
+  const needle = query.trim().toLowerCase();
+  const matches = needle ? notes.filter((note) => note.title.toLowerCase().includes(needle)) : notes;
+  return matches.slice(0, limit);
+}
+
 export type HighlightSegment = { text: string; match: boolean };
 
 export function highlightSegments(text: string, query: string): HighlightSegment[] {

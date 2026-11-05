@@ -4,7 +4,7 @@ import { disposeMermaidPreviews, syncMermaidPreviews } from "../lib/mermaid";
 import { expandMermaid, mermaidMarker, parseMermaidMarker, projectMermaid, replaceMermaidSource, withMermaidTitle, withMermaidWidth } from "../lib/markdown/mermaid";
 import { DiagramSourceEditor } from "./DiagramSourceEditor";
 import { remapCaret } from "../lib/markdown/anchor";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, BrainCircuit, Boxes, CalendarDays, Code2, FileText, GitBranch, Heading1, Heading2, Heading3, Image, Italic, Link, List, ListChecks, ListTodo, Minus, Quote, Sparkles, Strikethrough, TextCursorInput, Underline, Wand2, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -73,7 +73,9 @@ import {
   stepColumn,
   visibleDeletionRange,
 } from "../lib/markdown/dom";
-import type { AIAction, NoteImage } from "../types/note";
+import { filterNotesByTitle } from "../lib/notesFilter";
+import { buildNoteTitleIndex } from "../lib/noteGraph";
+import type { AIAction, Note, NoteImage } from "../types/note";
 import type { Diagram, DiagramMode, DiagramPreview } from "../lib/diagram";
 import type { Caret, TextRange } from "../lib/markdown/edit";
 
@@ -93,6 +95,8 @@ type MarkdownEditorProps = {
   exportTitle?: string;
   diagramDescribeRequest?: { key: string; prompt: string } | null;
   placeholder?: string;
+  notes?: Note[];
+  onOpenNote?: (noteId: string) => void;
 };
 
 type SlashItem = {
@@ -104,6 +108,7 @@ type SlashItem = {
   wrap?: string;
   closeWrap?: string;
   link?: boolean;
+  noteReference?: boolean;
   block?: string;
   date?: boolean;
   diagram?: DiagramMode;
@@ -113,6 +118,14 @@ type SlashItem = {
 };
 
 type SlashState = {
+  query: string;
+  index: number;
+  top: number;
+  left: number;
+  maxHeight: number;
+};
+
+type WikilinkState = {
   query: string;
   index: number;
   top: number;
@@ -168,6 +181,7 @@ const slashItems: SlashItem[] = [
   { id: "italic", label: "Italic", hint: "Emphasis", icon: Italic, wrap: "*" },
   { id: "strike", label: "Strikethrough", hint: "Crossed text", icon: Strikethrough, wrap: "~~" },
   { id: "underline", label: "Underline", hint: "Underlined text", icon: Underline, wrap: "<u>", closeWrap: "</u>" },
+  { id: "note-reference", label: "Note reference", hint: "Link to another note", icon: FileText, noteReference: true },
   { id: "link", label: "Link", hint: "Hyperlink", icon: Link, link: true },
   { id: "image", label: "Image", hint: "Upload from your device", icon: Image, image: true },
   { id: "diagram", label: "Flat diagram", hint: "2D schematic", icon: GitBranch, diagram: "flat" },
@@ -226,11 +240,14 @@ function ProjectedMarkdownEditor({
   exportTitle,
   diagramDescribeRequest = null,
   placeholder = "Start writing...",
+  notes = [],
+  onOpenNote,
 }: MarkdownEditorProps) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const slashBodyRef = useRef<HTMLDivElement | null>(null);
+  const wikilinkBodyRef = useRef<HTMLDivElement | null>(null);
   const diagramDescribeDialogRef = useRef<HTMLDialogElement | null>(null);
   const focusedRef = useRef(false);
   const composingRef = useRef(false);
@@ -238,6 +255,7 @@ function ProjectedMarkdownEditor({
   const pendingImageCaretRef = useRef<Caret | null>(null);
   const skipResourceCaretSyncRef = useRef(false);
   const dismissedSlashRef = useRef<{ line: number; col: number } | null>(null);
+  const dismissedWikilinkRef = useRef<{ line: number; col: number } | null>(null);
   const dropIndicatorRef = useRef<HTMLDivElement | null>(null);
   const selectionToolbarRef = useRef<HTMLDivElement | null>(null);
   const activeLineRef = useRef(-1);
@@ -260,6 +278,7 @@ function ProjectedMarkdownEditor({
   const [uploadCount, setUploadCount] = useState(0);
   const [editorMessage, setEditorMessage] = useState("");
   const [slash, setSlash] = useState<SlashState | null>(null);
+  const [wikilink, setWikilink] = useState<WikilinkState | null>(null);
   const [selectionToolbar, setSelectionToolbar] = useState<SelectionToolbarState | null>(null);
   const [selectionToolbarPlacement, setSelectionToolbarPlacement] = useState<SelectionToolbarPlacement | null>(null);
   const [selectedResourceLine, setSelectedResourceLine] = useState<number | null>(null);
@@ -270,6 +289,11 @@ function ProjectedMarkdownEditor({
   const [diagramDescribeLoading, setDiagramDescribeLoading] = useState(false);
   const [diagramDescribeError, setDiagramDescribeError] = useState<string | null>(null);
   const [hoveredLink, setHoveredLink] = useState<{ href: string; top: number; left: number } | null>(null);
+
+  const noteTitleSignature = notes.map((note) => `${note.id}\u0000${note.title}`).join("\u0001");
+  const noteIndex = useMemo(() => buildNoteTitleIndex(notes), [noteTitleSignature]);
+  const referenceNotes = useMemo(() => notes.filter((note) => noteIndex.get(note.title.trim().toLowerCase()) === note.id && !/\]\]|[\r\n]/.test(note.title)), [noteTitleSignature, noteIndex]);
+  const filteredWikilinkItems = wikilink ? filterNotesByTitle(referenceNotes, wikilink.query) : [];
 
   useLayoutEffect(() => {
     disposedRef.current = false;
@@ -293,7 +317,7 @@ function ProjectedMarkdownEditor({
     if (composingRef.current) return;
     // Snapshot the caret: placing it can blur the editor, which clears caretRef.
     const caret = focusedRef.current ? caretRef.current : null;
-    renderMarkdown(editorRef.current, value, caret?.line ?? -1, selectedResourceLine ?? -1);
+    renderMarkdown(editorRef.current, value, caret?.line ?? -1, selectedResourceLine ?? -1, false, noteIndex);
     activeLineRef.current = caret?.line ?? -1;
     if (caret && selectedResourceLine === null) {
       if (resourceLineAt(value, caret.line)) {
@@ -302,9 +326,10 @@ function ProjectedMarkdownEditor({
         placeCaret(editorRef.current, caret);
       }
       probeSlash(value, caret);
+      probeWikilink(value, caret);
       onCaretLineChange?.(caret.line);
     }
-  }, [selectedResourceLine, value]);
+  }, [selectedResourceLine, value, noteTitleSignature]);
 
   useLayoutEffect(() => {
     if (!focusRequest || handledFocusRequestRef.current === focusRequest.key) {
@@ -321,7 +346,7 @@ function ProjectedMarkdownEditor({
     focusedRef.current = true;
     caretRef.current = caret;
     activeLineRef.current = caret.line;
-    renderMarkdown(editorRef.current, target.value, caret.line);
+    renderMarkdown(editorRef.current, target.value, caret.line, -1, false, noteIndex);
 
     window.requestAnimationFrame(() => {
       const editor = editorRef.current;
@@ -337,8 +362,9 @@ function ProjectedMarkdownEditor({
       editor.scrollIntoView({ block: "nearest" });
       onCaretLineChange?.(caret.line);
       probeSlash(target.value, caret);
+      probeWikilink(target.value, caret);
     });
-  }, [focusRequest, value]);
+  }, [focusRequest, value, noteTitleSignature]);
 
   useLayoutEffect(() => {
     const toolbar = selectionToolbarRef.current;
@@ -369,8 +395,8 @@ function ProjectedMarkdownEditor({
   }, [selectionToolbar]);
 
   useLayoutEffect(() => {
-    const body = slashBodyRef.current;
-    const active = body?.querySelector<HTMLElement>(".slash-menu-row.active");
+    const body = wikilink ? wikilinkBodyRef.current : slashBodyRef.current;
+    const active = body?.querySelector<HTMLElement>(".slash-menu-row.active, .wikilink-menu-row.active");
     if (!body || !active) {
       return;
     }
@@ -385,7 +411,7 @@ function ProjectedMarkdownEditor({
     } else if (bottom > visibleBottom) {
       body.scrollTop = bottom - body.clientHeight;
     }
-  }, [slash?.index, slash?.query]);
+  }, [slash?.index, slash?.query, wikilink?.index, wikilink?.query]);
 
   useLayoutEffect(() => {
     const dialog = diagramDescribeDialogRef.current;
@@ -418,6 +444,7 @@ function ProjectedMarkdownEditor({
       caretRef.current = range.end;
       onCaretLineChange?.(range.end.line);
       setSlash(null);
+      setWikilink(null);
       updateSelectionToolbar(range);
       return;
     }
@@ -439,11 +466,12 @@ function ProjectedMarkdownEditor({
     caretRef.current = caret;
     onCaretLineChange?.(caret.line);
     if (caret.line !== activeLineRef.current) {
-      renderMarkdown(editorRef.current, value, caret.line);
+      renderMarkdown(editorRef.current, value, caret.line, -1, false, noteIndex);
       activeLineRef.current = caret.line;
     }
     placeCaret(editorRef.current, caret);
     probeSlash(value, caret);
+    probeWikilink(value, caret);
   };
 
   /**
@@ -542,7 +570,7 @@ function ProjectedMarkdownEditor({
     caretRef.current = caret;
     activeLineRef.current = line;
     setSelectionToolbar(null);
-    renderMarkdown(editorRef.current, value, line, -1, true);
+    renderMarkdown(editorRef.current, value, line, -1, true, noteIndex);
     placeCaret(editorRef.current, caret);
     onCaretLineChange?.(line);
     skipResourceCaretSyncRef.current = true;
@@ -663,6 +691,36 @@ function ProjectedMarkdownEditor({
       if ((event.key === "Enter" || event.key === "Tab") && items.length) {
         event.preventDefault();
         runSlash(items[index], caret);
+        return;
+      }
+    }
+
+    if (wikilink) {
+      const items = filteredWikilinkItems;
+      const index = Math.min(wikilink.index, Math.max(0, items.length - 1));
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setWikilink(null);
+        const line = value.split("\n")[caret.line] ?? "";
+        const match = /\[\[([^\]]*)$/.exec(line.slice(0, caret.col));
+        if (match) {
+          dismissedWikilinkRef.current = { line: caret.line, col: match.index };
+        }
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setWikilink({ ...wikilink, index: Math.min(index + 1, items.length - 1) });
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setWikilink({ ...wikilink, index: Math.max(index - 1, 0) });
+        return;
+      }
+      if ((event.key === "Enter" || event.key === "Tab") && items.length) {
+        event.preventDefault();
+        runWikilink(items[index], caret);
         return;
       }
     }
@@ -951,7 +1009,7 @@ function ProjectedMarkdownEditor({
     }
     caretRef.current = caret;
     onCaretLineChange?.(caret.line);
-    renderMarkdown(editorRef.current, value, caret.line);
+    renderMarkdown(editorRef.current, value, caret.line, -1, false, noteIndex);
     activeLineRef.current = caret.line;
     placeCaret(editorRef.current, caret);
   };
@@ -964,9 +1022,10 @@ function ProjectedMarkdownEditor({
     focusedRef.current = false;
     caretRef.current = null;
     setSlash(null);
+    setWikilink(null);
     setSelectionToolbar(null);
     setSelectedResourceLine(null);
-    renderMarkdown(editorRef.current, value, -1);
+    renderMarkdown(editorRef.current, value, -1, -1, false, noteIndex);
     activeLineRef.current = -1;
   };
 
@@ -1151,7 +1210,12 @@ function ProjectedMarkdownEditor({
     event.preventDefault();
     if (event.metaKey || event.ctrlKey) {
       event.stopPropagation();
-      window.open(linkTarget.href, "_blank", "noopener,noreferrer");
+      const noteId = linkTarget.dataset.openNote;
+      if (noteId) {
+        onOpenNote?.(noteId);
+      } else {
+        window.open(linkTarget.href, "_blank", "noopener,noreferrer");
+      }
     }
   };
 
@@ -1403,7 +1467,7 @@ function ProjectedMarkdownEditor({
         onClick={handleClick}
         onPointerOver={(event) => {
           const link = linkElementFromTarget(event.target);
-          if (link) {
+          if (link && !link.dataset.openNote) {
             const rect = link.getBoundingClientRect();
             const wrapRect = wrapRef.current?.getBoundingClientRect();
             if (wrapRect) {
@@ -1468,6 +1532,30 @@ function ProjectedMarkdownEditor({
                 <span><item.icon size={16} strokeWidth={1.8} /></span>
                 <strong>{item.label}</strong>
                 <small>{item.hint}</small>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {wikilink ? (
+        <div className="wikilink-menu" style={{ top: wikilink.top, left: wikilink.left }}>
+          <div className="wikilink-menu-header">
+            <span>{wikilink.query ? `Notes: ${wikilink.query}` : "Reference a note"}</span>
+            <em>↑↓ ↵</em>
+          </div>
+          <div ref={wikilinkBodyRef} className="wikilink-menu-body" style={{ maxHeight: wikilink.maxHeight }}>
+            {!filteredWikilinkItems.length && <p className="wikilink-menu-empty">No matching notes. References need a unique note title.</p>}
+            {filteredWikilinkItems.map((note, index) => (
+              <button
+                key={note.id}
+                className={index === Math.min(wikilink.index, filteredWikilinkItems.length - 1) ? "wikilink-menu-row active" : "wikilink-menu-row"}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  runWikilink(note, caretRef.current ?? getCaret(editorRef.current) ?? { line: 0, col: 0 });
+                }}
+                onMouseEnter={() => setWikilink((current) => current ? { ...current, index } : current)}
+              >
+                <strong>{note.title}</strong>
               </button>
             ))}
           </div>
@@ -1708,6 +1796,87 @@ function ProjectedMarkdownEditor({
     }));
   }
 
+  function probeWikilink(source: string, caret: Caret | null) {
+    if (!caret || codeLines(source.split("\n"))[caret.line]) {
+      setWikilink(null);
+      return;
+    }
+    const line = source.split("\n")[caret.line] ?? "";
+    const match = /\[\[([^\]]*)$/.exec(line.slice(0, caret.col));
+    const selectionRange = getSelectionRange(editorRef.current);
+    if (!match || (selectionRange && !isCollapsedRange(selectionRange))) {
+      setWikilink(null);
+      if (dismissedWikilinkRef.current) {
+        dismissedWikilinkRef.current = null;
+      }
+      return;
+    }
+    const wikilinkStart = match.index;
+    if (dismissedWikilinkRef.current && dismissedWikilinkRef.current.line === caret.line && dismissedWikilinkRef.current.col === wikilinkStart) {
+      setWikilink(null);
+      return;
+    }
+    const wrap = wrapRef.current;
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    if (!wrap || !editor || !selection?.rangeCount) {
+      return;
+    }
+
+    const range = selection.getRangeAt(0).cloneRange();
+    range.collapse(true);
+    let rect: DOMRect | null = range.getBoundingClientRect();
+    if (!rect.width && !rect.height) {
+      const lineEl = editor.querySelector(`[data-line="${caret.line}"]`);
+      rect = lineEl?.getBoundingClientRect() ?? null;
+    }
+    if (!rect) {
+      return;
+    }
+
+    const wrapRect = wrap.getBoundingClientRect();
+    const scrollHost = scrollParent(wrap);
+    const scrollRect = scrollHost?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight };
+    const query = match[1];
+    const count = filterNotesByTitle(referenceNotes, query).length;
+    const gap = 8;
+    const header = 34;
+    const pad = 10;
+    const row = 33;
+    const desiredHeight = Math.min(header + pad + count * row, header + pad + 264);
+    const roomBelow = scrollRect.bottom - rect.bottom - gap * 2;
+    const roomAbove = rect.top - scrollRect.top - gap * 2;
+    const above = desiredHeight > roomBelow && roomAbove > roomBelow;
+    const available = Math.max(120, above ? roomAbove : roomBelow);
+    const height = Math.min(desiredHeight, available);
+    const minTop = scrollRect.top - wrapRect.top + gap;
+    const maxTop = scrollRect.bottom - wrapRect.top - height - gap;
+    const top = Math.max(minTop, Math.min(above ? rect.top - wrapRect.top - height - gap : rect.bottom - wrapRect.top + gap, maxTop));
+    const left = Math.max(0, Math.min(rect.left - wrapRect.left, wrapRect.width - 268));
+
+    setWikilink((current) => ({
+      query,
+      index: current?.query === query ? Math.min(current.index, Math.max(0, count - 1)) : 0,
+      top,
+      left,
+      maxHeight: Math.max(120, height - header - pad),
+    }));
+  }
+
+  function runWikilink(note: { id: string; title: string }, caret: Caret) {
+    const lines = value.split("\n");
+    const line = lines[caret.line] ?? "";
+    const before = line.slice(0, caret.col);
+    const after = line.slice(caret.col);
+    const match = /\[\[([^\]]*)$/.exec(before);
+    const start = match ? match.index : caret.col;
+    const stem = before.slice(0, start);
+    setWikilink(null);
+    const inserted = `[[${note.title}]]`;
+    lines[caret.line] = stem + inserted + after;
+    setSource(lines.join("\n"), { line: caret.line, col: stem.length + inserted.length });
+  }
+
   function runSlash(item: SlashItem, caret: Caret) {
     const lines = value.split("\n");
     const line = lines[caret.line] ?? "";
@@ -1717,6 +1886,13 @@ function ProjectedMarkdownEditor({
     const start = match ? match.index : caret.col;
     const stem = before.slice(0, start);
     setSlash(null);
+
+    if (item.noteReference) {
+      dismissedWikilinkRef.current = null;
+      lines[caret.line] = stem + "[[" + after;
+      setSource(lines.join("\n"), { line: caret.line, col: stem.length + 2 });
+      return;
+    }
 
     if (item.image) {
       lines[caret.line] = stem + after;
@@ -2162,7 +2338,7 @@ const renderedEditors = new WeakMap<HTMLDivElement, {
   activeLine: number; selectedResourceLine: number;
 }>();
 
-function renderMarkdown(el: HTMLDivElement | null, value: string, activeLine: number, selectedResourceLine = -1, navigationOnly = false) {
+function renderMarkdown(el: HTMLDivElement | null, value: string, activeLine: number, selectedResourceLine = -1, navigationOnly = false, noteIndex: Map<string, string> = new Map()) {
   if (!el) {
     return;
   }
@@ -2174,7 +2350,7 @@ function renderMarkdown(el: HTMLDivElement | null, value: string, activeLine: nu
       if (index < 0 || previous.contexts[index]) continue;
       const current = el.children[index];
       if (!current) continue;
-      const html = renderEditableLine(previous.lines[index] ?? "", index === activeLine, index, index === selectedResourceLine);
+      const html = renderEditableLine(previous.lines[index] ?? "", index === activeLine, index, index === selectedResourceLine, noteIndex);
       const template = document.createElement("div");
       template.innerHTML = html;
       const next = template.firstElementChild!;
@@ -2193,7 +2369,7 @@ function renderMarkdown(el: HTMLDivElement | null, value: string, activeLine: nu
   }
   const lines = value.split("\n");
   renderedEditors.set(el, { value, lines, contexts: codeLines(lines), activeLine, selectedResourceLine });
-  const html = renderEditableMarkdown(value, activeLine, selectedResourceLine);
+  const html = renderEditableMarkdown(value, activeLine, selectedResourceLine, noteIndex);
   if (el.innerHTML === html) {
     syncMermaidPreviews(el);
     return;

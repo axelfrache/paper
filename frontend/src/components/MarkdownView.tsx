@@ -102,6 +102,13 @@ function renderInlineNode(node: MarkdownInline, index: number): ReactNode {
   if (node.type === "text") {
     return node.text;
   }
+  if (node.type === "wikilink") {
+    return (
+      <span key={index} className="markdown-wikilink markdown-wikilink-readonly">
+        {node.title}
+      </span>
+    );
+  }
   if (node.type === "image") {
     const source = `![${node.alt}](${node.source})${node.width ? `{width=${node.width}}` : ""}`;
     return node.safe ? (

@@ -68,7 +68,7 @@ export function getSelectionRange(el: HTMLDivElement | null): TextRange | null {
 
 function includeFullySelectedWrappers(el: HTMLDivElement, range: TextRange): TextRange {
   const result = { start: { ...range.start }, end: { ...range.end } };
-  for (const wrapper of Array.from(el.querySelectorAll("strong, em, code, s, u, a")).reverse()) {
+  for (const wrapper of Array.from(el.querySelectorAll("strong, em, code, s, u, a, .markdown-wikilink-broken")).reverse()) {
     const opening = wrapper.previousElementSibling;
     const closing = wrapper.nextElementSibling;
     if (opening?.getAttribute("data-syntax-side") !== "open" || closing?.getAttribute("data-syntax-side") !== "close") continue;
@@ -341,7 +341,7 @@ export function visibleDeletionRange(el: HTMLDivElement, caret: Caret, direction
   // Removing the last character of a formatted run must also remove its empty
   // wrapper, including nested wrappers; otherwise literal ****/<u></u> leaks out.
   let parent = span.node.parentElement;
-  while (parent && parent !== line && ["STRONG", "EM", "S", "U", "CODE", "A"].includes(parent.tagName)) {
+  while (parent && parent !== line && (["STRONG", "EM", "S", "U", "CODE", "A"].includes(parent.tagName) || parent.classList.contains("markdown-wikilink-broken"))) {
     const content = visible.filter((part) => parent!.contains(part.node));
     if (content.some((part) => part.start < start || part.end > end)) break;
     const opening = parent.previousElementSibling;

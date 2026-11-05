@@ -112,6 +112,33 @@ describe("markdown rendering parser", () => {
     ]);
   });
 
+  it("parses a wikilink", () => {
+    expect(parseInline("[[Note title]]")).toEqual([{ type: "wikilink", title: "Note title" }]);
+  });
+
+  it("parses two wikilinks separated by text", () => {
+    expect(parseInline("[[A]] and [[B]]")).toEqual([
+      { type: "wikilink", title: "A" },
+      { type: "text", text: " and " },
+      { type: "wikilink", title: "B" },
+    ]);
+  });
+
+  it("does not trim a wikilink title, so the source round-trips exactly", () => {
+    expect(parseInline("[[ Note ]]")).toEqual([{ type: "wikilink", title: " Note " }]);
+  });
+
+  it("keeps empty or unterminated wikilinks as plain text", () => {
+    expect(parseInline("[[]]")).toEqual([{ type: "text", text: "[[]]" }]);
+    expect(parseInline("[[Note")).toEqual([{ type: "text", text: "[[Note" }]);
+  });
+
+  it("still parses a regular link as a link, not a wikilink", () => {
+    expect(parseInline("[docs](https://example.com)")).toEqual([
+      { type: "link", href: "https://example.com", source: "https://example.com", safe: true, text: [{ type: "text", text: "docs" }] },
+    ]);
+  });
+
   it("accepts only safe href schemes and local absolute paths", () => {
     expect(safeHref("https://example.com")).toBe("https://example.com");
     expect(safeHref("http://example.com")).toBe("http://example.com");
