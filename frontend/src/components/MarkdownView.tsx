@@ -1,4 +1,5 @@
 import { readAlign } from "../lib/markdown/align";
+import { MermaidDiagram } from "./MermaidDiagram";
 import type { ReactNode } from "react";
 import { diagramToSvgMarkup } from "../lib/diagram";
 import { parseBlocks, parseInline } from "../lib/markdown/render";
@@ -23,6 +24,9 @@ export function MarkdownView({ text, className }: MarkdownViewProps) {
 }
 
 function renderBlock(block: MarkdownBlock, index: number) {
+  if (block.type === "mermaid") {
+    return <MermaidDiagram key={index} source={block.text} title={block.title} />;
+  }
   if (block.type === "heading") {
     const Heading = `h${block.level}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
     return <Heading key={index} style={block.align ? { textAlign: block.align } : undefined}>{renderInline(block.text)}</Heading>;

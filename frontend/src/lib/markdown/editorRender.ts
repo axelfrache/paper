@@ -1,4 +1,5 @@
 import { codeLines } from "./fences";
+import { parseMermaidMarker } from "./mermaid";
 import { diagramToSvgMarkup, parseDiagramMarker } from "../diagram";
 import { parseInline } from "./inline";
 import type { MarkdownInline } from "./inline";
@@ -45,6 +46,13 @@ export function hiddenPrefixLength(rawLine: string) {
 }
 
 export function renderEditableLine(rawLine: string, active: boolean, index: number, selectedResource = false) {
+  const mermaid = parseMermaidMarker(rawLine);
+  if (mermaid) {
+    return resourceBlock(rawLine, index, "diagram", [
+      `<span class="markdown-editor-diagram-header">${diagramTitleButton(index, mermaid.title)}<span class="markdown-editor-diagram-meta">${diagramSourceButton(index)}${diagramResourceActions(index)}</span></span>`,
+      `<span class="markdown-editor-diagram-preview mermaid-preview" data-mermaid="${escapeAttribute(mermaid.text)}" role="figure" aria-label="Mermaid diagram"></span>`,
+    ].join(""), selectedResource);
+  }
   // The alignment marker is stripped from what is drawn and handed back to the DOM as a
   // decoration, so `readSource` still reconstructs the line exactly as it is stored.
   const { text: raw, align } = readAlign(rawLine);
@@ -101,8 +109,8 @@ export function renderEditableLine(rawLine: string, active: boolean, index: numb
     }
     const preview = [
       `<span class="markdown-editor-diagram-header">`,
-      `<span class="markdown-diagram-title-slot"><button type="button" data-diagram-title-line="${index}" class="markdown-diagram-title-button${diagram.title ? "" : " is-empty"}" aria-label="${diagram.title ? "Edit diagram title" : "Add diagram title"}" title="${escapeAttribute(diagram.title || "Add a title")}">${escapeHtml(diagram.title || "Add a title…")}</button></span>`,
-      `<span class="markdown-editor-diagram-meta"><button type="button" data-diagram-edit-line="${index}" class="markdown-editor-diagram-edit" aria-label="Edit diagram" title="Edit diagram"></button><button type="button" data-diagram-export-line="${index}" class="markdown-editor-diagram-export" aria-label="Download diagram" title="Download PNG"></button><button type="button" data-resource-copy-line="${index}" class="markdown-editor-diagram-copy" aria-label="Copy diagram" title="Copy"></button><button type="button" data-resource-delete-line="${index}" class="markdown-editor-diagram-delete" aria-label="Delete diagram" title="Delete"></button></span>`,
+      diagramTitleButton(index, diagram.title),
+      `<span class="markdown-editor-diagram-meta">${diagramSourceButton(index)}<button type="button" data-diagram-edit-line="${index}" class="markdown-editor-diagram-edit" aria-label="Edit diagram" title="Edit diagram"></button><button type="button" data-diagram-export-line="${index}" class="markdown-editor-diagram-export" aria-label="Download diagram" title="Download PNG"></button>${diagramResourceActions(index)}</span>`,
       `</span>`,
       `<span class="markdown-editor-diagram-preview">${svg}</span>`,
       `<span data-diagram-resize-line="${index}" class="markdown-editor-diagram-resize" aria-hidden="true"></span>`,
@@ -150,6 +158,18 @@ function resourceBlock(
     `<span data-resource-caret-line="${index}" contenteditable="true" class="markdown-editor-resource-caret"><br /></span>`,
     `</div>`,
   ].join("");
+}
+
+function diagramSourceButton(index: number) {
+  return `<button type="button" data-diagram-source-line="${index}" class="markdown-editor-diagram-source" aria-label="Edit diagram source" title="Edit source"></button>`;
+}
+
+function diagramTitleButton(index: number, title?: string) {
+  return `<span class="markdown-diagram-title-slot"><button type="button" data-diagram-title-line="${index}" class="markdown-diagram-title-button${title ? "" : " is-empty"}" aria-label="${title ? "Edit diagram title" : "Add diagram title"}" title="${escapeAttribute(title || "Add a title")}">${escapeHtml(title || "Add a title…")}</button></span>`;
+}
+
+function diagramResourceActions(index: number) {
+  return `<button type="button" data-resource-copy-line="${index}" class="markdown-editor-diagram-copy" aria-label="Copy diagram" title="Copy"></button><button type="button" data-resource-delete-line="${index}" class="markdown-editor-diagram-delete" aria-label="Delete diagram" title="Delete"></button>`;
 }
 
 function inlineMarkdown(raw: string, active: boolean) {

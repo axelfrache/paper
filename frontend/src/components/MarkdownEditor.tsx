@@ -1,5 +1,8 @@
 import { createPortal } from "react-dom";
 import { codeLines } from "../lib/markdown/fences";
+import { disposeMermaidPreviews, syncMermaidPreviews } from "../lib/mermaid";
+import { expandMermaid, mermaidMarker, parseMermaidMarker, projectMermaid, replaceMermaidSource, withMermaidTitle } from "../lib/markdown/mermaid";
+import { DiagramSourceEditor } from "./DiagramSourceEditor";
 import { remapCaret } from "../lib/markdown/anchor";
 import { useLayoutEffect, useRef, useState } from "react";
 import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, BrainCircuit, Boxes, CalendarDays, Code2, FileText, GitBranch, Heading1, Heading2, Heading3, Image, Italic, Link, List, ListChecks, ListTodo, Minus, Quote, Sparkles, Strikethrough, TextCursorInput, Underline, Wand2, X } from "lucide-react";
@@ -183,7 +186,7 @@ async function writeResourceToClipboard(line: string) {
   }
   try {
     const html = resourceClipboardHtml(line);
-    const parts: Record<string, Blob> = { "text/plain": new Blob([line], { type: "text/plain" }) };
+    const parts: Record<string, Blob> = { "text/plain": new Blob([expandMermaid(line)], { type: "text/plain" }) };
     if (html) {
       parts["text/html"] = new Blob([html], { type: "text/html" });
     }
@@ -191,7 +194,7 @@ async function writeResourceToClipboard(line: string) {
     return true;
   } catch {
     try {
-      await navigator.clipboard.writeText(line);
+      await navigator.clipboard.writeText(expandMermaid(line));
       return true;
     } catch {
       return false;
@@ -199,7 +202,15 @@ async function writeResourceToClipboard(line: string) {
   }
 }
 
-export function MarkdownEditor({
+export function MarkdownEditor(props: MarkdownEditorProps) {
+  const projected = projectMermaid(props.value);
+  return <ProjectedMarkdownEditor {...props} value={projected.value}
+    onChange={(value) => props.onChange(expandMermaid(value))}
+    onCaretLineChange={(line) => props.onCaretLineChange?.(projected.sourceLines[line] ?? props.value.split("\n").length)}
+    onOpenDiagram={(line, diagram) => props.onOpenDiagram?.(projected.sourceLines[line] ?? line, diagram)} />;
+}
+
+function ProjectedMarkdownEditor({
   value,
   onChange,
   onUploadImage,
@@ -239,6 +250,10 @@ export function MarkdownEditor({
   const pendingUploadsRef = useRef(new Set<Caret>());
   const disposedRef = useRef(false);
   const [previewTitle, setPreviewTitle] = useState<{ line: number; source: string; title: string; slot: Element } | null>(null);
+  const [sourceEdit, setSourceEdit] = useState<{ line: number; source: string } | null>(null);
+  useLayoutEffect(() => {
+    if (sourceEdit && value.split("\n")[sourceEdit.line] !== sourceEdit.source) setSourceEdit(null);
+  }, [value, sourceEdit]);
   useLayoutEffect(() => {
     if (previewTitle && value.split("\n")[previewTitle.line] !== previewTitle.source) setPreviewTitle(null);
   }, [value, previewTitle]);
@@ -258,7 +273,11 @@ export function MarkdownEditor({
 
   useLayoutEffect(() => {
     disposedRef.current = false;
-    return () => { disposedRef.current = true; };
+    const editor = editorRef.current;
+    return () => {
+      disposedRef.current = true;
+      if (editor) disposeMermaidPreviews(editor);
+    };
   }, []);
 
   const updateSourceRef = (next: string) => {
@@ -530,6 +549,9 @@ export function MarkdownEditor({
   };
 
   const setSource = (nextValue: string, caret: Caret | null) => {
+    const projected = projectMermaid(nextValue);
+    if (caret) caret = projected.caret(caret);
+    nextValue = projected.value;
     updateSourceRef(nextValue);
     if (caret && resourceLineAt(nextValue, caret.line)) {
       changeRef.current(nextValue);
@@ -976,6 +998,19 @@ export function MarkdownEditor({
       }
     }
     const titleTarget = target?.closest("[data-diagram-title-line]");
+    const sourceTarget = target?.closest("[data-diagram-source-line]");
+    if (sourceTarget) {
+      event.preventDefault();
+      const line = Number(sourceTarget.getAttribute("data-diagram-source-line"));
+      const source = valueRef.current.split("\n")[line] ?? "";
+      if (parseMermaidMarker(source) || parseDiagramMarker(source)) {
+        focusedRef.current = false;
+        caretRef.current = null;
+        setSelectedResourceLine(null);
+        setSourceEdit({ line, source });
+      }
+      return;
+    }
     if (titleTarget) {
       event.preventDefault();
       // Switching directly between diagram titles also commits the previous draft.
@@ -984,12 +1019,13 @@ export function MarkdownEditor({
       const line = Number(titleTarget.getAttribute("data-diagram-title-line"));
       const source = valueRef.current.split("\n")[line] ?? "";
       const diagram = parseDiagramMarker(source);
-      if (diagram && titleTarget.parentElement) {
+      const mermaid = parseMermaidMarker(source);
+      if ((diagram || mermaid) && titleTarget.parentElement) {
         focusedRef.current = false;
         caretRef.current = null;
         setSlash(null);
         setSelectionToolbar(null);
-        setPreviewTitle({ line, source, title: diagram.title ?? "", slot: titleTarget.parentElement });
+        setPreviewTitle({ line, source, title: diagram?.title ?? mermaid?.title ?? "", slot: titleTarget.parentElement });
       }
       return;
     }
@@ -1275,6 +1311,23 @@ export function MarkdownEditor({
 
   return (
     <div ref={wrapRef} className="markdown-editor-wrap">
+      {sourceEdit && <DiagramSourceEditor
+        source={parseMermaidMarker(sourceEdit.source)?.text ?? JSON.stringify(parseDiagramMarker(sourceEdit.source), null, 2)}
+        language={parseMermaidMarker(sourceEdit.source) ? "mermaid" : "json"}
+        onClose={() => {
+          setSourceEdit(null);
+          window.requestAnimationFrame(() => editorRef.current?.querySelector<HTMLButtonElement>(`[data-diagram-source-line="${sourceEdit.line}"]`)?.focus());
+        }}
+        onSave={(source, diagram) => {
+          const lines = valueRef.current.split("\n");
+          if (lines[sourceEdit.line] !== sourceEdit.source) return;
+          const mermaid = parseMermaidMarker(sourceEdit.source);
+          lines[sourceEdit.line] = mermaid ? mermaidMarker(replaceMermaidSource(mermaid.source, source)) : serializeDiagramMarker(diagram!);
+          setSource(lines.join("\n"), null);
+          setSourceEdit(null);
+          window.requestAnimationFrame(() => editorRef.current?.querySelector<HTMLButtonElement>(`[data-diagram-source-line="${sourceEdit.line}"]`)?.focus());
+        }}
+      />}
       {previewTitle && createPortal(
         <DiagramPreviewTitleInput
           initialTitle={previewTitle.title}
@@ -1283,8 +1336,15 @@ export function MarkdownEditor({
             const current = valueRef.current;
             if (current.split("\n")[previewTitle.line] !== previewTitle.source) return;
             if (title !== null && title !== previewTitle.title) {
-              const diagram = parseDiagramMarker(previewTitle.source)!;
-              setSource(replaceDiagramMarkerAtLine(current, previewTitle.line, { ...diagram, title: title || undefined }), null);
+              const mermaid = parseMermaidMarker(previewTitle.source);
+              if (mermaid) {
+                const lines = current.split("\n");
+                lines[previewTitle.line] = mermaidMarker(withMermaidTitle(mermaid.source, title));
+                setSource(lines.join("\n"), null);
+              } else {
+                const diagram = parseDiagramMarker(previewTitle.source)!;
+                setSource(replaceDiagramMarkerAtLine(current, previewTitle.line, { ...diagram, title: title || undefined }), null);
+              }
             }
             if (returnFocus) window.requestAnimationFrame(() => {
               editorRef.current?.querySelector<HTMLButtonElement>(`[data-diagram-title-line="${previewTitle.line}"]`)?.focus();
@@ -1351,6 +1411,8 @@ export function MarkdownEditor({
           }
         }}
         onPaste={handlePaste}
+        onCopy={(event) => copySelection(event, false)}
+        onCut={(event) => copySelection(event, true)}
         onDragOver={(event) => {
           if (Array.from(event.dataTransfer.items).some((item) => item.type.startsWith("image/"))) {
             event.preventDefault();
@@ -1768,6 +1830,10 @@ export function MarkdownEditor({
   }
 
   async function insertPastedResource(line: string, caret: Caret) {
+    if (parseMermaidMarker(line)) {
+      insertResourceLine(line, caret);
+      return;
+    }
     const diagram = parseDiagramMarker(line);
     if (diagram) {
       insertResourceLine(serializeDiagramMarker(cloneDiagramWithFreshIds(diagram)), caret);
@@ -1806,6 +1872,31 @@ export function MarkdownEditor({
     } finally {
       pendingUploadsRef.current.delete(target);
       if (!disposedRef.current) setUploadCount((count) => count - 1);
+    }
+  }
+
+  function copySelection(event: React.ClipboardEvent<HTMLDivElement>, cut: boolean) {
+    if (selectedResourceLine !== null) {
+      event.preventDefault();
+      event.clipboardData.setData("text/plain", expandMermaid(value.split("\n")[selectedResourceLine]));
+      const html = resourceClipboardHtml(value.split("\n")[selectedResourceLine]);
+      if (html) event.clipboardData.setData("text/html", html);
+      if (cut) removeResource(selectedResourceLine);
+      return;
+    }
+    const range = getSelectionRange(editorRef.current);
+    if (!range || isCollapsedRange(range)) return;
+    const { start, end } = normalizeRange(range);
+    const lines = value.split("\n").slice(start.line, end.line + 1);
+    lines[lines.length - 1] = lines[lines.length - 1].slice(0, end.col);
+    lines[0] = lines[0].slice(start.col);
+    const selected = lines.join("\n");
+    if (!selected.includes("![mermaid:")) return;
+    event.preventDefault();
+    event.clipboardData.setData("text/plain", expandMermaid(selected));
+    if (cut) {
+      const next = deleteRange(value, range);
+      setSource(next.value, next.caret);
     }
   }
 
@@ -2052,21 +2143,36 @@ function renderMarkdown(el: HTMLDivElement | null, value: string, activeLine: nu
       const template = document.createElement("div");
       template.innerHTML = html;
       const next = template.firstElementChild!;
-      if (!current.isEqualNode(next)) current.replaceWith(next);
+      const preview = current.querySelector<HTMLElement>("[data-mermaid]");
+      const nextPreview = next.querySelector<HTMLElement>("[data-mermaid]");
+      if (preview && nextPreview && preview.dataset.mermaid === nextPreview.dataset.mermaid) nextPreview.replaceWith(preview.cloneNode(true));
+      if (!current.isEqualNode(next)) {
+        if (preview && nextPreview && preview.dataset.mermaid === nextPreview.dataset.mermaid) next.querySelector("[data-mermaid]")!.replaceWith(preview);
+        current.replaceWith(next);
+      }
     }
     previous.activeLine = activeLine;
     previous.selectedResourceLine = selectedResourceLine;
+    syncMermaidPreviews(el);
     return;
   }
   const lines = value.split("\n");
   renderedEditors.set(el, { value, lines, contexts: codeLines(lines), activeLine, selectedResourceLine });
   const html = renderEditableMarkdown(value, activeLine, selectedResourceLine);
-  if (el.innerHTML === html) return;
+  if (el.innerHTML === html) {
+    syncMermaidPreviews(el);
+    return;
+  }
   const template = document.createElement("div");
   template.innerHTML = html;
   const desired = Array.from(template.children);
   desired.forEach((line, index) => {
     const current = el.children[index];
+    const preview = current?.querySelector<HTMLElement>("[data-mermaid]");
+    const nextPreview = line.querySelector<HTMLElement>("[data-mermaid]");
+    if (preview && nextPreview && preview.dataset.mermaid === nextPreview.dataset.mermaid) {
+      nextPreview.replaceWith(preview.cloneNode(true));
+    }
     // A title input is managed by its React portal, not the Markdown renderer.
     // Preserve it when another line changes (e.g. committing the previous title).
     if (current?.querySelector(".markdown-diagram-title-input") && current.getAttribute("data-source") === line.getAttribute("data-source")) {
@@ -2074,14 +2180,19 @@ function renderMarkdown(el: HTMLDivElement | null, value: string, activeLine: nu
       return;
     }
     if (!current) el.appendChild(line);
-    else if (!current.isEqualNode(line)) current.replaceWith(line);
+    else if (!current.isEqualNode(line)) {
+      if (preview && nextPreview && preview.dataset.mermaid === nextPreview.dataset.mermaid) line.querySelector("[data-mermaid]")!.replaceWith(preview);
+      current.replaceWith(line);
+    }
   });
   while (el.children.length > desired.length) el.lastElementChild?.remove();
+  syncMermaidPreviews(el);
 }
 
 function focusTarget(value: string, current: Caret | null, placement: "start" | "end" | "last") {
   const caret = focusCaret(value, current, placement);
-  if ((placement !== "end" && placement !== "last") || !isDiagramLine(value.split("\n")[caret.line] ?? "")) {
+  const line = value.split("\n")[caret.line] ?? "";
+  if ((placement !== "end" && placement !== "last") || !(isDiagramLine(line) || parseMermaidMarker(line))) {
     return { value, caret };
   }
 

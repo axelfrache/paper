@@ -1,4 +1,5 @@
-import { codeLines } from "./fences";
+import { fencedBlocks } from "./fences";
+import { mermaidTitle } from "./mermaid";
 import { defaultTextAlign, readAlign } from "./align";
 import { isDivider } from "./resource";
 import { parseDiagramMarker } from "../diagram";
@@ -16,16 +17,16 @@ export type MarkdownBlock =
   | { type: "tasks"; items: Array<{ text: string; done: boolean }> }
   | { type: "ol"; items: string[]; start?: number }
   | { type: "diagram"; diagram: Diagram }
-  | { type: "code"; text: string }
+  | { type: "mermaid"; text: string; title?: string }
+  | { type: "code"; text: string; language?: string }
   | { type: "divider" };
 
 export function parseBlocks(raw: string): MarkdownBlock[] {
   const lines = normalizeMarkdown(raw).split("\n");
-  const contexts = codeLines(lines);
+  const fences = new Map(fencedBlocks(lines).map((block) => [block.start, block]));
   const blocks: MarkdownBlock[] = [];
   let paragraph: string[] = [];
   let paragraphAlign: TextAlign | null = null;
-  let code: string[] | null = null;
 
   const flushParagraph = () => {
     if (paragraph.length > 0) {
@@ -46,19 +47,14 @@ export function parseBlocks(raw: string): MarkdownBlock[] {
     const line = lines[index];
     const trimmed = line.trim();
 
-    if (contexts[index] === "fence") {
-      if (code) {
-        blocks.push({ type: "code", text: code.join("\n") });
-        code = null;
-      } else {
-        flushParagraph();
-        code = [];
-      }
-      continue;
-    }
-
-    if (code) {
-      code.push(line);
+    const fence = fences.get(index);
+    if (fence) {
+      flushParagraph();
+      const title = mermaidTitle(line);
+      blocks.push(fence.closed && fence.language === "mermaid"
+        ? { type: "mermaid", text: fence.text, ...(title ? { title } : {}) }
+        : { type: "code", text: fence.text, ...(fence.language ? { language: fence.language } : {}) });
+      index = fence.end;
       continue;
     }
 
@@ -154,9 +150,6 @@ export function parseBlocks(raw: string): MarkdownBlock[] {
   }
 
   flushParagraph();
-  if (code) {
-    blocks.push({ type: "code", text: code.join("\n") });
-  }
   return blocks;
 }
 

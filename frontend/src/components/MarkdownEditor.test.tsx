@@ -8,6 +8,11 @@ import { placeCaret, placeSelection, getSelectionRange, pointToCaret } from "../
 import type { NoteImage } from "../types/note";
 import { MarkdownEditor } from "./MarkdownEditor";
 
+vi.mock("mermaid", () => ({ default: {
+  initialize: vi.fn(),
+  render: vi.fn(async (id: string) => ({ svg: `<svg id="${id}"><text>Preview</text></svg>` })),
+} }));
+
 let root: Root | null = null;
 
 function ControlledEditor({
@@ -105,6 +110,7 @@ function pasteText(editor: Element, text: string) {
 }
 
 beforeEach(() => {
+  HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
   if (!Range.prototype.getBoundingClientRect) {
     Object.defineProperty(Range.prototype, "getBoundingClientRect", {
       configurable: true,
@@ -1792,6 +1798,81 @@ it("updates link syntax on line crossings while preserving unrelated DOM", () =>
   expect(code.textContent).toBe("**literal**");
 });
 
+it("shows Mermaid as an atomic card, preserves source, and edits through the source button", async () => {
+  const source = "```mermaid\nflowchart LR\nA --> B\n```\nAfter";
+  const host = mount(source), editor = editorFrom(host);
+  await vi.waitFor(() => expect(editor.querySelector("[data-mermaid] svg")).not.toBeNull());
+  expect(editor.querySelector(".markdown-editor-code")).toBeNull();
+  expect(editor.querySelectorAll("[data-line]")).toHaveLength(2);
+  expect(editor.querySelector("[data-diagram-source-line]")?.getAttribute("aria-label")).toBe("Edit diagram source");
+  const preview = editor.querySelector("[data-mermaid]");
+  act(() => {
+    editor.focus();
+    editor.children[1].firstChild!.textContent = "After!";
+    placeCaret(editor, { line: 1, col: 6 });
+    editor.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: "!", bubbles: true }));
+  });
+  expect(valueFrom(host)).toBe(`${source}!`);
+  expect(editor.querySelector("[data-mermaid]")).toBe(preview);
+  act(() => editor.querySelector("[data-diagram-source-line]")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+  const dialog = document.querySelector<HTMLDialogElement>(".diagram-source-editor")!;
+  const textarea = dialog.querySelector("textarea")!;
+  expect(textarea.value).toBe("flowchart LR\nA --> B");
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea, "flowchart LR\nA --> B2");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  act(() => Array.from(dialog.querySelectorAll("button")).find((button) => button.textContent === "Save")!.click());
+  expect(valueFrom(host)).toBe(source.replace("A --> B", "A --> B2") + "!");
+  expect(document.querySelector(".diagram-source-editor")).toBeNull();
+  await vi.waitFor(() => expect(editor.querySelector("[data-mermaid] svg")).not.toBeNull());
+  act(() => selectResourceBlock(editor, 0));
+  act(() => editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true })));
+  expect(valueFrom(host)).toBe("After!");
+  expect(editor.querySelector("[data-mermaid]")).toBeNull();
+});
+
+it.each(["iso", "flat"] as const)("edits %s JSON from the same source button and cancels without saving", (mode) => {
+  const diagram = createDefaultDiagram();
+  const original = serializeDiagramMarker({ ...diagram, mode });
+  const host = mount(original), editor = editorFrom(host);
+  act(() => editor.querySelector("[data-diagram-source-line]")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+  const dialog = document.querySelector<HTMLDialogElement>(".diagram-source-editor")!;
+  const textarea = dialog.querySelector("textarea")!;
+  expect(JSON.parse(textarea.value).nodes).toHaveLength(diagram.nodes.length);
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea, "{invalid");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(dialog.querySelector("[role=alert]")).not.toBeNull();
+  expect(Array.from(dialog.querySelectorAll("button")).find((button) => button.textContent === "Save")!.disabled).toBe(true);
+  act(() => Array.from(dialog.querySelectorAll("button")).find((button) => button.textContent === "Cancel")!.click());
+  expect(valueFrom(host)).toBe(original);
+});
+
+it("copies Mermaid as fenced Markdown and maps following diagram edits to source lines", async () => {
+  const onOpenDiagram = vi.fn();
+  const diagram = serializeDiagramMarker(createDefaultDiagram());
+  const mermaid = "```mermaid\nflowchart LR\nA --> B\n```";
+  const host = mount(`${mermaid}\n${diagram}`, null, undefined, { onOpenDiagram }), editor = editorFrom(host);
+  act(() => selectResourceBlock(editor, 0));
+  const setData = vi.fn();
+  const event = new Event("copy", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clipboardData", { value: { setData } });
+  act(() => editor.dispatchEvent(event));
+  expect(setData).toHaveBeenCalledWith("text/plain", mermaid);
+  act(() => editor.querySelector("[data-diagram-edit-line]")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+  expect(onOpenDiagram).toHaveBeenCalledWith(4, expect.any(Object));
+});
+
+it("collapses a pasted Mermaid block and keeps following typing outside its source", () => {
+  const host = mount(""), editor = editorFrom(host);
+  act(() => { editor.focus(); placeCaret(editor, { line: 0, col: 0 }); pasteText(editor, "```mermaid\nA --> B\n```"); });
+  expect(editor.querySelector("[data-mermaid]")).not.toBeNull();
+  expect(valueFrom(host)).toContain("```mermaid\nA --> B\n```");
+  expect(valueFrom(host)).not.toContain("![mermaid:");
+});
+
 it.each(["toolbar", "shortcut"])("removes bold from only the selected word using the %s", (method) => {
   const host = mount("**salut la team**"), editor = editorFrom(host);
   act(() => {
@@ -1835,6 +1916,37 @@ it.each(["Enter", "blur", "Escape"])("edits a preview title with %s without chan
   expect(parseDiagramMarker(marker)).toEqual({ ...original, title: action === "Escape" ? "API" : "Payment API" });
   expect(trailing).toBe("After");
   expect(editor.querySelector(".markdown-diagram-title-input")).toBeNull();
+});
+
+it.each(["Enter", "blur", "Escape"])("edits a Mermaid title with %s while preserving its source", (action) => {
+  const original = "```mermaid\nflowchart LR\nA --> B\n```\nAfter";
+  const host = mount(original), editor = editorFrom(host);
+  expect(editor.querySelector("[data-diagram-title-line]")?.textContent).toBe("Add a title…");
+  act(() => editor.querySelector("[data-diagram-title-line]")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+  const input = editor.querySelector<HTMLInputElement>('[aria-label="Diagram title"]')!;
+  act(() => {
+    input.value = "  Architecture API  ";
+    if (action === "blur") input.blur();
+    else input.dispatchEvent(new KeyboardEvent("keydown", { key: action, bubbles: true, cancelable: true }));
+  });
+  expect(valueFrom(host)).toBe(action === "Escape" ? original : original.replace("```mermaid", '```mermaid title="Architecture API"'));
+  expect(editor.querySelector("[data-diagram-title-line]")?.textContent).toBe(action === "Escape" ? "Add a title…" : "Architecture API");
+  expect(editor.querySelector(".markdown-diagram-title-input")).toBeNull();
+});
+
+it("renames and removes a saved Mermaid title", () => {
+  const source = '```mermaid title="Old title"\nflowchart LR\nA --> B\n```';
+  const host = mount(source), editor = editorFrom(host);
+  for (const title of ["New title", ""]) {
+    act(() => editor.querySelector("[data-diagram-title-line]")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const input = editor.querySelector<HTMLInputElement>('[aria-label="Diagram title"]')!;
+    act(() => {
+      input.value = title;
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    });
+    expect(valueFrom(host)).toBe(`\`\`\`mermaid${title ? ` title="${title}"` : ""}\nflowchart LR\nA --> B\n\`\`\``);
+    expect(editor.querySelector("[data-diagram-title-line]")?.textContent).toBe(title || "Add a title…");
+  }
 });
 
 it("adds and removes a title from the preview", () => {

@@ -4,6 +4,11 @@ import { isDivider, normalizeMarkdown, parseBlocks, parseInline, safeHref } from
 import { safeImageSrc } from "./inline";
 
 describe("markdown rendering parser", () => {
+  it("retains Mermaid card titles separately from the graph source", () => {
+    expect(parseBlocks('```mermaid title="Architecture API"\nflowchart LR\nA --> B\n```')).toEqual([
+      { type: "mermaid", title: "Architecture API", text: "flowchart LR\nA --> B" },
+    ]);
+  });
   it("parses headings up to level three", () => {
     expect(parseBlocks("# Title\n## Section\n### Detail")).toEqual([
       { type: "heading", level: 1, text: "Title" },
@@ -175,6 +180,34 @@ describe("markdown rendering parser", () => {
   it("keeps unterminated fenced code blocks", () => {
     expect(parseBlocks("```\nopen block")).toEqual([
       { type: "code", text: "open block" },
+    ]);
+  });
+
+  it("renders only complete Mermaid fences and preserves other languages as code", () => {
+    expect(parseBlocks("Before\n```mermaid\nflowchart LR\n A --> B\n```\nAfter")).toEqual([
+      { type: "paragraph", text: "Before" },
+      { type: "mermaid", text: "flowchart LR\n A --> B" },
+      { type: "paragraph", text: "After" },
+    ]);
+    expect(parseBlocks("```mermaid\nflowchart LR")).toEqual([
+      { type: "code", language: "mermaid", text: "flowchart LR" },
+    ]);
+    for (const language of ["iso", "flat", "js"]) {
+      expect(parseBlocks(`\`\`\`${language}\nA --> B\n\`\`\``)).toEqual([
+        { type: "code", language, text: "A --> B" },
+      ]);
+    }
+  });
+
+  it("shares fence rules for Mermaid, including tilde, indentation, and literal nested fences", () => {
+    expect(parseBlocks("  ~~~MeRmAiD\r\nflowchart LR\r\nA --> B\r\n  ~~~")).toEqual([
+      { type: "mermaid", text: "flowchart LR\nA --> B" },
+    ]);
+    expect(parseBlocks("````text\n```mermaid\nA --> B\n```\n````")).toEqual([
+      { type: "code", language: "text", text: "```mermaid\nA --> B\n```" },
+    ]);
+    expect(parseBlocks("```mermaid\nA --> B\n~~~")).toEqual([
+      { type: "code", language: "mermaid", text: "A --> B\n~~~" },
     ]);
   });
 

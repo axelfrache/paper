@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultDiagram, serializeDiagramMarker } from "../diagram";
+import { expandMermaid, projectMermaid } from "./mermaid";
 import { readSource } from "./dom";
 import { hiddenPrefixLength, renderEditableLine, renderEditableMarkdown } from "./editorRender";
 
@@ -10,6 +11,26 @@ function render(html: string) {
 }
 
 describe("editable markdown renderer", () => {
+  it("renders a projected Mermaid card without exposing its source", () => {
+    const source = 'Before\n```mermaid\nflowchart LR\nA["<b>One</b>"] --> B\n```\nAfter';
+    const host = render(renderEditableMarkdown(projectMermaid(source).value, -1));
+    const preview = host.querySelector<HTMLElement>("[data-mermaid]")!;
+    expect(preview.dataset.mermaid).toBe('flowchart LR\nA["<b>One</b>"] --> B');
+    expect(preview.closest("[contenteditable=false]")).not.toBeNull();
+    preview.innerHTML = "<svg><text>Rendered label</text></svg>";
+    expect(expandMermaid(readSource(host))).toBe(source);
+    expect(host.querySelectorAll("[data-line]")).toHaveLength(3);
+    expect(host.querySelector('[data-line="2"]')?.textContent).toBe("After");
+  });
+
+  it("does not preview unfinished, unknown, or nested Mermaid fences", () => {
+    for (const source of ["```mermaid\nA --> B", "```iso\nA --> B\n```", "````\n```mermaid\nA --> B\n```\n````"]) {
+      const host = render(renderEditableMarkdown(source, -1));
+      expect(host.querySelector("[data-mermaid]")).toBeNull();
+      expect(readSource(host)).toBe(source);
+    }
+  });
+
   it("renders formatted inline text", () => {
     const host = render(renderEditableMarkdown("Use **bold**, *italic*, ~~strike~~, <u>underline</u> and `code`.", -1));
 

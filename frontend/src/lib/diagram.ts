@@ -268,6 +268,31 @@ export function parseDiagramMarker(line: string): Diagram | null {
   return decodeDiagram(match[1]);
 }
 
+export function parseDiagramSource(text: string): Diagram {
+  const source = JSON.parse(text);
+  if (!source || source.version !== 1 || !["iso", "flat"].includes(source.mode) || !Array.isArray(source.nodes) || !Array.isArray(source.edges)) {
+    throw new Error("Expected a version 1 diagram with mode, nodes and edges.");
+  }
+  const ids = new Set<string>();
+  for (const node of source.nodes) {
+    if (!node || typeof node.id !== "string" || !node.id || ids.has(node.id) || !isDiagramKind(node.kind) || !Number.isFinite(node.x) || !Number.isFinite(node.y) || typeof node.label !== "string") {
+      throw new Error("Each node needs a unique id, a valid kind, numeric x/y and a label.");
+    }
+    ids.add(node.id);
+  }
+  const edgeIds = new Set<string>();
+  for (const edge of source.edges) {
+    if (!edge || typeof edge.id !== "string" || !edge.id || edgeIds.has(edge.id) || !ids.has(edge.from) || !ids.has(edge.to)) {
+      throw new Error("Each edge needs a unique id and must connect existing nodes.");
+    }
+    edgeIds.add(edge.id);
+  }
+  if (source.groups !== undefined && (!Array.isArray(source.groups) || source.groups.some((group: DiagramGroup) => !group || !Array.isArray(group.members) || group.members.some((id) => !ids.has(id))))) {
+    throw new Error("Groups must reference existing nodes.");
+  }
+  return normalizeDiagram(source);
+}
+
 export function isDiagramMarker(line: string) {
   return diagramMarkerPattern.test(line.trim());
 }
@@ -1471,6 +1496,7 @@ function normalizeEdge(value: unknown): DiagramEdge {
     end: isDiagramEdgeEnd(edge.end) ? edge.end : undefined,
     width: isDiagramEdgeWidth(edge.width) ? edge.width : undefined,
     label: typeof edge.label === "string" && edge.label.trim() ? edge.label.trim() : undefined,
+    labelPosition: typeof edge.labelPosition === "number" && Number.isFinite(edge.labelPosition) ? Math.max(0, Math.min(1, edge.labelPosition)) : undefined,
   };
 }
 

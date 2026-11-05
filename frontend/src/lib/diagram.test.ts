@@ -12,6 +12,7 @@ import {
   layoutDiagram,
   minGroupPadding,
   parseDiagramMarker,
+  parseDiagramSource,
   pointInPolygon,
   serializeDiagramMarker,
 } from "./diagram";
@@ -579,4 +580,18 @@ it("preserves optional diagram titles through serialization and duplication", ()
   expect(cloneDiagramWithFreshIds(saved).title).toBe(original.title);
   expect(parseDiagramMarker(serializeDiagramMarker(createDefaultDiagram()))?.title).toBeUndefined();
   expect(parseDiagramMarker(serializeDiagramMarker({ ...original, title: "  " }))?.title).toBeUndefined();
+});
+
+it("validates diagram source edits and preserves edge label positions", () => {
+  const diagram = createDefaultDiagram("iso");
+  diagram.edges[0].labelPosition = 0.25;
+  const source = JSON.stringify(diagram);
+  const parsed = parseDiagramSource(source);
+  expect(parsed.mode).toBe("iso");
+  expect(parsed.nodes).toEqual(parseDiagramMarker(serializeDiagramMarker(diagram))!.nodes);
+  expect(parsed.edges[0].labelPosition).toBe(0.25);
+  expect(parseDiagramMarker(serializeDiagramMarker(parsed))!.edges[0].labelPosition).toBe(0.25);
+  expect(() => parseDiagramSource("{}")).toThrow("version 1");
+  expect(() => parseDiagramSource(JSON.stringify({ ...diagram, edges: [{ id: "bad", from: "missing", to: diagram.nodes[0].id }] }))).toThrow("existing nodes");
+  expect(() => parseDiagramSource(JSON.stringify({ ...diagram, nodes: [diagram.nodes[0], diagram.nodes[0]] }))).toThrow("unique id");
 });

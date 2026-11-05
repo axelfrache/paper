@@ -1,4 +1,5 @@
 import { codeLines } from "./fences";
+import { parseMermaidMarker, projectMermaid } from "./mermaid";
 import { diagramToSvgMarkup, parseDiagramMarker } from "../diagram";
 import { parseInline } from "./inline";
 import type { MarkdownInline } from "./inline";
@@ -29,7 +30,7 @@ export function standaloneImage(line: string) {
 }
 
 export function isResourceLine(line: string) {
-  return isDiagramLine(line) || Boolean(standaloneImage(line)?.safe);
+  return isDiagramLine(line) || Boolean(parseMermaidMarker(line)) || Boolean(standaloneImage(line)?.safe);
 }
 
 export function resourceLineAt(value: string, line: number) {
@@ -89,6 +90,8 @@ const CLIPBOARD_RESOURCE_ATTR = "data-paper-resource";
 const clipboardResourcePattern = new RegExp(`${CLIPBOARD_RESOURCE_ATTR}="([^"]*)"`);
 
 export function resourceClipboardHtml(line: string): string | null {
+  const mermaid = parseMermaidMarker(line);
+  if (mermaid) return `<pre ${CLIPBOARD_RESOURCE_ATTR}="${encodeURIComponent(line)}">${escapeAttr(mermaid.source)}</pre>`;
   const diagram = parseDiagramMarker(line);
   if (diagram) {
     return `<div ${CLIPBOARD_RESOURCE_ATTR}="${encodeURIComponent(line)}">${diagramToSvgMarkup(diagram, 480)}</div>`;
@@ -117,7 +120,7 @@ export function resourceLineFromHtml(html: string): string | null {
 }
 
 export function resourceLineFromPlainText(text: string): string | null {
-  const trimmed = text.trim();
+  const trimmed = projectMermaid(text.trim()).value;
   return trimmed && !trimmed.includes("\n") && isResourceLine(trimmed) ? trimmed : null;
 }
 
