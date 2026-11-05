@@ -823,3 +823,82 @@ describe("Suggested graph connections", () => {
     expect(host.querySelector(".graph-related-panel")).toBeNull();
   });
 });
+
+describe("Initial graph framing", () => {
+  let frames: Map<number, FrameRequestCallback>;
+  let nextFrame: number;
+  beforeEach(() => {
+    frames = new Map();
+    nextFrame = 0;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.set(++nextFrame, callback);
+      return nextFrame;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
+  });
+  function flushFrames() {
+    act(() => {
+      const callbacks = [...frames.values()];
+      frames.clear();
+      callbacks.forEach((callback) => callback(0));
+    });
+  }
+  it("settles and fits all nodes on entry with room for labels", () => {
+    mount(chain);
+    const stop = vi.spyOn(simulation(), "stop");
+    flushFrames();
+    const view = camera();
+    expect(view).not.toEqual({ x: 0, y: 0, k: 1 });
+    expect(stop).toHaveBeenCalled();
+    for (const node of simulation().nodes()) {
+      expect(view.x + (node.x! - 12) * view.k).toBeGreaterThanOrEqual(31.9);
+      expect(view.x + (node.x! + 12) * view.k).toBeLessThanOrEqual(368.1);
+      expect(view.y + (node.y! - 12) * view.k).toBeGreaterThanOrEqual(31.9);
+      expect(view.y + (node.y! + 26) * view.k).toBeLessThanOrEqual(268.1);
+    }
+    expect(frames.size).toBe(0);
+  });
+  it("waits for asynchronously loaded notes and fits again after returning to Graph", () => {
+    mount([], null);
+    flushFrames();
+    expect(camera()).toEqual({ x: 0, y: 0, k: 1 });
+    mount(chain);
+    flushFrames();
+    expect(camera()).not.toEqual({ x: 0, y: 0, k: 1 });
+    act(() => root.render(null));
+    mount(chain);
+    expect(frames.size).toBe(1);
+    flushFrames();
+    expect(camera()).not.toEqual({ x: 0, y: 0, k: 1 });
+  });
+  it("preserves manual zoom after entry and subsequent note updates", () => {
+    mount(chain);
+    flushFrames();
+    click("Zoom out");
+    const before = camera();
+    mount(chain.map((note) => ({ ...note, favorite: true })));
+    flushFrames();
+    expect(camera()).toEqual(before);
+  });
+  it("does not override a zoom or drag started before the initial frame", () => {
+    const svg = mount(chain);
+    click("Zoom out");
+    const zoomed = camera();
+    flushFrames();
+    expect(camera()).toEqual(zoomed);
+    act(() => root.render(null));
+    const nextSvg = mount(chain);
+    pointer(nextSvg, "pointerdown", 1, 100, 100);
+    pointer(nextSvg, "pointermove", 1, 140, 120);
+    const panned = camera();
+    flushFrames();
+    expect(camera()).toEqual(panned);
+    expect(svg.isConnected).toBe(false);
+  });
+  it("cancels the initial fit when leaving the graph", () => {
+    mount(chain);
+    expect(frames.size).toBe(1);
+    act(() => root.render(null));
+    expect(frames.size).toBe(0);
+  });
+});

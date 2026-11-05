@@ -97,6 +97,10 @@ export function GraphView({
   const nodeElsRef = useRef(new Map<string, SVGGElement>());
   const edgeElsRef = useRef(new Map<string, SVGLineElement>());
   const signatureRef = useRef("");
+  const initialFitDoneRef = useRef(false);
+  const initialFitFrameRef = useRef<number | null>(null);
+  const fitGraphRef = useRef<() => void>(() => {});
+  fitGraphRef.current = fitGraph;
   const draggedComponentRef = useRef(new Set<string>());
   const heldNodesRef = useRef(
     new Map<
@@ -232,6 +236,10 @@ export function GraphView({
     simulationRef.current = sim;
     updatePositionForces();
     return () => {
+      if (initialFitFrameRef.current !== null) {
+        cancelAnimationFrame(initialFitFrameRef.current);
+        initialFitFrameRef.current = null;
+      }
       sim.stop();
       simulationRef.current = null;
       signatureRef.current = "";
@@ -290,6 +298,7 @@ export function GraphView({
         .iterations(2),
     );
     sim.alpha(0.3).restart();
+    scheduleInitialFit();
   }, [layoutGraph]);
 
   useEffect(() => {
@@ -317,6 +326,7 @@ export function GraphView({
         updatePositionForces();
       }
       sizeRef.current = { width, height };
+      scheduleInitialFit();
     });
     observer.observe(container);
     return () => observer.disconnect();
@@ -387,7 +397,34 @@ export function GraphView({
     };
   }, [expanded]);
 
+  function cancelInitialFit() {
+    initialFitDoneRef.current = true;
+    if (initialFitFrameRef.current !== null) {
+      cancelAnimationFrame(initialFitFrameRef.current);
+      initialFitFrameRef.current = null;
+    }
+  }
+
+  function scheduleInitialFit() {
+    if (
+      initialFitDoneRef.current ||
+      initialFitFrameRef.current !== null ||
+      !nodesRef.current.length ||
+      !sizeRef.current.width ||
+      !sizeRef.current.height
+    )
+      return;
+    initialFitFrameRef.current = requestAnimationFrame(() => {
+      initialFitFrameRef.current = null;
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (!rect?.width || !rect.height || !nodesRef.current.length) return;
+      simulationRef.current?.stop().tick(120);
+      fitGraphRef.current();
+    });
+  }
+
   function zoomTo(scale: number, anchor?: { x: number; y: number }) {
+    cancelInitialFit();
     const rect = svgRef.current?.getBoundingClientRect();
     if (!rect?.width || !rect.height) return;
     const point = anchor ?? { x: rect.width / 2, y: rect.height / 2 };
@@ -405,6 +442,7 @@ export function GraphView({
   function fitGraph() {
     const rect = svgRef.current?.getBoundingClientRect();
     if (!rect?.width || !rect.height || !nodesRef.current.length) return;
+    cancelInitialFit();
     const sim = simulationRef.current;
     sim?.stop();
     sim?.on("tick")?.call(sim);
@@ -784,6 +822,9 @@ export function GraphView({
       role={expanded ? "dialog" : undefined}
       aria-modal={expanded || undefined}
       aria-label="Note graph"
+      onPointerDownCapture={cancelInitialFit}
+      onWheelCapture={cancelInitialFit}
+      onKeyDownCapture={cancelInitialFit}
     >
       <GraphExplorerControls
         navigation={
