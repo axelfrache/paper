@@ -2,6 +2,10 @@ import { codeLines, fencedBlocks } from "./fences";
 import type { Caret } from "./edit";
 
 const titleAttribute = /(?:^|\s)title=("(?:\\.|[^"\\])*")(?=\s|$)/;
+const widthAttribute = /(?:^|\s)width=(\d+)(?=\s|$)/;
+
+export const mermaidMinWidth = 240;
+export const mermaidMaxWidth = 1600;
 
 export function mermaidTitle(source: string): string {
   const match = titleAttribute.exec(source.split("\n")[0]);
@@ -20,13 +24,28 @@ export function withMermaidTitle(source: string, title: string): string {
   return lines.join("\n");
 }
 
+export function mermaidWidth(source: string): number | undefined {
+  const match = widthAttribute.exec(source.split("\n")[0]);
+  const width = match ? Number(match[1]) : NaN;
+  return Number.isFinite(width) ? width : undefined;
+}
+
+export function withMermaidWidth(source: string, width: number | undefined): string {
+  const lines = source.split("\n");
+  const clamped = width ? Math.round(Math.max(mermaidMinWidth, Math.min(mermaidMaxWidth, width))) : undefined;
+  const attribute = clamped ? ` width=${clamped}` : "";
+  if (widthAttribute.test(lines[0])) lines[0] = lines[0].replace(widthAttribute, () => attribute);
+  else if (attribute) lines[0] = lines[0].trimEnd() + attribute;
+  return lines.join("\n");
+}
+
 export function mermaidMarker(source: string) {
   return `![mermaid:${encodeURIComponent(source)}]`;
 }
 
 export function parseMermaidMarker(
   line: string,
-): { source: string; text: string; title: string } | null {
+): { source: string; text: string; title: string; width?: number } | null {
   const match = /^!\[mermaid:([^\]]+)\]$/.exec(line.trim());
   if (!match) return null;
   try {
@@ -37,7 +56,7 @@ export function parseMermaidMarker(
       block.language === "mermaid" &&
       block.start === 0 &&
       block.end === lines.length - 1
-      ? { source, text: block.text, title: mermaidTitle(source) }
+      ? { source, text: block.text, title: mermaidTitle(source), width: mermaidWidth(source) }
       : null;
   } catch {
     return null;

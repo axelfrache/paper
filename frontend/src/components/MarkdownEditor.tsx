@@ -1,7 +1,7 @@
 import { createPortal } from "react-dom";
 import { codeLines } from "../lib/markdown/fences";
 import { disposeMermaidPreviews, syncMermaidPreviews } from "../lib/mermaid";
-import { expandMermaid, mermaidMarker, parseMermaidMarker, projectMermaid, replaceMermaidSource, withMermaidTitle } from "../lib/markdown/mermaid";
+import { expandMermaid, mermaidMarker, parseMermaidMarker, projectMermaid, replaceMermaidSource, withMermaidTitle, withMermaidWidth } from "../lib/markdown/mermaid";
 import { DiagramSourceEditor } from "./DiagramSourceEditor";
 import { remapCaret } from "../lib/markdown/anchor";
 import { useLayoutEffect, useRef, useState } from "react";
@@ -1092,6 +1092,16 @@ function ProjectedMarkdownEditor({
       return;
     }
 
+    const mermaidResizeTarget = target?.closest("[data-mermaid-resize-line]");
+    if (mermaidResizeTarget) {
+      event.preventDefault();
+      const line = Number(mermaidResizeTarget.getAttribute("data-mermaid-resize-line"));
+      if (!Number.isNaN(line)) {
+        startMermaidPreviewResize(event.nativeEvent, line, mermaidResizeTarget.closest("[data-diagram-line]"));
+      }
+      return;
+    }
+
     const imageResizeTarget = target?.closest("[data-image-resize-line]");
     if (imageResizeTarget) {
       event.preventDefault();
@@ -2046,6 +2056,31 @@ function ProjectedMarkdownEditor({
       const nextDiagram = updateDiagramPreview(diagram, nextPreview);
       source = replaceDiagramMarkerAtLine(source, line, nextDiagram);
       setSource(source, null);
+    };
+
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  function startMermaidPreviewResize(event: PointerEvent, line: number, card: Element | null) {
+    const mermaid = parseMermaidMarker(value.split("\n")[line] ?? "");
+    if (!mermaid || !card) {
+      return;
+    }
+
+    const rect = card.getBoundingClientRect();
+    const startWidth = mermaid.width ?? rect.width;
+
+    const move = (moveEvent: PointerEvent) => {
+      const width = Math.round(Math.max(240, Math.min(1600, startWidth + moveEvent.clientX - event.clientX)));
+      const lines = value.split("\n");
+      lines[line] = mermaidMarker(withMermaidWidth(mermaid.source, width));
+      setSource(lines.join("\n"), null);
     };
 
     const up = () => {

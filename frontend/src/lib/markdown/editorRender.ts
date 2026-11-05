@@ -51,7 +51,8 @@ export function renderEditableLine(rawLine: string, active: boolean, index: numb
     return resourceBlock(rawLine, index, "diagram", [
       `<span class="markdown-editor-diagram-header">${diagramTitleButton(index, mermaid.title)}<span class="markdown-editor-diagram-meta">${diagramSourceButton(index)}${diagramResourceActions(index)}</span></span>`,
       `<span class="markdown-editor-diagram-preview mermaid-preview" data-mermaid="${escapeAttribute(mermaid.text)}" role="figure" aria-label="Mermaid diagram"></span>`,
-    ].join(""), selectedResource);
+      `<span data-mermaid-resize-line="${index}" class="markdown-editor-diagram-width-resize" aria-hidden="true"></span>`,
+    ].join(""), selectedResource, mermaid.width);
   }
   // The alignment marker is stripped from what is drawn and handed back to the DOM as a
   // decoration, so `readSource` still reconstructs the line exactly as it is stored.
