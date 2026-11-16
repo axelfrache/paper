@@ -203,6 +203,9 @@ function inlineNode(node: MarkdownInline, active: boolean, noteIndex: Map<string
     const content = `<code>${escapeHtml(node.text)}</code>`;
     return `${syntaxMark(node.delimiter ?? "`")}${content}${syntaxMark(node.delimiter ?? "`", false, "close")}`;
   }
+  if (node.type === "superscript") {
+    return `${syntaxMark("^")}<sup>${escapeHtml(node.text)}</sup>`;
+  }
   if (node.type === "strong") {
     const content = `<strong>${node.children.map((child) => inlineNode(child, active, noteIndex)).join("")}</strong>`;
     return `${syntaxMark("**")}${content}${syntaxMark("**", false, "close")}`;

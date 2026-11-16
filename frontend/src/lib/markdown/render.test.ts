@@ -40,6 +40,27 @@ describe("markdown rendering parser", () => {
     ]);
   });
 
+  it("parses a superscript up to the next whitespace", () => {
+    expect(parseInline("a^b end")).toEqual([
+      { type: "text", text: "a" },
+      { type: "superscript", text: "b" },
+      { type: "text", text: " end" },
+    ]);
+  });
+
+  it("parses a multi-character superscript, e.g. an exponent", () => {
+    expect(parseInline("2^10 items")).toEqual([
+      { type: "text", text: "2" },
+      { type: "superscript", text: "10" },
+      { type: "text", text: " items" },
+    ]);
+  });
+
+  it("keeps a trailing or standalone caret as plain text", () => {
+    expect(parseInline("a^ b")).toEqual([{ type: "text", text: "a^ b" }]);
+    expect(parseInline("a^")).toEqual([{ type: "text", text: "a^" }]);
+  });
+
   it("parses combined strong and emphasis markers", () => {
     expect(parseInline("Use ***both*** now")).toEqual([
       { type: "text", text: "Use " },

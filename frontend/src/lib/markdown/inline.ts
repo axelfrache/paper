@@ -5,6 +5,7 @@ export type MarkdownInline =
   | { type: "link"; text: MarkdownInline[]; href: string; source: string; title?: string; safe: boolean }
   | { type: "image"; alt: string; href: string; source: string; safe: boolean; width?: number }
   | { type: "code"; text: string; delimiter?: string }
+  | { type: "superscript"; text: string }
   | { type: "strong"; children: MarkdownInline[] }
   | { type: "em"; children: MarkdownInline[] }
   | { type: "strike"; children: MarkdownInline[] }
@@ -95,6 +96,16 @@ export function parseInline(text: string): MarkdownInline[] {
       buffer += delimiter;
       index += delimiter.length;
       continue;
+    }
+
+    if (text[index] === "^") {
+      const run = text.slice(index + 1).match(/^\S+/)?.[0] ?? "";
+      if (run) {
+        pushBuffer();
+        nodes.push({ type: "superscript", text: run });
+        index += 1 + run.length;
+        continue;
+      }
     }
 
     if (text.startsWith("~~", index)) {

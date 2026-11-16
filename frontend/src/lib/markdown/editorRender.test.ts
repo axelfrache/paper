@@ -41,6 +41,16 @@ describe("editable markdown renderer", () => {
     expect(host.querySelector("code")?.textContent).toBe("code");
   });
 
+  it("renders a superscript and hides the caret marker even while active", () => {
+    const host = render(renderEditableMarkdown("2^10 items", 0));
+    const marker = host.querySelector("sup")?.previousElementSibling;
+
+    expect(host.querySelector("sup")?.textContent).toBe("10");
+    expect(marker?.textContent).toBe("^");
+    expect(marker?.getAttribute("style")).toContain("display:none");
+    expect(readSource(host as HTMLDivElement)).toBe("2^10 items");
+  });
+
   it("never reveals inline syntax markers, even while the line is active", () => {
     const host = render(renderEditableMarkdown("Use **bold** text.", 0));
     const marker = host.querySelector("strong")?.previousElementSibling;

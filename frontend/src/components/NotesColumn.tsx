@@ -363,6 +363,9 @@ function renderInlineNodes(nodes: MarkdownInline[], query: string): ReactNode {
     if (node.type === "code") {
       return <code key={index}>{renderHighlighted(node.text, query)}</code>;
     }
+    if (node.type === "superscript") {
+      return <sup key={index}>{renderHighlighted(node.text, query)}</sup>;
+    }
     if (node.type === "link") {
       return <span key={index}>{renderInlineNodes(node.text, query)}</span>;
     }

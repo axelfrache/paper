@@ -127,6 +127,9 @@ function renderInlineNode(node: MarkdownInline, index: number): ReactNode {
   if (node.type === "code") {
     return <code key={index}>{node.text}</code>;
   }
+  if (node.type === "superscript") {
+    return <sup key={index}>{node.text}</sup>;
+  }
   if (node.type === "strong") {
     return <strong key={index}>{node.children.map(renderInlineNode)}</strong>;
   }
