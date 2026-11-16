@@ -1,0 +1,89 @@
+import { describe, expect, it } from "vitest";
+import {
+  applicationProblem,
+  chatHistory,
+  chatPatch,
+  type ChatTurn,
+} from "./paperChat";
+import type { Note } from "../types/note";
+const note: Note = {
+  id: "a",
+  title: "Plan",
+  content: "Original text",
+  tags: ["work"],
+  favorite: false,
+  createdAt: "",
+  updatedAt: "",
+};
+const turn: ChatTurn = {
+  id: "1",
+  question: "Rewrite",
+  text: "New text",
+  status: "ready",
+  sourceIds: ["a"],
+  action: "clean_up",
+  snapshot: note,
+};
+describe("Assistant proposals", () => {
+  it("blocks application to another note, changed content, or an already applied result", () => {
+    expect(chatPatch(turn, { ...note, id: "b" })).toBeNull();
+    expect(
+      chatPatch(turn, { ...note, content: "Edited while waiting" }),
+    ).toBeNull();
+    expect(chatPatch(turn, { ...note, title: "Renamed" })).toBeNull();
+    expect(chatPatch({ ...turn, applied: true }, note)).toBeNull();
+    expect(applicationProblem(turn, note)).toBe("");
+    expect(chatPatch(turn, note)).toEqual({ content: "New text" });
+  });
+  it("keeps diagram resources when replacing note text", () => {
+    const original = { ...note, content: "Intro\n![diagram:abc123]" };
+    expect(
+      chatPatch({ ...turn, snapshot: original }, original)?.content,
+    ).toContain("![diagram:abc123]");
+  });
+  it("replaces only the captured selection, even when the same words occur twice", () => {
+    const original = { ...note, content: "word word" };
+    const selection = {
+      text: "word",
+      content: original.content,
+      range: { start: { line: 0, col: 5 }, end: { line: 0, col: 9 } },
+    };
+    expect(
+      chatPatch({ ...turn, snapshot: original, selection }, original),
+    ).toEqual({ content: "word New text" });
+  });
+  it("applies title, tags, tasks and answers as distinct operations", () => {
+    expect(
+      chatPatch(
+        { ...turn, action: "suggest_title", text: "New title\nextra" },
+        note,
+      ),
+    ).toEqual({ title: "New title" });
+    expect(
+      chatPatch(
+        { ...turn, action: "suggest_tags", text: "work, architecture, #cloud" },
+        note,
+      ),
+    ).toEqual({ tags: ["work", "architecture", "cloud"] });
+    expect(
+      chatPatch(
+        { ...turn, action: "extract_tasks", text: "- [ ] Deploy\n- Check" },
+        note,
+      )?.content,
+    ).toBe("Original text\n\n- [ ] Deploy\n- [ ] Check");
+    expect(chatPatch({ ...turn, action: undefined }, note)?.content).toBe(
+      "Original text\n\nNew text",
+    );
+  });
+  it("bounds history by complete turns and byte size and excludes failed replies", () => {
+    const turns = Array.from({ length: 10 }, (_, i) => ({
+      ...turn,
+      id: String(i),
+      question: `question${i}`,
+    }));
+    expect(chatHistory(turns)).toHaveLength(12);
+    expect(chatHistory(turns)[0].content).toBe("question4");
+    expect(chatHistory([{ ...turn, status: "error" }])).toEqual([]);
+    expect(chatHistory([{ ...turn, text: "é".repeat(13000) }])).toEqual([]);
+  });
+});

@@ -264,3 +264,17 @@ func hasJSONContentType(ct string) bool {
 	}
 	return ct == "application/json"
 }
+
+func (h *Handler) Chat(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	var req domain.ChatRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	answer, err := h.service.Chat(r.Context(), req)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, stdhttp.StatusOK, answer)
+}

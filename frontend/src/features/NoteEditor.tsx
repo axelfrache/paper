@@ -2,19 +2,29 @@ import { ActionMenu } from "../components/ActionMenu";
 import { useBackLayer } from "../lib/useBackLayer";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
-import { PanelLeftClose, PanelLeftOpen, MoreHorizontal, ArrowLeft, Moon, Redo2, Search, Sparkles, Star, Sun, Trash2, Undo2, X } from "lucide-react";
+import {
+  PanelLeftClose,
+  PanelLeftOpen,
+  MoreHorizontal,
+  ArrowLeft,
+  Moon,
+  Redo2,
+  Search,
+  Sparkles,
+  Star,
+  Sun,
+  Trash2,
+  Undo2,
+} from "lucide-react";
 import { DiagramEditor } from "../components/DiagramEditor";
 import { MarkdownEditor } from "../components/MarkdownEditor";
-import { MarkdownView } from "../components/MarkdownView";
-import { replaceDiagramMarkerAtLine, stripDiagramMarkers } from "../lib/diagram";
+import { BotAvatar } from "../components/BotAvatar";
+import {
+  replaceDiagramMarkerAtLine,
+  stripDiagramMarkers,
+} from "../lib/diagram";
 import type { AIAction, Note, NoteImage } from "../types/note";
 import type { Diagram } from "../lib/diagram";
-
-export type AIResult = {
-  action: AIAction;
-  status: "loading" | "ready";
-  text: string;
-};
 
 type NoteEditorProps = {
   folderControl?: ReactNode;
@@ -22,7 +32,10 @@ type NoteEditorProps = {
   onToggleList?: () => void;
   note: Note | null;
   tagDraft: string;
-  aiResult: AIResult | null;
+  assistantBusy?: boolean;
+  assistantUnread?: boolean;
+  assistantOpen?: boolean;
+  onOpenAssistant: () => void;
   titleFocusRequest: { noteId: string; token: number } | null;
   contentFocusRequest: { noteId: string; token: number } | null;
   onTitleChange: (title: string) => void;
@@ -41,8 +54,6 @@ type NoteEditorProps = {
   onBackToNotes: () => void;
   onAssist: (action: AIAction) => void;
   onCaretLineChange: (line: number) => void;
-  onApplyResult: () => void;
-  onDismissResult: () => void;
   onUndo: () => void;
   onRedo: () => void;
   aiEnabled: boolean;
@@ -76,7 +87,10 @@ export function NoteEditor({
   onToggleList,
   note,
   tagDraft,
-  aiResult,
+  assistantBusy = false,
+  assistantUnread = false,
+  assistantOpen = false,
+  onOpenAssistant,
   titleFocusRequest,
   contentFocusRequest,
   onTitleChange,
@@ -95,8 +109,6 @@ export function NoteEditor({
   onBackToNotes,
   onAssist,
   onCaretLineChange,
-  onApplyResult,
-  onDismissResult,
   onUndo,
   onRedo,
   aiEnabled,
@@ -111,7 +123,10 @@ export function NoteEditor({
   const [contentFocusTarget, setContentFocusTarget] = useState<ContentFocusTarget | null>(null);
   const [diagramEdit, setDiagramEdit] = useState<DiagramEditTarget | null>(null);
   useBackLayer(diagramEdit !== null, () => setDiagramEdit(null));
-  const [diagramDescribeRequest, setDiagramDescribeRequest] = useState<{ key: string; prompt: string } | null>(null);
+  const [diagramDescribeRequest, setDiagramDescribeRequest] = useState<{
+    key: string;
+    prompt: string;
+  } | null>(null);
 
   useEffect(() => {
     latestContentRef.current = note?.content ?? "";
@@ -122,28 +137,6 @@ export function NoteEditor({
       setDiagramEdit(null);
     }
   }, [diagramEdit, note?.id]);
-
-  useEffect(() => {
-    if (!aiResult) {
-      return;
-    }
-
-    const handleResultKey = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || document.querySelector("dialog[open]")) {
-        return;
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onDismissResult();
-      } else if (event.key === "Enter" && aiResult.status === "ready") {
-        event.preventDefault();
-        onApplyResult();
-      }
-    };
-
-    window.addEventListener("keydown", handleResultKey);
-    return () => window.removeEventListener("keydown", handleResultKey);
-  }, [aiResult, onApplyResult, onDismissResult]);
 
   useEffect(() => {
     if (
@@ -240,6 +233,18 @@ export function NoteEditor({
           onBackToNotes={onBackToNotes}
         />
         <div className="empty-editor">Select or create a note.</div>
+        {aiEnabled && (
+          <footer className="ai-bar">
+            <button
+              type="button"
+              className="assistant-launcher"
+              onClick={onOpenAssistant}
+            >
+              <BotAvatar size={30} theme={theme} />
+              <span>Ask Paper</span>
+            </button>
+          </footer>
+        )}
       </main>
     );
   }
@@ -345,45 +350,45 @@ export function NoteEditor({
         </div>
       </div>
 
-      {aiResult ? (
-        <div className="ai-result-dock">
-          <AIResultPanel
-            result={aiResult}
-            onApply={onApplyResult}
-            onDismiss={onDismissResult}
-          />
-        </div>
-      ) : null}
-
       <footer className="ai-bar">
         {aiEnabled ? (
           <>
-            <strong>AI</strong>
-            <div className="ai-bar-actions">
-              {aiActions.map((action) => (
-                <button key={action.action} title={action.hint} onClick={() => onAssist(action.action)} disabled={aiResult?.status === "loading"}>
-                  {action.label}
-                </button>
-              ))}
-              <button
-                title={diagramAction.hint}
-                disabled={aiResult?.status === "loading"}
-                onClick={() => openDiagramDescribe(note, setDiagramDescribeRequest)}
-              >
-                {diagramAction.label}
-              </button>
-            </div>
+            <button
+              type="button"
+              className="assistant-launcher"
+              aria-label="Ask Paper"
+              aria-expanded={assistantOpen}
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={onOpenAssistant}
+            >
+              <BotAvatar
+                size={30}
+                theme={theme}
+                state={
+                  assistantBusy
+                    ? "thinking"
+                    : assistantUnread
+                      ? "notify"
+                      : "idle"
+                }
+                animated={!assistantOpen}
+              />
+              <span>Ask Paper</span>
+              {assistantUnread && (
+                <span className="assistant-unread" aria-label="New response" />
+              )}
+            </button>
             <details className="ai-bar-menu">
               <summary aria-label="AI actions" title="AI actions">
                 <Sparkles size={15} strokeWidth={1.9} />
-                <span>AI actions</span>
+                <span>Actions</span>
               </summary>
               <div>
                 {aiActions.map((action) => (
                   <button
                     key={action.action}
                     type="button"
-                    disabled={aiResult?.status === "loading"}
+                    disabled={assistantBusy}
                     onClick={(event) => {
                       event.currentTarget.closest("details")?.removeAttribute("open");
                       onAssist(action.action);
@@ -394,7 +399,7 @@ export function NoteEditor({
                 ))}
                 <button
                   type="button"
-                  disabled={aiResult?.status === "loading"}
+                  disabled={assistantBusy}
                   onClick={(event) => {
                     event.currentTarget.closest("details")?.removeAttribute("open");
                     openDiagramDescribe(note, setDiagramDescribeRequest);
@@ -458,7 +463,20 @@ function EditorTopbar({
       <button className="editor-back-button" type="button" onClick={onBackToNotes} aria-label="Back to notes">
         <ArrowLeft size={16} strokeWidth={1.9} />
       </button>
-      {onToggleList ? <button className="editor-list-toggle topbar-icon-button" onClick={onToggleList} aria-label={listHidden ? "Show note list" : "Hide note list"} title={listHidden ? "Show note list" : "Hide note list"}>{listHidden ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}</button> : null}
+      {onToggleList ? (
+        <button
+          className="editor-list-toggle topbar-icon-button"
+          onClick={onToggleList}
+          aria-label={listHidden ? "Show note list" : "Hide note list"}
+          title={listHidden ? "Show note list" : "Hide note list"}
+        >
+          {listHidden ? (
+            <PanelLeftOpen size={18} />
+          ) : (
+            <PanelLeftClose size={18} />
+          )}
+        </button>
+      ) : null}
       <span>{label}</span>
       {onUndo && onRedo ? (
         <div className="editor-topbar-history">
@@ -487,7 +505,11 @@ function EditorTopbar({
           title={`${theme === "dark" ? "Switch to light" : "Switch to dark"}  ⌘⇧L`}
           aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
         >
-          {theme === "dark" ? <Sun size={14} strokeWidth={1.9} /> : <Moon size={14} strokeWidth={1.9} />}
+          {theme === "dark" ? (
+            <Sun size={14} strokeWidth={1.9} />
+          ) : (
+            <Moon size={14} strokeWidth={1.9} />
+          )}
         </button>
         <button className="topbar-button" onClick={onSearch} aria-label="Search" title="Search">
           <Search size={14} strokeWidth={1.9} />
@@ -498,89 +520,57 @@ function EditorTopbar({
           <span>Delete</span>
         </button>
       </div>
-      <button className="editor-mobile-actions topbar-button" aria-label="Note actions" aria-haspopup="menu" aria-expanded={actions !== null} onClick={(event) => {
-        const bounds = event.currentTarget.getBoundingClientRect(); setActions({x: bounds.right, y: bounds.bottom});
-      }}><MoreHorizontal size={20} /></button>
-      {actions ? <ActionMenu {...actions} label="Note actions" onClose={() => setActions(null)}>
-        <button role="menuitem" disabled={disabledNoteActions} onClick={() => run(onToggleFavorite)}>{favorite ? "Remove favorite" : "Add to favorites"}</button>
-        <button role="menuitem" onClick={() => run(onSearch)}>Search notes</button>
-        <button role="menuitem" onClick={() => run(onToggleTheme)}>{theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}</button>
-        <button role="menuitem" className="danger" disabled={disabledNoteActions} onClick={() => {
-          if (window.confirm("Delete this note?")) run(onDelete);
-        }}>Delete note</button>
-      </ActionMenu> : null}
+      <button
+        className="editor-mobile-actions topbar-button"
+        aria-label="Note actions"
+        aria-haspopup="menu"
+        aria-expanded={actions !== null}
+        onClick={(event) => {
+          const bounds = event.currentTarget.getBoundingClientRect();
+          setActions({ x: bounds.right, y: bounds.bottom });
+        }}
+      >
+        <MoreHorizontal size={20} />
+      </button>
+      {actions ? (
+        <ActionMenu
+          {...actions}
+          label="Note actions"
+          onClose={() => setActions(null)}
+        >
+          <button
+            role="menuitem"
+            disabled={disabledNoteActions}
+            onClick={() => run(onToggleFavorite)}
+          >
+            {favorite ? "Remove favorite" : "Add to favorites"}
+          </button>
+          <button role="menuitem" onClick={() => run(onSearch)}>
+            Search notes
+          </button>
+          <button role="menuitem" onClick={() => run(onToggleTheme)}>
+            {theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          </button>
+          <button
+            role="menuitem"
+            className="danger"
+            disabled={disabledNoteActions}
+            onClick={() => {
+              if (window.confirm("Delete this note?")) run(onDelete);
+            }}
+          >
+            Delete note
+          </button>
+        </ActionMenu>
+      ) : null}
     </header>
   );
 }
 
-function AIResultPanel({
-  result,
-  onApply,
-  onDismiss,
-}: {
-  result: AIResult;
-  onApply: () => void;
-  onDismiss: () => void;
-}) {
-  const tags = result.action === "suggest_tags" && result.status === "ready" ? resultTags(result.text) : [];
-  const count = result.status === "ready" ? resultItemCount(result, tags) : 0;
-
-  return (
-    <section className="ai-result" aria-live="polite">
-      <header>
-        <span className={result.status === "loading" ? "is-loading" : ""} />
-        <strong>{titleForAction(result.action)}</strong>
-        {count > 1 ? <small>{count} items</small> : null}
-        <button onClick={onDismiss} aria-label="Dismiss" title="Dismiss">
-          <X size={14} strokeWidth={2} />
-        </button>
-      </header>
-      {result.status === "loading" ? (
-        <div className="ai-result-loading" aria-label="Thinking">
-          <span />
-          <span />
-          <span />
-        </div>
-      ) : (
-        <>
-          <div className="ai-result-body">
-            {tags.length ? (
-              <div className="ai-result-tags">
-                {tags.map((tag) => <span key={tag}>#{tag}</span>)}
-              </div>
-            ) : (
-              <MarkdownView text={result.text} className="ai-markdown" />
-            )}
-          </div>
-          <footer className="ai-result-actions">
-            <button onClick={onApply}>{applyLabelForAction(result.action)}</button>
-            <button onClick={onDismiss}>Dismiss</button>
-          </footer>
-        </>
-      )}
-    </section>
-  );
-}
-
-function resultTags(text: string) {
-  return text
-    .split(/[,\n]+/)
-    .map((tag) => tag.trim().replace(/^[-*#\s]+/, "").toLowerCase().replace(/[^a-z0-9_-]/g, ""))
-    .filter(Boolean)
-    .slice(0, 8);
-}
-
-function resultItemCount(result: AIResult, tags: string[]) {
-  if (tags.length) {
-    return tags.length;
-  }
-  if (result.action !== "summarize" && result.action !== "extract_tasks") {
-    return 0;
-  }
-  return result.text.split("\n").filter((line) => /^\s*(?:[-*•]|\d+[.)]|\[[ xX]\])\s+/.test(line)).length;
-}
-
-function openDiagramDescribe(note: Note, setRequest: (request: { key: string; prompt: string }) => void) {
+function openDiagramDescribe(
+  note: Note,
+  setRequest: (request: { key: string; prompt: string }) => void,
+) {
   setRequest({
     key: `${note.id}-${Date.now()}`,
     prompt: diagramPromptForNote(note),
@@ -593,29 +583,9 @@ function diagramPromptForNote(note: Note) {
     note.title.trim() ? `Title: ${note.title.trim()}` : "",
     note.tags.length ? `Tags: ${note.tags.join(", ")}` : "",
     content ? `Content:\n${content}` : "",
-  ].filter(Boolean).join("\n\n");
-}
-
-function titleForAction(action: AIAction) {
-  return {
-    summarize: "Summary",
-    extract_tasks: "Extracted tasks",
-    suggest_title: "Suggested title",
-    suggest_tags: "Suggested tags",
-    clean_up: "Cleaned up",
-    improve_clarity: "Improved note",
-  }[action];
-}
-
-function applyLabelForAction(action: AIAction) {
-  return {
-    summarize: "Insert summary",
-    extract_tasks: "Add to note",
-    suggest_title: "Use title",
-    suggest_tags: "Add tags",
-    clean_up: "Replace text",
-    improve_clarity: "Replace text",
-  }[action];
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function wordCount(content: string) {

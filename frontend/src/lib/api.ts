@@ -28,12 +28,18 @@ async function throwForErrorResponse(response: Response): Promise<never> {
   if (response.status === 401) {
     onUnauthorized?.();
   }
-  const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+  const payload = (await response.json().catch(() => null)) as {
+    error?: string;
+  } | null;
   throw new APIError(payload?.error ?? "Request failed", response.status);
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  return trackMutation(init?.method, async () => {
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  trackWrites = true,
+): Promise<T> {
+  return trackMutation(trackWrites ? init?.method : undefined, async () => {
     const response = await apiFetch(path, {
       ...init,
       credentials: "same-origin",
@@ -194,4 +200,19 @@ export function moveNotes(moves: NoteMove[]) {
     method: "POST",
     body: JSON.stringify({ moves }),
   });
+}
+
+export function chatWithPaper(
+  payload: import("./paperChat").ChatRequest,
+  signal: AbortSignal,
+) {
+  return request<{ text: string; sourceIds: string[] }>(
+    "/api/ai/chat",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+      signal,
+    },
+    false,
+  );
 }

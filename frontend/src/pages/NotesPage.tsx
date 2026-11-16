@@ -14,13 +14,35 @@ import { FolderDialog, folderColors, type FolderDialogState } from "../component
 import { listFolders, saveFolder, deleteFolder, moveNotes } from "../lib/api";
 import type { Folder, NoteMove } from "../types/note";
 import { Folder as FolderIcon, ChevronDown } from "lucide-react";
+import { AssistantPanel } from "../components/AssistantPanel";
+import { usePaperChat } from "../lib/usePaperChat";
+import {
+  chatActions,
+  chatPatch,
+  type ChatContext,
+  type ChatTurn,
+} from "../lib/paperChat";
+import { getSelectionRange } from "../lib/markdown/dom";
+import { selectedText } from "../lib/markdown/edit";
 import { Toast } from "../components/Toast";
-import { NoteEditor, type AIResult } from "../features/NoteEditor";
-import { askNotes, assistNote, createNote, deleteNote, listNotes, restoreNote, searchNotes, updateNote, uploadNoteImage } from "../lib/api";
-import { recordDraft, historyLimit, type NoteHistory } from "../lib/noteHistory";
+import { NoteEditor } from "../features/NoteEditor";
+import {
+  createNote,
+  deleteNote,
+  listNotes,
+  restoreNote,
+  searchNotes,
+  updateNote,
+  uploadNoteImage,
+} from "../lib/api";
+import {
+  recordDraft,
+  historyLimit,
+  type NoteHistory,
+} from "../lib/noteHistory";
 import { matchesFilter } from "../lib/notesFilter";
 import { useShortcuts } from "../lib/useShortcuts";
-import type { AIAction, AskAnswer, Note, NoteDraft } from "../types/note";
+import type { AIAction, Note, NoteDraft } from "../types/note";
 import type { AuthUser } from "../types/auth";
 
 type Theme = "light" | "dark";
@@ -49,7 +71,15 @@ const emptyDraft: NoteDraft = {
   favorite: false,
 };
 
-export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEnabled: boolean; onLogout: () => Promise<void> }) {
+export function NotesPage({
+  user,
+  aiEnabled,
+  onLogout,
+}: {
+  user: AuthUser;
+  aiEnabled: boolean;
+  onLogout: () => Promise<void>;
+}) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   // undefined = all folders, null = unfiled.
@@ -76,19 +106,22 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
   const [listHidden, setListHidden] = useState(false);
   const [mobilePane, setMobilePane] = useState<MobilePane>("notes");
   useMobileViewport();
-  useBackLayer(mobilePane === "editor" && (window.innerWidth <= 900), () => setMobilePane("notes"));
+  useBackLayer(mobilePane === "editor" && window.innerWidth <= 900, () =>
+    setMobilePane("notes"),
+  );
 
-  const [navigationWidth, setNavigationWidth] = useState(() => initialColumnWidth("navigation"));
-  const [notesWidth, setNotesWidth] = useState(() => initialColumnWidth("notes"));
-  const [aiResult, setAIResult] = useState<AIResult | null>(null);
-  const [titleFocusRequest, setTitleFocusRequest] = useState<TitleFocusRequest | null>(null);
-  const [contentFocusRequest, setContentFocusRequest] = useState<ContentFocusRequest | null>(null);
+  const [navigationWidth, setNavigationWidth] = useState(() =>
+    initialColumnWidth("navigation"),
+  );
+  const [notesWidth, setNotesWidth] = useState(() =>
+    initialColumnWidth("notes"),
+  );
+  const chat = usePaperChat(notes);
+  const [titleFocusRequest, setTitleFocusRequest] =
+    useState<TitleFocusRequest | null>(null);
+  const [contentFocusRequest, setContentFocusRequest] =
+    useState<ContentFocusRequest | null>(null);
   const [noteCardFocusRequest, setNoteCardFocusRequest] = useState(0);
-  const [askState, setAskState] = useState<{
-    status: "idle" | "loading" | "answered";
-    answer: string;
-    sourceIds: string[];
-  }>({ status: "idle", answer: "", sourceIds: [] });
   const [toast, setToast] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [online, setOnline] = useState(navigator.onLine);
@@ -104,11 +137,13 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
   }, [saveQueue]);
   const toastTimer = useRef<number | null>(null);
   const deleteUndoTimer = useRef<number | null>(null);
-  const aiRequestRef = useRef(0);
   const editorLineRef = useRef<number | null>(null);
   const lastSelectedIdRef = useRef<string | null>(null);
   const historyRef = useRef(new Map<string, NoteHistory>());
-  const deletedHistoryRef = useRef<{ undo: DeletedNotesAction[]; redo: DeletedNotesAction[] }>({ undo: [], redo: [] });
+  const deletedHistoryRef = useRef<{
+    undo: DeletedNotesAction[];
+    redo: DeletedNotesAction[];
+  }>({ undo: [], redo: [] });
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -187,11 +222,6 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
     () => notes.find((note) => note.id === activeId) ?? null,
     [notes, activeId],
   );
-
-  useEffect(() => {
-    aiRequestRef.current += 1;
-    setAIResult(null);
-  }, [activeId]);
 
   const visibleNotes = useMemo(() => {
     let pool = [...notes].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
@@ -336,7 +366,6 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       const nextNote = { ...activeNote, ...draft, updatedAt: new Date().toISOString() };
       setNotes((current) => current.map((note) => (note.id === nextNote.id ? nextNote : note)));
       persist(nextNote);
-      setAIResult(null);
     },
     [activeNote, persist],
   );
@@ -385,7 +414,9 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       }
       setNotes((current) => current.filter((note) => !deleted.has(note.id)));
       setSelectedIds([]);
-      setActiveId((current) => (current && !deleted.has(current) ? current : null));
+      setActiveId((current) =>
+        current && !deleted.has(current) ? current : null,
+      );
       lastSelectedIdRef.current = null;
       deletedHistoryRef.current.undo.push(action);
       flash(ids.length === 1 ? "Note deleted" : `${ids.length} notes deleted`);
@@ -460,7 +491,6 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       setActiveTags([]);
       setQuery("");
       setTagDraft("");
-      setAIResult(null);
       setNoteCardFocusRequest((request) => request + 1);
       setPaletteOpen(false);
       setMobilePane("editor");
@@ -477,7 +507,6 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       setActiveId(note.id);
       setMobilePane("editor");
       setTagDraft("");
-      setAIResult(null);
       editorLineRef.current = null;
 
       if (extend && lastSelectedIdRef.current) {
@@ -570,7 +599,6 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       deletedHistoryRef.current.undo.push({ notes: deletedNotes, index: deleteIndex });
       deletedHistoryRef.current.redo = [];
       armDeleteUndo({ notes: deletedNotes, index: deleteIndex });
-      setAIResult(null);
       flash(ids.length === 1 ? "Note deleted" : `${ids.length} notes deleted`);
     } catch {
       flash(ids.length === 1 ? "Could not delete note" : "Could not delete notes");
@@ -640,7 +668,11 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
       return;
     }
     setView("all");
-    setActiveTags((current) => (current.includes(normalized) ? current.filter((item) => item !== normalized) : [...current, normalized]));
+    setActiveTags((current) =>
+      current.includes(normalized)
+        ? current.filter((item) => item !== normalized)
+        : [...current, normalized],
+    );
   }, []);
 
   const addFilterTag = useCallback((tag: string) => {
@@ -648,7 +680,9 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
     if (!normalized) {
       return;
     }
-    setActiveTags((current) => (current.includes(normalized) ? current : [...current, normalized]));
+    setActiveTags((current) =>
+      current.includes(normalized) ? current : [...current, normalized],
+    );
   }, []);
 
   const removeFilterTag = useCallback((tag: string) => {
@@ -687,87 +721,64 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
     [activeNote, patchActive],
   );
 
+  const assistantContext = useCallback((): ChatContext => {
+    if (!activeNote) return { scope: "all" };
+    const range = getSelectionRange(
+      document.querySelector<HTMLDivElement>(".markdown-editor"),
+    );
+    const text = range ? selectedText(activeNote.content, range) : "";
+    if (range && text.trim())
+      return {
+        scope: "selection",
+        noteId: activeNote.id,
+        selection: { range, text, content: activeNote.content },
+      };
+    return { scope: "note", noteId: activeNote.id };
+  }, [activeNote]);
+
+  const openAssistant = useCallback(() => {
+    if (!aiEnabled) return;
+    chat.show(assistantContext());
+    setMobilePane("editor");
+  }, [aiEnabled, chat.show, assistantContext]);
+
   const runAI = useCallback(
-    async (action: AIAction) => {
-      if (!activeNote) {
-        return;
-      }
-      if (!activeNote.content.trim() && action !== "suggest_tags" && action !== "suggest_title") {
-        flash("Nothing to work with yet");
-        return;
-      }
-      const request = aiRequestRef.current + 1;
-      aiRequestRef.current = request;
-      setAIResult({ action, status: "loading", text: "" });
-      try {
-        const result = await assistNote(activeNote.id, action);
-        if (aiRequestRef.current === request) {
-          setAIResult({ action, status: "ready", text: result.text });
-        }
-      } catch {
-        if (aiRequestRef.current === request) {
-          setAIResult(null);
-          flash("AI request failed");
-        }
-      }
+    (action: AIAction) => {
+      if (!aiEnabled || !activeNote) return;
+      const prompt =
+        chatActions.find((item) => item.action === action)?.prompt ??
+        "Improve the clarity of this text.";
+      void chat.send(prompt, action, assistantContext());
+      setMobilePane("editor");
     },
-    [activeNote, flash],
+    [activeNote, aiEnabled, chat.send, assistantContext],
   );
 
-  const applyAIResult = useCallback(() => {
-    if (!activeNote || !aiResult || aiResult.status !== "ready") {
+  const applyChatResult = (turn: ChatTurn) => {
+    if (!activeNote) return;
+    const patch = chatPatch(turn, activeNote);
+    if (!patch) {
+      flash("The note changed. Ask for an updated suggestion.");
       return;
     }
-    const text = aiResult.text.trim();
-    if (!text) {
-      return;
-    }
-    if (aiResult.action === "suggest_title") {
-      patchActive({ title: text.split(/\n+/)[0].replace(/^[-*]\s*/, "") });
-    } else if (aiResult.action === "suggest_tags") {
-      const tags = parseTags(text).filter((tag) => !activeNote.tags.includes(tag));
-      patchActive({ tags: [...activeNote.tags, ...tags] });
-    } else if (aiResult.action === "extract_tasks") {
-      const tasks = text
-        .split(/\n+/)
-        .map((line) => line.trim().replace(/^[-*•☐]\s*/, ""))
-        .filter(Boolean)
-        .map((line) => `☐ ${line}`)
-        .join("\n");
-      patchActive({ content: insertBlockAfterLine(activeNote.content, editorLineRef.current, `Tasks\n${tasks}`) });
-    } else if (aiResult.action === "summarize") {
-      patchActive({ content: insertBlockAfterLine(activeNote.content, editorLineRef.current, `Summary\n${text}`) });
-    } else {
-      patchActive({ content: text });
-    }
-    aiRequestRef.current += 1;
-    setAIResult(null);
-    flash("Applied");
-  }, [activeNote, aiResult, patchActive, flash]);
+    patchActive(patch);
+    chat.markApplied(turn.id);
+    flash("Applied — undo is available");
+  };
 
-  const dismissAIResult = useCallback(() => {
-    aiRequestRef.current += 1;
-    setAIResult(null);
-  }, []);
-
-  const ask = useCallback(
-    async (question: string) => {
-      setAskState({ status: "loading", answer: "", sourceIds: [] });
-      try {
-        const answer: AskAnswer = await askNotes(question);
-        setAskState({ status: "answered", answer: answer.answer, sourceIds: answer.sourceIds });
-      } catch {
-        setAskState({ status: "answered", answer: "The AI service could not answer right now.", sourceIds: [] });
+  const openPalette = useCallback(
+    (mode: PaletteMode) => {
+      if (mode === "ask" && aiEnabled) {
+        chat.show({ scope: "all" });
+        setMobilePane("editor");
+        setPaletteOpen(false);
+        return;
       }
+      setPaletteMode(mode);
+      setPaletteOpen(true);
     },
-    [],
+    [aiEnabled, chat.show],
   );
-
-  const openPalette = useCallback((mode: PaletteMode) => {
-    setPaletteMode(mode);
-    setPaletteOpen(true);
-    setAskState({ status: "idle", answer: "", sourceIds: [] });
-  }, []);
 
   const actions = useMemo<PaletteAction[]>(
     () => [
@@ -1026,87 +1037,106 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
         />
       )}
 
-      <NoteEditor
-        listHidden={listHidden}
-        onToggleList={() => setListHidden(!listHidden)}
-        folderControl={
-          activeNote ? (
-            <button
-              className="editor-folder-button"
-              onClick={() => openMove([activeNote.id])}
-              aria-label="Move note to folder"
-              title="Move to folder"
-            >
-              <FolderIcon
-                size={14}
-                style={{
-                  color:
-                    folderColors[
-                      folders.find(
-                        (folder) => folder.id === activeNote.folderId,
-                      )?.color ?? "slate"
-                    ],
-                }}
-              />
-              <span>
-                {folders.find((folder) => folder.id === activeNote.folderId)
-                  ?.name ?? "No folder"}
-              </span>
-              <ChevronDown size={12} />
-            </button>
-          ) : null
-        }
-        note={activeNote}
-        notes={notes}
-        onOpenNote={openNoteById}
-        tagDraft={tagDraft}
-        aiResult={aiResult}
-        titleFocusRequest={titleFocusRequest}
-        contentFocusRequest={contentFocusRequest}
-        onTitleChange={(title) => patchActive({ title })}
-        onContentChange={(content) => patchActive({ content })}
-        onUploadImage={async (file) => {
-          if (!activeNote) {
-            throw new Error("No note selected");
+      <div className="editor-workspace">
+        <NoteEditor
+          listHidden={listHidden}
+          onToggleList={() => setListHidden(!listHidden)}
+          folderControl={
+            activeNote ? (
+              <button
+                className="editor-folder-button"
+                onClick={() => openMove([activeNote.id])}
+                aria-label="Move note to folder"
+                title="Move to folder"
+              >
+                <FolderIcon
+                  size={14}
+                  style={{
+                    color:
+                      folderColors[
+                        folders.find(
+                          (folder) => folder.id === activeNote.folderId,
+                        )?.color ?? "slate"
+                      ],
+                  }}
+                />
+                <span>
+                  {folders.find((folder) => folder.id === activeNote.folderId)
+                    ?.name ?? "No folder"}
+                </span>
+                <ChevronDown size={12} />
+              </button>
+            ) : null
           }
-          try {
-            return await uploadNoteImage(activeNote.id, file);
-          } catch (error) {
-            flash(
-              error instanceof Error ? error.message : "Could not upload image",
-            );
-            throw error;
-          }
-        }}
-        onTagDraftChange={setTagDraft}
-        onAddTag={addTag}
-        onRemoveTag={removeTag}
-        onToggleFavorite={toggleFavorite}
-        onDelete={() => void handleDelete()}
-        onSearch={() => openPalette("search")}
-        onToggleTheme={toggleTheme}
-        onFocusNoteList={focusActiveNoteCard}
-        onBackToNotes={() => setMobilePane("notes")}
-        onAssist={(action) => void runAI(action)}
-        onCaretLineChange={(line) => {
-          editorLineRef.current = line;
-        }}
-        onApplyResult={applyAIResult}
-        onDismissResult={dismissAIResult}
-        onUndo={() => void undoNoteContent()}
-        onRedo={() => void redoNoteContent()}
-        aiEnabled={aiEnabled}
-        theme={theme}
-      />
+          note={activeNote}
+          notes={notes}
+          onOpenNote={openNoteById}
+          tagDraft={tagDraft}
+          assistantBusy={chat.busy}
+          assistantUnread={chat.unread}
+          assistantOpen={chat.open}
+          onOpenAssistant={openAssistant}
+          titleFocusRequest={titleFocusRequest}
+          contentFocusRequest={contentFocusRequest}
+          onTitleChange={(title) => patchActive({ title })}
+          onContentChange={(content) => patchActive({ content })}
+          onUploadImage={async (file) => {
+            if (!activeNote) {
+              throw new Error("No note selected");
+            }
+            try {
+              return await uploadNoteImage(activeNote.id, file);
+            } catch (error) {
+              flash(
+                error instanceof Error
+                  ? error.message
+                  : "Could not upload image",
+              );
+              throw error;
+            }
+          }}
+          onTagDraftChange={setTagDraft}
+          onAddTag={addTag}
+          onRemoveTag={removeTag}
+          onToggleFavorite={toggleFavorite}
+          onDelete={() => void handleDelete()}
+          onSearch={() => openPalette("search")}
+          onToggleTheme={toggleTheme}
+          onFocusNoteList={focusActiveNoteCard}
+          onBackToNotes={() => setMobilePane("notes")}
+          onAssist={(action) => void runAI(action)}
+          onCaretLineChange={(line) => {
+            editorLineRef.current = line;
+          }}
+          onUndo={() => void undoNoteContent()}
+          onRedo={() => void redoNoteContent()}
+          aiEnabled={aiEnabled}
+          theme={theme}
+        />
+
+        {aiEnabled && (
+          <AssistantPanel
+            chat={chat}
+            note={activeNote}
+            notes={notes}
+            theme={theme}
+            onApply={applyChatResult}
+            onOpenNote={openNoteById}
+          />
+        )}
+      </div>
 
       <CommandPalette
         open={paletteOpen}
         mode={paletteMode}
         notes={notes}
         actions={actions}
-        askState={askState}
-        onModeChange={setPaletteMode}
-        onAsk={(question) => void ask(question)}
+        askState={{ status: "idle", answer: "", sourceIds: [] }}
+        onModeChange={openPalette}
+        onAsk={(question) => {
+          setPaletteOpen(false);
+          void chat.send(question, undefined, { scope: "all" });
+        }}
         onSelectNote={selectNote}
         onClose={() => setPaletteOpen(false)}
       />
@@ -1200,9 +1230,25 @@ export function NotesPage({ user, aiEnabled, onLogout }: { user: AuthUser; aiEna
           </button>
         </div>
       ) : null}
-      <div className={`note-save-status${saveState === "error" || !online ? " is-warning" : ""}`} role="status" aria-live="polite">
-        {!online ? (saveQueue.dirty ? "Offline · Unsaved changes. Keep this window open." : "Offline · Reconnect to save changes.") : saveState === "error" ? "Could not save. Changes are kept in this window." : saveState === "saved" ? "All changes saved" : "Saving…"}
-        {saveState === "error" && online ? <button onClick={() => void saveQueue.flush().catch(() => {})}>Retry</button> : null}
+      <div
+        className={`note-save-status${saveState === "error" || !online ? " is-warning" : ""}`}
+        role="status"
+        aria-live="polite"
+      >
+        {!online
+          ? saveQueue.dirty
+            ? "Offline · Unsaved changes. Keep this window open."
+            : "Offline · Reconnect to save changes."
+          : saveState === "error"
+            ? "Could not save. Changes are kept in this window."
+            : saveState === "saved"
+              ? "All changes saved"
+              : "Saving…"}
+        {saveState === "error" && online ? (
+          <button onClick={() => void saveQueue.flush().catch(() => {})}>
+            Retry
+          </button>
+        ) : null}
       </div>
       <Toast message={toast} />
     </div>
@@ -1231,25 +1277,6 @@ function sameDraft(a: NoteDraft | undefined, b: NoteDraft | undefined) {
   );
 }
 
-function insertBlockAfterLine(content: string, line: number | null, block: string) {
-  const cleanBlock = block.trim();
-  if (!content.trim()) {
-    return cleanBlock;
-  }
-
-  const lines = content.split("\n");
-  const targetLine = line == null ? lines.length - 1 : Math.max(0, Math.min(line, lines.length - 1));
-  const nextLine = lines[targetLine + 1];
-  const insertLines = [
-    ...(lines[targetLine]?.trim() ? [""] : []),
-    ...cleanBlock.split("\n"),
-    ...(nextLine == null || !nextLine.trim() ? [] : [""]),
-  ];
-
-  lines.splice(targetLine + 1, 0, ...insertLines);
-  return lines.join("\n");
-}
-
 function titleForView(view: ViewKey) {
   return {
     all: "All notes",
@@ -1273,11 +1300,17 @@ function readLastActiveNoteId(): string | null {
 }
 
 function matchesCompactNavigation() {
-  return window.matchMedia?.("(max-width: 1100px)").matches ?? window.innerWidth <= 1100;
+  return (
+    window.matchMedia?.("(max-width: 1100px)").matches ??
+    window.innerWidth <= 1100
+  );
 }
 
 function matchesMobileLayout() {
-  return window.matchMedia?.("(max-width: 900px)").matches ?? window.innerWidth <= 900;
+  return (
+    window.matchMedia?.("(max-width: 900px)").matches ??
+    window.innerWidth <= 900
+  );
 }
 
 function initialColumnWidth(column: ResizableColumn) {
@@ -1311,12 +1344,4 @@ function initialTheme(): Theme {
 
 function normalizeTag(tag: string) {
   return tag.trim().toLowerCase().replace(/^#/, "");
-}
-
-function parseTags(text: string) {
-  return text
-    .split(/[\n,]/)
-    .map((tag) => normalizeTag(tag.replace(/^[-*#]\s*/, "")))
-    .filter(Boolean)
-    .slice(0, 5);
 }

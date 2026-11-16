@@ -20,7 +20,7 @@ The backend is a Go application built on a strict hexagonal (ports & adapters) a
 - **WYSIWYG markdown editor**: a hand-rolled editor over `contenteditable` with its own caret model, rendered line by line.
 - **Diagrams**: flat and isometric diagrams as embedded blocks, with an interactive editor (with an isometric placement grid) and text-to-diagram generation.
 - **Folders**: color-coded folders with note counts, scoped search, bulk moves, drag-and-drop, and undo. Deleting a folder keeps its notes in No folder.
-- **AI note actions**: summarize, extract tasks, suggest title/tags, clean up, improve clarity, and ask-your-notes.
+- **Ask Paper**: a contextual chat for the current note, a selected passage, or relevant notes from your library. Quick actions for summaries, tasks, titles, tags, and rewriting remain available through Actions and `/`.
 - **Diagram-safe rewriting**: clean up and improve clarity mask embedded diagram markers before sending content to the LLM, so a diagram is never mangled.
 - **Image uploads**: client-side resize and compression, stored locally or in an S3-compatible bucket.
 - **Pluggable LLM providers**: configured by environment, not code (`ai-gateway`, `ollama`, or any `openai-compatible` endpoint).
@@ -131,7 +131,17 @@ actions are hidden and the app runs without them. Set a provider to enable them:
 - `AI_PROVIDER`: `ollama`, `openai-compatible`, or `ai-gateway`
 - `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`
 
-All three providers speak the same OpenAI-compatible chat API.
+Ask Paper reuses the configured provider: Ollama's `/api/generate`, the gateway's
+`/v1/generate`, or an OpenAI-compatible `/chat/completions` endpoint. MCP and tool
+calling are not required.
+
+The chat includes unsaved note text and recent conversation turns. Library
+questions retrieve up to five notes using the existing text ranking and show the
+notes consulted. Responses can be stopped, copied, refined, or explicitly applied
+to the original note; applying is blocked if the note changed in the meantime and
+uses the editor's undo history. Conversations stay in memory until the page is
+reloaded. Responses arrive as a whole; streaming and persistent chat storage are
+not enabled.
 
 ## Code Quality
 

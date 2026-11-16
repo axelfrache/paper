@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Note } from "../types/note";
 import { createDefaultDiagram, serializeDiagramMarker } from "../lib/diagram";
 import { getSelectionRange, placeCaret } from "../lib/markdown/dom";
-import { NoteEditor, type AIResult } from "./NoteEditor";
+import { NoteEditor } from "./NoteEditor";
 
 let root: Root | null = null;
 
@@ -52,33 +52,23 @@ describe("NoteEditor AI integration", () => {
 
   it("shows the AI actions when AI is enabled", () => {
     const { host } = mount(null, true);
-    expect(host.querySelector(".ai-bar-actions")).not.toBeNull();
+    expect(host.querySelector(".assistant-launcher")).not.toBeNull();
+    expect(host.querySelector(".ai-bar-menu")).not.toBeNull();
   });
 
-  it("docks structured AI results outside the scrolling document", () => {
-    const result: AIResult = {
-      action: "suggest_tags",
-      status: "ready",
-      text: "kubernetes, Cloud, #architecture",
-    };
-    const { host, onApplyResult, onDismissResult } = mount(result);
-    const dock = host.querySelector(".ai-result-dock");
-    const scroll = host.querySelector(".editor-scroll");
-
-    expect(dock).not.toBeNull();
-    expect(scroll?.contains(dock)).toBe(false);
-    expect(Array.from(host.querySelectorAll(".ai-result-tags span")).map((tag) => tag.textContent)).toEqual([
-      "#kubernetes",
-      "#cloud",
-      "#architecture",
-    ]);
-    expect(host.querySelector(".ai-result header small")?.textContent).toBe("3 items");
-
-    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", cancelable: true })));
-    expect(onApplyResult).toHaveBeenCalledOnce();
-
-    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", cancelable: true })));
-    expect(onDismissResult).toHaveBeenCalledOnce();
+  it("opens the assistant without intercepting Enter in the editor", () => {
+    const { host, onOpenAssistant } = mount(null);
+    act(() =>
+      host.querySelector<HTMLButtonElement>(".assistant-launcher")!.click(),
+    );
+    expect(onOpenAssistant).toHaveBeenCalledOnce();
+    expect(host.querySelector(".ai-result-dock")).toBeNull();
+    const event = new KeyboardEvent("keydown", {
+      key: "Enter",
+      cancelable: true,
+    });
+    act(() => window.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(false);
   });
 
   it("fires undo and redo from the topbar buttons", () => {
@@ -92,7 +82,7 @@ describe("NoteEditor AI integration", () => {
         <NoteEditor
           note={note}
           tagDraft=""
-          aiResult={null}
+          onOpenAssistant={vi.fn()}
           titleFocusRequest={null}
           contentFocusRequest={null}
           onTitleChange={vi.fn()}
@@ -109,8 +99,6 @@ describe("NoteEditor AI integration", () => {
           onBackToNotes={vi.fn()}
           onAssist={vi.fn()}
           onCaretLineChange={vi.fn()}
-          onApplyResult={vi.fn()}
-          onDismissResult={vi.fn()}
           onUndo={onUndo}
           onRedo={onRedo}
           aiEnabled={true}
@@ -182,12 +170,12 @@ describe("NoteEditor AI integration", () => {
   });
 });
 
-function render(target: Note, aiResult: AIResult | null, onApplyResult = vi.fn(), onDismissResult = vi.fn(), onBackToNotes = vi.fn()) {
+function render(target: Note, _unused: null, onBackToNotes = vi.fn()) {
   root?.render(
     <NoteEditor
       note={target}
       tagDraft=""
-      aiResult={aiResult}
+      onOpenAssistant={vi.fn()}
       titleFocusRequest={null}
       contentFocusRequest={null}
       onTitleChange={vi.fn()}
@@ -204,8 +192,6 @@ function render(target: Note, aiResult: AIResult | null, onApplyResult = vi.fn()
       onBackToNotes={onBackToNotes}
       onAssist={vi.fn()}
       onCaretLineChange={vi.fn()}
-      onApplyResult={onApplyResult}
-      onDismissResult={onDismissResult}
       onUndo={vi.fn()}
       onRedo={vi.fn()}
       aiEnabled={true}
@@ -214,10 +200,9 @@ function render(target: Note, aiResult: AIResult | null, onApplyResult = vi.fn()
   );
 }
 
-function mount(aiResult: AIResult | null, aiEnabled = true) {
+function mount(_unused: null, aiEnabled = true) {
   const host = document.createElement("div");
-  const onApplyResult = vi.fn();
-  const onDismissResult = vi.fn();
+  const onOpenAssistant = vi.fn();
   const onBackToNotes = vi.fn();
   document.body.replaceChildren(host);
   root = createRoot(host);
@@ -226,7 +211,7 @@ function mount(aiResult: AIResult | null, aiEnabled = true) {
       <NoteEditor
         note={note}
         tagDraft=""
-        aiResult={aiResult}
+        onOpenAssistant={onOpenAssistant}
         titleFocusRequest={null}
         contentFocusRequest={null}
         onTitleChange={vi.fn()}
@@ -243,8 +228,6 @@ function mount(aiResult: AIResult | null, aiEnabled = true) {
         onBackToNotes={onBackToNotes}
         onAssist={vi.fn()}
         onCaretLineChange={vi.fn()}
-        onApplyResult={onApplyResult}
-        onDismissResult={onDismissResult}
         onUndo={vi.fn()}
         onRedo={vi.fn()}
         aiEnabled={aiEnabled}
@@ -252,5 +235,5 @@ function mount(aiResult: AIResult | null, aiEnabled = true) {
       />,
     );
   });
-  return { host, onApplyResult, onDismissResult, onBackToNotes };
+  return { host, onOpenAssistant, onBackToNotes };
 }

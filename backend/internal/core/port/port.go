@@ -9,6 +9,7 @@ import (
 )
 
 type NoteService interface {
+	Chat(context.Context, domain.ChatRequest) (domain.ChatAnswer, error)
 	ListFolders(context.Context) ([]domain.Folder, error)
 	SaveFolder(context.Context, string, domain.FolderDraft) (domain.Folder, error)
 	DeleteFolder(context.Context, string) error
