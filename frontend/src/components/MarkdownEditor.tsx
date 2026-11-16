@@ -690,6 +690,7 @@ function ProjectedMarkdownEditor({
       }
       if ((event.key === "Enter" || event.key === "Tab") && items.length) {
         event.preventDefault();
+        skipResourceCaretSyncRef.current = true;
         runSlash(items[index], caret);
         return;
       }
@@ -720,6 +721,7 @@ function ProjectedMarkdownEditor({
       }
       if ((event.key === "Enter" || event.key === "Tab") && items.length) {
         event.preventDefault();
+        skipResourceCaretSyncRef.current = true;
         runWikilink(items[index], caret);
         return;
       }
@@ -1459,7 +1461,11 @@ function ProjectedMarkdownEditor({
             return;
           }
           setSelectedResourceLine(null);
-          syncActiveLine();
+          if (skipResourceCaretSyncRef.current) {
+            skipResourceCaretSyncRef.current = false;
+          } else {
+            syncActiveLine();
+          }
         }}
         onFocus={handleFocus}
         onBlur={handleBlur}
@@ -1525,6 +1531,7 @@ function ProjectedMarkdownEditor({
                 className={index === Math.min(slash.index, filteredItems.length - 1) ? "slash-menu-row active" : "slash-menu-row"}
                 onMouseDown={(event) => {
                   event.preventDefault();
+                  skipResourceCaretSyncRef.current = true;
                   runSlash(item, caretRef.current ?? getCaret(editorRef.current) ?? { line: 0, col: 0 });
                 }}
                 onMouseEnter={() => setSlash((current) => current ? { ...current, index } : current)}
@@ -1551,6 +1558,7 @@ function ProjectedMarkdownEditor({
                 className={index === Math.min(wikilink.index, filteredWikilinkItems.length - 1) ? "wikilink-menu-row active" : "wikilink-menu-row"}
                 onMouseDown={(event) => {
                   event.preventDefault();
+                  skipResourceCaretSyncRef.current = true;
                   runWikilink(note, caretRef.current ?? getCaret(editorRef.current) ?? { line: 0, col: 0 });
                 }}
                 onMouseEnter={() => setWikilink((current) => current ? { ...current, index } : current)}
