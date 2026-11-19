@@ -216,6 +216,25 @@ export function NoteEditor({
     onContentChange(nextContent);
   };
 
+  const assistantBubble = aiEnabled && !assistantOpen && (
+    <button
+      type="button"
+      className="assistant-bubble"
+      aria-label="Ask Paper"
+      onPointerDown={(event) => event.preventDefault()}
+      onClick={onOpenAssistant}
+    >
+      <BotAvatar
+        size={38}
+        theme={theme}
+        state={assistantBusy ? "thinking" : assistantUnread ? "notify" : "idle"}
+      />
+      {assistantUnread && (
+        <span className="assistant-bubble-dot" aria-label="New response" />
+      )}
+    </button>
+  );
+
   if (!note) {
     return (
       <main className="editor-shell">
@@ -233,18 +252,7 @@ export function NoteEditor({
           onBackToNotes={onBackToNotes}
         />
         <div className="empty-editor">Select or create a note.</div>
-        {aiEnabled && (
-          <footer className="ai-bar">
-            <button
-              type="button"
-              className="assistant-launcher"
-              onClick={onOpenAssistant}
-            >
-              <BotAvatar size={30} theme={theme} />
-              <span>Ask Paper</span>
-            </button>
-          </footer>
-        )}
+        {assistantBubble}
       </main>
     );
   }
@@ -352,67 +360,41 @@ export function NoteEditor({
 
       <footer className="ai-bar">
         {aiEnabled ? (
-          <>
-            <button
-              type="button"
-              className="assistant-launcher"
-              aria-label="Ask Paper"
-              aria-expanded={assistantOpen}
-              onPointerDown={(event) => event.preventDefault()}
-              onClick={onOpenAssistant}
-            >
-              <BotAvatar
-                size={30}
-                theme={theme}
-                state={
-                  assistantBusy
-                    ? "thinking"
-                    : assistantUnread
-                      ? "notify"
-                      : "idle"
-                }
-                animated={!assistantOpen}
-              />
-              <span>Ask Paper</span>
-              {assistantUnread && (
-                <span className="assistant-unread" aria-label="New response" />
-              )}
-            </button>
-            <details className="ai-bar-menu">
-              <summary aria-label="AI actions" title="AI actions">
-                <Sparkles size={15} strokeWidth={1.9} />
-                <span>Actions</span>
-              </summary>
-              <div>
-                {aiActions.map((action) => (
-                  <button
-                    key={action.action}
-                    type="button"
-                    disabled={assistantBusy}
-                    onClick={(event) => {
-                      event.currentTarget.closest("details")?.removeAttribute("open");
-                      onAssist(action.action);
-                    }}
-                  >
-                    {action.label}
-                  </button>
-                ))}
+          <details className="ai-bar-menu">
+            <summary aria-label="AI actions" title="AI actions">
+              <Sparkles size={15} strokeWidth={1.9} />
+              <span>Actions</span>
+            </summary>
+            <div>
+              {aiActions.map((action) => (
                 <button
+                  key={action.action}
                   type="button"
                   disabled={assistantBusy}
                   onClick={(event) => {
                     event.currentTarget.closest("details")?.removeAttribute("open");
-                    openDiagramDescribe(note, setDiagramDescribeRequest);
+                    onAssist(action.action);
                   }}
                 >
-                  {diagramAction.label}
+                  {action.label}
                 </button>
-              </div>
-            </details>
-          </>
+              ))}
+              <button
+                type="button"
+                disabled={assistantBusy}
+                onClick={(event) => {
+                  event.currentTarget.closest("details")?.removeAttribute("open");
+                  openDiagramDescribe(note, setDiagramDescribeRequest);
+                }}
+              >
+                {diagramAction.label}
+              </button>
+            </div>
+          </details>
         ) : null}
         <span className="ai-bar-count">{wordCount(note.content)}</span>
       </footer>
+      {assistantBubble}
 
       {diagramEdit && diagramEdit.noteId === note.id ? (
         <DiagramEditor

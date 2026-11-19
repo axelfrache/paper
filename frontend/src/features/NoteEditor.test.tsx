@@ -52,14 +52,14 @@ describe("NoteEditor AI integration", () => {
 
   it("shows the AI actions when AI is enabled", () => {
     const { host } = mount(null, true);
-    expect(host.querySelector(".assistant-launcher")).not.toBeNull();
+    expect(host.querySelector(".assistant-bubble")).not.toBeNull();
     expect(host.querySelector(".ai-bar-menu")).not.toBeNull();
   });
 
   it("opens the assistant without intercepting Enter in the editor", () => {
     const { host, onOpenAssistant } = mount(null);
     act(() =>
-      host.querySelector<HTMLButtonElement>(".assistant-launcher")!.click(),
+      host.querySelector<HTMLButtonElement>(".assistant-bubble")!.click(),
     );
     expect(onOpenAssistant).toHaveBeenCalledOnce();
     expect(host.querySelector(".ai-result-dock")).toBeNull();
