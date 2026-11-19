@@ -102,13 +102,24 @@ export function applicationProblem(turn: ChatTurn, note: Note | null) {
   if (!turn.snapshot || !note || note.id !== turn.snapshot.id)
     return "Open the original note to apply this suggestion.";
   if (turn.applied) return "Already applied.";
-  if (
-    note.content !== turn.snapshot.content ||
-    note.title !== turn.snapshot.title ||
-    note.tags.join("\u0000") !== turn.snapshot.tags.join("\u0000")
-  )
-    return "The note changed. Ask again using its latest text before applying.";
-  return "";
+  if (turn.selection) {
+    if (
+      selectedText(note.content, turn.selection.range) !== turn.selection.text
+    )
+      return "The selected passage changed. Ask again using its latest text before applying.";
+    return "";
+  }
+  if (turn.action === "suggest_title")
+    return note.title !== turn.snapshot.title
+      ? "The title changed. Ask again using its latest text before applying."
+      : "";
+  if (turn.action === "suggest_tags")
+    return note.tags.join("\u0000") !== turn.snapshot.tags.join("\u0000")
+      ? "The tags changed. Ask again using its latest text before applying."
+      : "";
+  return note.content !== turn.snapshot.content
+    ? "The note changed. Ask again using its latest text before applying."
+    : "";
 }
 export function chatPatch(turn: ChatTurn, note: Note): Partial<Note> | null {
   if (turn.status !== "ready" || applicationProblem(turn, note)) return null;

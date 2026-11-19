@@ -30,10 +30,32 @@ describe("Assistant proposals", () => {
     expect(
       chatPatch(turn, { ...note, content: "Edited while waiting" }),
     ).toBeNull();
-    expect(chatPatch(turn, { ...note, title: "Renamed" })).toBeNull();
     expect(chatPatch({ ...turn, applied: true }, note)).toBeNull();
     expect(applicationProblem(turn, note)).toBe("");
     expect(chatPatch(turn, note)).toEqual({ content: "New text" });
+  });
+  it("only blocks on the field each proposal actually touches", () => {
+    expect(
+      chatPatch(turn, { ...note, title: "Renamed", tags: ["other"] }),
+    ).toEqual({ content: "New text" });
+    const titleTurn = {
+      ...turn,
+      action: "suggest_title" as const,
+      text: "New title",
+    };
+    expect(
+      chatPatch(titleTurn, { ...note, content: "Edited while waiting" }),
+    ).toEqual({ title: "New title" });
+    expect(chatPatch(titleTurn, { ...note, title: "Renamed" })).toBeNull();
+    const tagsTurn = {
+      ...turn,
+      action: "suggest_tags" as const,
+      text: "cloud",
+    };
+    expect(
+      chatPatch(tagsTurn, { ...note, content: "Edited while waiting" }),
+    ).toEqual({ tags: ["work", "cloud"] });
+    expect(chatPatch(tagsTurn, { ...note, tags: ["other"] })).toBeNull();
   });
   it("keeps diagram resources when replacing note text", () => {
     const original = { ...note, content: "Intro\n![diagram:abc123]" };
@@ -51,6 +73,26 @@ describe("Assistant proposals", () => {
     expect(
       chatPatch({ ...turn, snapshot: original, selection }, original),
     ).toEqual({ content: "word New text" });
+  });
+  it("ignores edits outside the selection but blocks if the selection itself changed", () => {
+    const original = { ...note, content: "word word" };
+    const selection = {
+      text: "word",
+      content: original.content,
+      range: { start: { line: 0, col: 5 }, end: { line: 0, col: 9 } },
+    };
+    const selectionTurn = { ...turn, snapshot: original, selection };
+    const editedElsewhere = {
+      ...original,
+      content: "word word\nunrelated line added later",
+    };
+    expect(applicationProblem(selectionTurn, editedElsewhere)).toBe("");
+    expect(chatPatch(selectionTurn, editedElsewhere)).toEqual({
+      content: "word New text\nunrelated line added later",
+    });
+    const editedSelection = { ...original, content: "word xxxx" };
+    expect(applicationProblem(selectionTurn, editedSelection)).not.toBe("");
+    expect(chatPatch(selectionTurn, editedSelection)).toBeNull();
   });
   it("applies title, tags, tasks and answers as distinct operations", () => {
     expect(
