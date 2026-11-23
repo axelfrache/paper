@@ -124,3 +124,37 @@ func TestChatLibraryUsesOnlyOwnedNotesAndSurfacesProviderErrors(t *testing.T) {
 		t.Fatal("ignored cancellation")
 	}
 }
+
+func TestChatPinnedNotesAreIncludedAndOwnershipEnforced(t *testing.T) {
+	repo := memory.NewNoteRepository()
+	ai := &chatAssistantStub{result: "ok"}
+	service := NewNote(repo, ai)
+	ctx := domain.ContextWithUser(context.Background(), domain.User{ID: "one"})
+	other := domain.ContextWithUser(context.Background(), domain.User{ID: "two"})
+	current, _ := service.CreateNote(ctx, domain.NoteDraft{Title: "Current", Content: "Current body"})
+	pinned, _ := service.CreateNote(ctx, domain.NoteDraft{Title: "Unrelated", Content: "Pinned body"})
+	foreign, _ := service.CreateNote(other, domain.NoteDraft{Title: "Foreign", Content: "Do not leak"})
+	messages := []domain.ChatMessage{{Role: "user", Content: "Compare these"}}
+
+	answer, err := service.Chat(ctx, domain.ChatRequest{Scope: "all", NoteIDs: []string{pinned.ID, pinned.ID}, Messages: messages})
+	if err != nil || len(answer.SourceIDs) != 1 || answer.SourceIDs[0] != pinned.ID || !strings.Contains(ai.prompt, "Pinned body") {
+		t.Fatalf("pinned note not used once: %#v %v", answer, err)
+	}
+	answer, err = service.Chat(ctx, domain.ChatRequest{Scope: "note", NoteID: current.ID, NoteIDs: []string{current.ID, pinned.ID}, Messages: messages})
+	if err != nil || len(answer.SourceIDs) != 2 || answer.SourceIDs[0] != current.ID || answer.SourceIDs[1] != pinned.ID {
+		t.Fatalf("reference not added to note scope: %#v %v", answer, err)
+	}
+	for _, scope := range []string{"all", "note"} {
+		if _, err := service.Chat(ctx, domain.ChatRequest{Scope: scope, NoteID: current.ID, NoteIDs: []string{foreign.ID}, Messages: messages}); err == nil || strings.Contains(ai.prompt, "Do not leak") {
+			t.Fatalf("%s scope accepted another user's note", scope)
+		}
+	}
+	tooMany := []string{}
+	for i := 0; i <= maxChatNotes; i++ {
+		note, _ := service.CreateNote(ctx, domain.NoteDraft{Title: "N", Content: "x"})
+		tooMany = append(tooMany, note.ID)
+	}
+	if _, err := service.Chat(ctx, domain.ChatRequest{Scope: "all", NoteIDs: tooMany, Messages: messages}); err == nil {
+		t.Fatal("accepted too many references")
+	}
+}

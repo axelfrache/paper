@@ -7,12 +7,16 @@ export type ChatSelection = { range: TextRange; text: string; content: string };
 export type ChatContext = {
   scope: ChatScope;
   noteId?: string;
+  /** Extra notes the user referenced with @, used as additional context. */
+  noteIds?: string[];
   selection?: ChatSelection;
 };
+export const MAX_CHAT_NOTES = 5;
 export type ChatSnapshot = Pick<Note, "id" | "title" | "content" | "tags">;
 export type ChatRequest = {
   scope: ChatScope;
   noteId?: string;
+  noteIds?: string[];
   draft?: Omit<ChatSnapshot, "id">;
   selection?: string;
   action?: AIAction;
@@ -172,4 +176,27 @@ export function chatPatch(turn: ChatTurn, note: Note): Partial<Note> | null {
   return {
     content: [note.content.trimEnd(), text].filter(Boolean).join("\n\n"),
   };
+}
+
+/** Matches a trailing "@query" token the user is typing in the composer. */
+export function mentionQuery(draft: string) {
+  return /(?:^|\s)@([^\s@]*)$/.exec(draft)?.[1];
+}
+export function stripMention(draft: string) {
+  return draft.replace(/(^|\s)@[^\s@]*$/, "$1");
+}
+export function mentionMatches(
+  notes: Note[],
+  query: string,
+  excluded: string[],
+  limit = 6,
+) {
+  const q = query.toLowerCase();
+  return notes
+    .filter(
+      (item) =>
+        !excluded.includes(item.id) &&
+        (item.title || "Untitled").toLowerCase().includes(q),
+    )
+    .slice(0, limit);
 }

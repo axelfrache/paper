@@ -3,6 +3,9 @@ import {
   applicationProblem,
   chatHistory,
   chatPatch,
+  mentionMatches,
+  mentionQuery,
+  stripMention,
   type ChatTurn,
 } from "./paperChat";
 import type { Note } from "../types/note";
@@ -127,5 +130,20 @@ describe("Assistant proposals", () => {
     expect(chatHistory(turns)[0].content).toBe("question4");
     expect(chatHistory([{ ...turn, status: "error" }])).toEqual([]);
     expect(chatHistory([{ ...turn, text: "é".repeat(13000) }])).toEqual([]);
+  });
+});
+describe("@ mentions", () => {
+  it("detects and strips only a trailing mention", () => {
+    expect(mentionQuery("compare with @pl")).toBe("pl");
+    expect(mentionQuery("@")).toBe("");
+    expect(mentionQuery("mail me@home now")).toBeUndefined();
+    expect(mentionQuery("done @plan ")).toBeUndefined();
+    expect(stripMention("compare with @pl")).toBe("compare with ");
+    expect(stripMention("@pl")).toBe("");
+  });
+  it("filters by title and skips excluded notes", () => {
+    const other = { ...note, id: "b", title: "Planning" };
+    expect(mentionMatches([note, other], "plan", ["a"])).toEqual([other]);
+    expect(mentionMatches([note, other], "", [])).toHaveLength(2);
   });
 });

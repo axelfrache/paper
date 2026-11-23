@@ -33,6 +33,23 @@ afterEach(() => {
   host.remove();
 });
 describe("Paper conversations", () => {
+  it("sends pinned notes and keeps them when the scope is shown again", async () => {
+    vi.mocked(chatWithPaper).mockResolvedValue({ text: "ok", sourceIds: [] });
+    act(() => chat.show({ scope: "all" }));
+    act(() => chat.pinNote("b"));
+    act(() => chat.pinNote("b"));
+    act(() => chat.show({ scope: "all" }));
+    expect(chat.thread.context.noteIds).toEqual(["b"]);
+    await act(async () => {
+      await chat.send("Compare");
+    });
+    expect(vi.mocked(chatWithPaper).mock.calls[0][0].noteIds).toEqual(["b"]);
+    act(() => chat.unpinNote("b"));
+    await act(async () => {
+      await chat.send("Again");
+    });
+    expect(vi.mocked(chatWithPaper).mock.calls[1][0].noteIds).toBeUndefined();
+  });
   it("sends unsaved context and follows up with completed messages", async () => {
     vi.mocked(chatWithPaper).mockResolvedValue({
       text: "Summary",

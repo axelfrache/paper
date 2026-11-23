@@ -14,6 +14,7 @@ type ChatContext struct {
 type ChatRequest struct {
 	Scope     string        `json:"scope"`
 	NoteID    string        `json:"noteId"`
+	NoteIDs   []string      `json:"noteIds,omitempty"`
 	Draft     *ChatContext  `json:"draft,omitempty"`
 	Selection string        `json:"selection,omitempty"`
 	Action    AIAction      `json:"action,omitempty"`

@@ -20,10 +20,14 @@ import {
   applicationProblem,
   chatActions,
   chatTags,
+  MAX_CHAT_NOTES,
+  mentionMatches,
+  mentionQuery,
+  stripMention,
   type ChatTurn,
 } from "../lib/paperChat";
 import type { PaperChat } from "../lib/usePaperChat";
-import type { Note } from "../types/note";
+import type { AIAction, Note } from "../types/note";
 
 type Props = {
   chat: PaperChat;
@@ -32,6 +36,8 @@ type Props = {
   theme: "light" | "dark";
   onApply: (turn: ChatTurn) => void;
   onOpenNote: (id: string) => void;
+  /** Runs an editing action on the open note (used from the "My notes" scope). */
+  onAction: (action: AIAction) => void;
 };
 
 export function AssistantPanel({
@@ -41,6 +47,7 @@ export function AssistantPanel({
   theme,
   onApply,
   onOpenNote,
+  onAction,
 }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -111,9 +118,27 @@ export function AssistantPanel({
       setCopyStatus("Could not copy. Select the response to copy it manually.");
     }
   }
+  const isAll = thread.context.scope === "all";
+  const pinnedIds = thread.context.noteIds ?? [];
+  const pinnedNotes = pinnedIds
+    .map((id) => notes.find((item) => item.id === id))
+    .filter((item): item is Note => !!item);
+  const mention = mentionQuery(thread.draft);
+  const mentionOptions =
+    mention === undefined || pinnedIds.length >= MAX_CHAT_NOTES
+      ? []
+      : mentionMatches(notes, mention, [
+          ...pinnedIds,
+          ...(thread.context.noteId ? [thread.context.noteId] : []),
+        ]);
+  function pickMention(id: string) {
+    chat.pinNote(id);
+    chat.setDraft(stripMention(thread.draft));
+    composerRef.current?.focus();
+  }
   const slashQuery = /^\/(\S*)$/.exec(thread.draft.trim())?.[1]?.toLowerCase();
   const slashMatches =
-    slashQuery === undefined || missing || thread.context.scope === "all"
+    slashQuery === undefined || missing || (isAll && !note)
       ? []
       : chatActions.filter(
           (item) =>
@@ -134,11 +159,13 @@ export function AssistantPanel({
   }, [thread.draft, chat.open]);
   function runSlash(item: (typeof chatActions)[number]) {
     chat.setDraft("");
-    void chat.send(item.prompt, item.action);
+    if (isAll) onAction(item.action);
+    else void chat.send(item.prompt, item.action);
   }
   function submit() {
     if (chat.busy || missing) return;
     if (slashMatches.length) return runSlash(slashMatches[0]);
+    if (mentionOptions.length) return pickMention(mentionOptions[0].id);
     if (thread.draft.trim()) void chat.send(thread.draft);
   }
   if (!chat.open) return null;
@@ -268,14 +295,18 @@ export function AssistantPanel({
                   ? "Ask a question. Consulted notes appear with the answer."
                   : "Ask a question, or start from an action."}
             </p>
-            {thread.context.scope !== "all" && (
+            {(!isAll || note) && (
               <ul className="assistant-commands">
                 {chatActions.map((item) => (
                   <li key={item.action}>
                     <button
                       type="button"
                       disabled={missing}
-                      onClick={() => void chat.send(item.prompt, item.action)}
+                      onClick={() =>
+                        isAll
+                          ? onAction(item.action)
+                          : void chat.send(item.prompt, item.action)
+                      }
                     >
                       <span>{item.label}</span>
                       <code>/{item.slug}</code>
@@ -420,6 +451,23 @@ export function AssistantPanel({
             ))}
           </ul>
         )}
+        {mentionOptions.length > 0 && (
+          <ul className="assistant-slash" role="listbox" aria-label="Notes">
+            {mentionOptions.map((item) => (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected="false"
+                  onClick={() => pickMention(item.id)}
+                >
+                  <span>{item.title || "Untitled"}</span>
+                  <code>@</code>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         <div className="assistant-field">
           <div className="assistant-chips">
             <span className="assistant-chip">
@@ -433,6 +481,33 @@ export function AssistantPanel({
               <span className="assistant-chip accent">
                 <TextSelect size={12} /> Selected passage
               </span>
+            )}
+            {pinnedNotes.map((item) => (
+              <span className="assistant-chip" key={item.id}>
+                <FileText size={12} />
+                {item.title || "Untitled"}
+                <button
+                  type="button"
+                  aria-label={`Remove ${item.title || "Untitled"}`}
+                  onClick={() => chat.unpinNote(item.id)}
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            ))}
+            {pinnedIds.length < MAX_CHAT_NOTES && (
+              <button
+                type="button"
+                className="assistant-chip assistant-chip-add"
+                onClick={() => {
+                  chat.setDraft(
+                    thread.draft + (/\s$|^$/.test(thread.draft) ? "@" : " @"),
+                  );
+                  composerRef.current?.focus();
+                }}
+              >
+                + @note
+              </button>
             )}
             {thread.action && (
               <span className="assistant-chip accent">
@@ -472,7 +547,7 @@ export function AssistantPanel({
           />
           <div className="assistant-composer-actions">
             <span>
-              <b>/</b> actions · <b>Shift+Enter</b> new line
+              <b>/</b> actions · <b>@</b> notes
             </span>
             {chat.busy ? (
               <button

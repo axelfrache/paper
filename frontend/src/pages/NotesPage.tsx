@@ -725,7 +725,8 @@ export function NotesPage({
     [activeNote, patchActive],
   );
 
-  const assistantContext = useCallback((): ChatContext => {
+  const assistantContext = useCallback(
+    (defaultScope: "all" | "note" = "note"): ChatContext => {
     if (!activeNote) return { scope: "all" };
     const range = getSelectionRange(
       document.querySelector<HTMLDivElement>(".markdown-editor"),
@@ -737,12 +738,15 @@ export function NotesPage({
         noteId: activeNote.id,
         selection: { range, text, content: activeNote.content },
       };
+    if (defaultScope === "all") return { scope: "all" };
     return { scope: "note", noteId: activeNote.id };
-  }, [activeNote]);
+  },
+    [activeNote],
+  );
 
   const openAssistant = useCallback(() => {
     if (!aiEnabled) return;
-    chat.show(assistantContext());
+    chat.show(assistantContext("all"));
     setMobilePane("editor");
   }, [aiEnabled, chat.show, assistantContext]);
 
@@ -1130,6 +1134,7 @@ export function NotesPage({
             theme={theme}
             onApply={applyChatResult}
             onOpenNote={openNoteById}
+            onAction={runAI}
           />
         )}
       </div>

@@ -9,6 +9,9 @@ import (
 	"github.com/axelfrache/paper/backend/internal/core/domain"
 )
 
+// maxChatNotes caps how many notes a single chat request can reference.
+const maxChatNotes = 5
+
 func (s *Note) Chat(ctx context.Context, req domain.ChatRequest) (domain.ChatAnswer, error) {
 	user, err := domain.RequireUser(ctx)
 	if err != nil {
@@ -53,6 +56,31 @@ func (s *Note) Chat(ctx context.Context, req domain.ChatRequest) (domain.ChatAns
 	var contexts []domain.ChatContext
 	sources := []string{}
 	var diagrams []string
+	// pinnedNotes loads the notes the user explicitly referenced (@mentions),
+	// skipping duplicates and anything in `skip`. Ownership is enforced by GetByID.
+	pinnedNotes := func(skip map[string]bool) ([]domain.Note, error) {
+		var pinned []domain.Note
+		for _, id := range req.NoteIDs {
+			if id == "" || skip[id] {
+				continue
+			}
+			skip[id] = true
+			if len(pinned) == maxChatNotes {
+				return nil, domain.NewInvalidError("Reference at most %d notes.", maxChatNotes)
+			}
+			note, err := s.repo.GetByID(ctx, user.ID, id)
+			if err != nil {
+				return nil, err
+			}
+			pinned = append(pinned, note)
+		}
+		return pinned, nil
+	}
+	addReference := func(note domain.Note) {
+		content, _ := maskDiagramMarkers(note.Content)
+		contexts = append(contexts, domain.ChatContext{Title: chatExcerpt(note.Title, 500), Content: chatExcerpt(content, 8000), Tags: note.Tags})
+		sources = append(sources, note.ID)
+	}
 	switch req.Scope {
 	case "note", "selection":
 		if req.NoteID == "" {
@@ -78,6 +106,13 @@ func (s *Note) Chat(ctx context.Context, req domain.ChatRequest) (domain.ChatAns
 		current.Content, diagrams = maskDiagramMarkers(current.Content)
 		contexts = append(contexts, current)
 		sources = append(sources, note.ID)
+		extra, err := pinnedNotes(map[string]bool{note.ID: true})
+		if err != nil {
+			return domain.ChatAnswer{}, err
+		}
+		for _, reference := range extra {
+			addReference(reference)
+		}
 	case "all":
 		if req.Action != "" {
 			return invalid("Choose a note to use an editing action.")
@@ -92,14 +127,21 @@ func (s *Note) Chat(ctx context.Context, req domain.ChatRequest) (domain.ChatAns
 				queries = append(queries, message.Content)
 			}
 		}
-		relevant := rankNotes(strings.Join(queries, " "), notes)
-		if len(relevant) > 5 {
-			relevant = relevant[:5]
+		seen := map[string]bool{}
+		pinned, err := pinnedNotes(seen)
+		if err != nil {
+			return domain.ChatAnswer{}, err
 		}
-		for _, note := range relevant {
-			content, _ := maskDiagramMarkers(note.Content)
-			contexts = append(contexts, domain.ChatContext{Title: chatExcerpt(note.Title, 500), Content: chatExcerpt(content, 8000), Tags: note.Tags})
-			sources = append(sources, note.ID)
+		for _, note := range pinned {
+			addReference(note)
+		}
+		for _, note := range rankNotes(strings.Join(queries, " "), notes) {
+			if len(contexts) >= maxChatNotes {
+				break
+			}
+			if !seen[note.ID] {
+				addReference(note)
+			}
 		}
 	default:
 		return invalid("Choose this note, a selection, or all notes as context.")

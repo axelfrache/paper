@@ -5275,3 +5275,12 @@ span.account-avatar-lg {
     min-height: 44px;
   }
 }
+.assistant-chip.assistant-chip-add {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.assistant-chip.assistant-chip-add:hover {
+  color: var(--text);
+}

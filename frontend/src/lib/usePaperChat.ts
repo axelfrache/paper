@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { chatWithPaper } from "./api";
-import { chatHistory, type ChatContext, type ChatTurn } from "./paperChat";
+import {
+  chatHistory,
+  MAX_CHAT_NOTES,
+  type ChatContext,
+  type ChatTurn,
+} from "./paperChat";
 import type { AIAction, Note } from "../types/note";
 
 type Thread = {
@@ -65,7 +70,13 @@ export function usePaperChat(notes: Note[]) {
         threads: {
           ...s.threads,
           [key]: s.threads[key]
-            ? { ...s.threads[key], context }
+            ? {
+                ...s.threads[key],
+                context: {
+                  ...context,
+                  noteIds: context.noteIds ?? s.threads[key].context.noteIds,
+                },
+              }
             : { context, turns: [], draft: "" },
         },
       }));
@@ -139,6 +150,9 @@ export function usePaperChat(notes: Note[]) {
           {
             scope: thread.context.scope,
             noteId: note?.id,
+            noteIds: thread.context.noteIds?.length
+              ? thread.context.noteIds
+              : undefined,
             draft: snapshot && {
               title: snapshot.title,
               content: selection?.text ?? snapshot.content,
@@ -202,6 +216,20 @@ export function usePaperChat(notes: Note[]) {
     send,
     cancel,
     close: () => update((s) => ({ ...s, open: false })),
+    pinNote: (id: string) =>
+      updateThread(latest.current.key, (t) => {
+        const ids = t.context.noteIds ?? [];
+        if (ids.includes(id) || ids.length >= MAX_CHAT_NOTES) return t;
+        return { ...t, context: { ...t.context, noteIds: [...ids, id] } };
+      }),
+    unpinNote: (id: string) =>
+      updateThread(latest.current.key, (t) => ({
+        ...t,
+        context: {
+          ...t.context,
+          noteIds: (t.context.noteIds ?? []).filter((item) => item !== id),
+        },
+      })),
     setDraft: (draft: string) =>
       updateThread(latest.current.key, (t) => ({ ...t, draft })),
     clearAction: () =>
