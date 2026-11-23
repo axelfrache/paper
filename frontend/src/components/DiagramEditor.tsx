@@ -1,3 +1,5 @@
+import { useBackLayer } from "../lib/useBackLayer";
+import { registerDraftGuard } from "../lib/pwa";
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Box, ChevronDown, Copy, Download, Grid3x3, Hand, Maximize, Minus, MousePointer2, Plus, Square, Trash2, Type, X, Sparkles, Wand2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -51,6 +53,7 @@ type DiagramEditorProps = {
   diagram: Diagram;
   onChange: (diagram: Diagram) => void;
   onClose: () => void;
+  onSave?: () => Promise<void>;
   title?: string;
   aiEnabled?: boolean;
 };
@@ -129,7 +132,19 @@ const minZoom = 0.25;
 const maxZoom = 3;
 const defaultViewport: EditorViewport = { x: -120, y: -120, width: 1040, height: 680 };
 
-export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = true }: DiagramEditorProps) {
+export function DiagramEditor({ diagram, onChange, onClose, onSave, title, aiEnabled = true }: DiagramEditorProps) {
+  const [saveError, setSaveError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const dirtyRef = useRef(false);
+  const closingRef = useRef(false);
+  const pointerAbortRef = useRef(new AbortController());
+  useEffect(() => {
+    pointerAbortRef.current = new AbortController();
+    return () => pointerAbortRef.current.abort();
+  }, []);
+  const finalizeRef = useRef<() => void>(() => {});
+  useBackLayer(true, () => { void handleClose(); return false; });
+  useEffect(() => registerDraftGuard(async () => finalizeRef.current(), () => dirtyRef.current, 1), []);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const aiDialogRef = useRef<HTMLDialogElement | null>(null);
   const labelInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -148,6 +163,7 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
   const pinching = useRef(false);
 
   const [liveDiagram, setLiveDiagram] = useState(diagram);
+  const titleDraftRef = useRef<string | null>(null);
   const [titleDraft, setTitleDraft] = useState<string | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const cancelTitleEditRef = useRef(false);
@@ -379,17 +395,50 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
     }
   };
 
-  const handleClose = () => {
+  const finalize = () => {
     flushPendingNudge();
-    onClose();
+    if (titleDraftRef.current !== null && !cancelTitleEditRef.current) {
+      const title = titleDraftRef.current.replace(/\s+/g, " ").trim() || undefined;
+      if (title !== diagramRef.current.title) {
+        diagramRef.current = { ...diagramRef.current, title };
+        setLiveDiagram(diagramRef.current);
+        setTitleDraft(null);
+        dirtyRef.current = true;
+      }
+    }
+    if (dirtyRef.current && !commitDiagram()) throw new Error("Could not update the diagram in the note. Your edits are still open.");
+  };
+  finalizeRef.current = finalize;
+  useEffect(() => () => {
+    try { finalizeRef.current(); } catch {}
+  }, []);
+
+  const handleClose = async () => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setSaving(true);
+    setSaveError("");
+    try {
+      do {
+        finalize();
+        if (onSave) await onSave();
+      } while (dirtyRef.current);
+      onClose();
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Could not save. Please retry.");
+    } finally {
+      closingRef.current = false;
+      setSaving(false);
+    }
   };
 
   const patchDiagram = (updater: (current: Diagram) => Diagram, options?: { commit?: boolean }) => {
     const next = updater(diagramRef.current);
     diagramRef.current = next;
+    dirtyRef.current = true;
     setLiveDiagram(next);
     if (options?.commit ?? true) {
-      onChange(next);
+      commitDiagram();
     }
   };
 
@@ -408,7 +457,16 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
   };
 
   const commitDiagram = () => {
-    onChange(diagramRef.current);
+    try {
+      onChange(diagramRef.current);
+      dirtyRef.current = titleDraftRef.current !== null &&
+        (titleDraftRef.current.replace(/\s+/g, " ").trim() || undefined) !== diagramRef.current.title;
+      setSaveError("");
+      return true;
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Could not update the note.");
+      return false;
+    }
   };
 
   const setViewport = (next: EditorViewport) => {
@@ -601,9 +659,9 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
         commitDiagram();
       };
 
-      window.addEventListener("pointermove", move);
-      window.addEventListener("pointerup", up);
-      window.addEventListener("pointercancel", up);
+      window.addEventListener("pointermove", move, { signal: pointerAbortRef.current.signal });
+      window.addEventListener("pointerup", up, { signal: pointerAbortRef.current.signal });
+      window.addEventListener("pointercancel", up, { signal: pointerAbortRef.current.signal });
     };
 
     if (event.pointerType === "touch") {
@@ -658,9 +716,9 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
         setSelectedIds((current) => (current.includes(nodeId) ? current.filter((id) => id !== nodeId) : [...current, nodeId]));
       }, 450);
 
-      window.addEventListener("pointermove", watchMove);
-      window.addEventListener("pointerup", watchUp);
-      window.addEventListener("pointercancel", watchCancel);
+      window.addEventListener("pointermove", watchMove, { signal: pointerAbortRef.current.signal });
+      window.addEventListener("pointerup", watchUp, { signal: pointerAbortRef.current.signal });
+      window.addEventListener("pointercancel", watchCancel, { signal: pointerAbortRef.current.signal });
       return;
     }
 
@@ -707,9 +765,9 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
       commitDiagram();
     };
 
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", up);
+    window.addEventListener("pointermove", move, { signal: pointerAbortRef.current.signal });
+    window.addEventListener("pointerup", up, { signal: pointerAbortRef.current.signal });
+    window.addEventListener("pointercancel", up, { signal: pointerAbortRef.current.signal });
   };
 
   const handleGroupResizePointerDown = (
@@ -754,9 +812,9 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
       commitDiagram();
     };
 
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", up);
+    window.addEventListener("pointermove", move, { signal: pointerAbortRef.current.signal });
+    window.addEventListener("pointerup", up, { signal: pointerAbortRef.current.signal });
+    window.addEventListener("pointercancel", up, { signal: pointerAbortRef.current.signal });
   };
 
   const handleEdgePointerDown = (event: React.PointerEvent<SVGGElement>, edgeId: string) => {
@@ -807,9 +865,9 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
       if (moved) patchDiagram((current) => ({ ...current, edges: current.edges.map((edge) => edge.id === edgeId ? { ...edge, waypoints: original } : edge) }), { commit: false });
     };
     waypointDragCleanupRef.current = cleanup;
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("pointermove", move, { signal: pointerAbortRef.current.signal });
+    window.addEventListener("pointerup", up, { signal: pointerAbortRef.current.signal });
+    window.addEventListener("pointercancel", cancel, { signal: pointerAbortRef.current.signal });
   };
 
   const handleEdgeLabelPointerDown = (event: React.PointerEvent<SVGElement>, edgeId: string) => {
@@ -888,9 +946,9 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
       commitDiagram();
     };
 
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", up);
+    window.addEventListener("pointermove", move, { signal: pointerAbortRef.current.signal });
+    window.addEventListener("pointerup", up, { signal: pointerAbortRef.current.signal });
+    window.addEventListener("pointercancel", up, { signal: pointerAbortRef.current.signal });
   };
 
   const startSelectionBox = (event: PointerEvent) => {
@@ -939,9 +997,9 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
       setSelectionBox(null);
     };
 
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", up);
+    window.addEventListener("pointermove", move, { signal: pointerAbortRef.current.signal });
+    window.addEventListener("pointerup", up, { signal: pointerAbortRef.current.signal });
+    window.addEventListener("pointercancel", up, { signal: pointerAbortRef.current.signal });
   };
 
   const deleteSelected = () => {
@@ -1315,9 +1373,9 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
       }
     };
 
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", up);
+    window.addEventListener("pointermove", move, { signal: pointerAbortRef.current.signal });
+    window.addEventListener("pointerup", up, { signal: pointerAbortRef.current.signal });
+    window.addEventListener("pointercancel", up, { signal: pointerAbortRef.current.signal });
   };
 
   const zoomTo = (nextZoom: number) => {
@@ -1440,13 +1498,14 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
               maxLength={160}
               value={titleDraft ?? liveDiagram.title ?? ""}
               onFocus={() => { cancelTitleEditRef.current = false; setTitleDraft(diagramRef.current.title ?? ""); }}
-              onChange={(event) => setTitleDraft(event.target.value)}
+              onChange={(event) => { titleDraftRef.current = event.target.value; dirtyRef.current = true; setTitleDraft(event.target.value); }}
               onBlur={(event) => {
                 const nextTitle = event.target.value.replace(/\s+/g, " ").trim() || undefined;
                 if (!cancelTitleEditRef.current && nextTitle !== diagramRef.current.title) {
                   patchDiagram((current) => ({ ...current, title: nextTitle }));
                 }
                 cancelTitleEditRef.current = false;
+                titleDraftRef.current = null;
                 setTitleDraft(null);
               }}
               onKeyDown={(event) => {
@@ -1461,6 +1520,8 @@ export function DiagramEditor({ diagram, onChange, onClose, title, aiEnabled = t
             />
           </div>
         </div>
+        {saving ? <span role="status">Saving…</span> : null}
+        {saveError ? <span role="alert">{saveError} <button type="button" onClick={() => void handleClose()}>Retry save</button></span> : null}
         <div className="diagram-editor-actions">
           {aiEnabled ? (
             <button className="topbar-button" onClick={openAiDialog}>

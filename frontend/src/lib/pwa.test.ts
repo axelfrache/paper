@@ -55,3 +55,20 @@ it("keeps the mutation guard until response processing finishes", async () => {
   await request;
   expect(hasPendingChanges()).toBe(false);
 });
+
+it("flushes nested editors before the server queue regardless of registration order", async () => {
+  const calls: string[] = [];
+  let dirty = true;
+  const removeQueue = registerDraftGuard(async () => { calls.push("queue"); }, () => false);
+  const removeEditor = registerDraftGuard(async () => { calls.push("editor"); dirty = false; }, () => dirty, 1);
+  try {
+    expect(hasPendingChanges()).toBe(true);
+    await prepareNavigation();
+    expect(calls).toEqual(["editor", "queue"]);
+    expect(hasPendingChanges()).toBe(false);
+    removeEditor();
+    calls.length = 0;
+    await prepareNavigation();
+    expect(calls).toEqual(["queue"]);
+  } finally { removeEditor(); removeQueue(); }
+});

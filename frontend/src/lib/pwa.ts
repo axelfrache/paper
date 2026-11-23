@@ -1,24 +1,21 @@
-let flushDrafts: (() => Promise<void>) | undefined;
-let dirtyDrafts: (() => boolean) | undefined;
+const draftGuards = new Set<{ flush: () => Promise<void>; dirty: () => boolean; priority: number }>();
 let mutations = 0;
 export function registerDraftGuard(
   flush: () => Promise<void>,
   dirty: () => boolean,
+  priority = 0,
 ) {
-  flushDrafts = flush;
-  dirtyDrafts = dirty;
-  return () => {
-    if (flushDrafts === flush) {
-      flushDrafts = undefined;
-      dirtyDrafts = undefined;
-    }
-  };
+  const guard = { flush, dirty, priority };
+  draftGuards.add(guard);
+  return () => { draftGuards.delete(guard); };
 }
 export function hasPendingChanges() {
-  return mutations > 0 || Boolean(dirtyDrafts?.());
+  return mutations > 0 || [...draftGuards].some((guard) => guard.dirty());
 }
 export async function prepareNavigation() {
-  await flushDrafts?.();
+  for (const guard of [...draftGuards].sort((a, b) => b.priority - a.priority)) {
+    await guard.flush();
+  }
   if (hasPendingChanges())
     throw new Error("Please wait for your changes to finish saving.");
 }

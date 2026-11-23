@@ -1,6 +1,7 @@
 import { act, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
+import { hasPendingChanges, prepareNavigation } from "../lib/pwa";
 import { DiagramEditor } from "./DiagramEditor";
 import { createDiagramGroup, defaultGroupPadding, layoutDiagram, layoutToDiagramPoint } from "../lib/diagram";
 import type { Diagram, DiagramMode } from "../lib/diagram";
@@ -91,10 +92,12 @@ beforeEach(() => {
   vi.useFakeTimers();
 });
 
-afterEach(() => {
-  vi.useRealTimers();
-  act(() => {
+afterEach(async () => {
+  await act(async () => {
     root?.unmount();
+    if (vi.isFakeTimers()) await vi.runOnlyPendingTimersAsync();
+    vi.useRealTimers();
+    await new Promise((resolve) => setTimeout(resolve, 30));
   });
   root = null;
   vi.restoreAllMocks();
@@ -581,7 +584,7 @@ describe("node groups", () => {
 });
 
 describe("closing while a keyboard nudge is still debouncing", () => {
-  function mountWithClose(initial: Diagram) {
+  function mountWithClose(initial: Diagram, onSave?: () => Promise<void>) {
     const host = document.createElement("div");
     document.body.replaceChildren(host);
     root = createRoot(host);
@@ -589,6 +592,8 @@ describe("closing while a keyboard nudge is still debouncing", () => {
     let closed = false;
     function LocalHarness() {
       const [diagram, setDiagram] = useState(initial);
+      const [open, setOpen] = useState(true);
+      if (!open) return null;
       return (
         <DiagramEditor
           diagram={diagram}
@@ -596,8 +601,10 @@ describe("closing while a keyboard nudge is still debouncing", () => {
             setDiagram(next);
             latest = next;
           }}
+          onSave={onSave}
           onClose={() => {
             closed = true;
+            setOpen(false);
           }}
         />
       );
@@ -622,6 +629,87 @@ describe("closing while a keyboard nudge is still debouncing", () => {
       window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
     });
   }
+
+  function editInspector(host: HTMLElement, label: string) {
+    selectNode(host, 1);
+    const input = host.querySelector<HTMLTextAreaElement>('[aria-label="Node label"]')!;
+    act(() => {
+      input.focus();
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, label);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    return input;
+  }
+
+  it("commits an inspector label before Escape unmounts the editor", () => {
+    const editor = mountWithClose(rowOfThree());
+    const input = editInspector(editor.host, "Updated label");
+    expect(editor.value().nodes[1].label).toBe("middle");
+    expect(hasPendingChanges()).toBe(true);
+    act(() => { input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    expect(editor.isClosed()).toBe(true);
+    expect(editor.host.querySelector(".diagram-canvas")).toBeNull();
+    expect(editor.value().nodes[1].label).toBe("Updated label");
+  });
+
+  it("flushes local drafts before a guarded navigation", async () => {
+    const editor = mountWithClose(rowOfThree());
+    editInspector(editor.host, "Navigation draft");
+    await act(async () => { await prepareNavigation(); });
+    expect(editor.value().nodes[1].label).toBe("Navigation draft");
+    expect(hasPendingChanges()).toBe(false);
+  });
+
+  it("keeps the editor open until the server acknowledges the save", async () => {
+    let finish!: () => void;
+    const save = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const editor = mountWithClose(rowOfThree(), save);
+    const input = editInspector(editor.host, "Saved label");
+    act(() => { input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    expect(save).toHaveBeenCalledOnce();
+    expect(editor.isClosed()).toBe(false);
+    await act(async () => { finish(); });
+    expect(editor.isClosed()).toBe(true);
+    expect(editor.value().nodes[1].label).toBe("Saved label");
+  });
+
+  it("retains edits after a failed save and allows retrying", async () => {
+    const save = vi.fn().mockRejectedValueOnce(new Error("Network unavailable")).mockResolvedValue(undefined);
+    const editor = mountWithClose(rowOfThree(), save);
+    const input = editInspector(editor.host, "Retained label");
+    await act(async () => { input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    expect(editor.isClosed()).toBe(false);
+    expect(editor.host.querySelector('[role="alert"]')?.textContent).toContain("Network unavailable");
+    await act(async () => { editor.host.querySelector<HTMLButtonElement>('[role="alert"] button')!.click(); });
+    expect(editor.isClosed()).toBe(true);
+    expect(editor.value().nodes[1].label).toBe("Retained label");
+  });
+
+  it("commits a local label when the editor is removed by a note switch", () => {
+    const editor = mountWithClose(rowOfThree());
+    editInspector(editor.host, "Previous note draft");
+    act(() => { root?.unmount(); root = null; });
+    expect(editor.value().nodes[1].label).toBe("Previous note draft");
+  });
+
+  it("commits the title on browser back without relying on blur", async () => {
+    vi.useRealTimers();
+    await act(async () => { window.dispatchEvent(new PopStateEvent("popstate")); });
+    const editor = mountWithClose(rowOfThree());
+    await act(async () => {});
+    const input = editor.host.querySelector<HTMLInputElement>('[aria-label="Diagram title"]')!;
+    act(() => {
+      input.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Recovered title");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      window.history.replaceState({}, "");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect(editor.isClosed()).toBe(true);
+    expect(editor.value().title).toBe("Recovered title");
+  });
 
   it("flushes an in-flight nudge when the close button is clicked before the debounce fires", () => {
     const editor = mountWithClose(rowOfThree("iso"));

@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Note } from "../types/note";
-import { createDefaultDiagram, serializeDiagramMarker } from "../lib/diagram";
+import { createDefaultDiagram, serializeDiagramMarker, parseDiagramMarker } from "../lib/diagram";
 import { getSelectionRange, placeCaret } from "../lib/markdown/dom";
 import { NoteEditor } from "./NoteEditor";
 
@@ -170,7 +170,7 @@ describe("NoteEditor AI integration", () => {
   });
 });
 
-function render(target: Note, _unused: null, onBackToNotes = vi.fn()) {
+function render(target: Note, _unused: null, onBackToNotes = vi.fn(), onContentChange = vi.fn()) {
   root?.render(
     <NoteEditor
       note={target}
@@ -179,7 +179,7 @@ function render(target: Note, _unused: null, onBackToNotes = vi.fn()) {
       titleFocusRequest={null}
       contentFocusRequest={null}
       onTitleChange={vi.fn()}
-      onContentChange={vi.fn()}
+      onContentChange={onContentChange}
       onUploadImage={vi.fn()}
       onTagDraftChange={vi.fn()}
       onAddTag={vi.fn()}
@@ -237,3 +237,64 @@ function mount(_unused: null, aiEnabled = true) {
   });
   return { host, onOpenAssistant, onBackToNotes };
 }
+
+describe("diagram edits in the note", () => {
+  function setup() {
+    const diagram = createDefaultDiagram("flat");
+    const marker = serializeDiagramMarker(diagram);
+    let current = { ...note, content: marker };
+    const host = document.createElement("div");
+    document.body.replaceChildren(host);
+    root = createRoot(host);
+    const changed = vi.fn((content: string) => {
+      current = { ...current, content };
+      render(current, null, undefined, changed);
+    });
+    act(() => render(current, null, undefined, changed));
+    act(() => host.querySelector('[data-diagram-edit-line]')!.dispatchEvent(new MouseEvent("pointerdown", { button: 0, bubbles: true })));
+    const svg = host.querySelector<SVGSVGElement>("svg.diagram-canvas")!;
+    vi.spyOn(svg, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 400, 300));
+    act(() => {
+      host.querySelector(".diagram-node")!.dispatchEvent(new MouseEvent("pointerdown", { button: 0, bubbles: true }));
+      window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+    });
+    const input = host.querySelector<HTMLTextAreaElement>('[aria-label="Node label"]')!;
+    act(() => {
+      input.focus();
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, "Changed in diagram");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    return {
+      host, marker, changed,
+      content: () => current.content,
+      changeContent: (content: string) => act(() => { current = { ...current, content }; render(current, null, undefined, changed); }),
+      close: async () => act(async () => { input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); }),
+    };
+  }
+
+  it("saves a label into the marker before unmounting on Escape", async () => {
+    const editor = setup();
+    await editor.close();
+    expect(editor.host.querySelector(".diagram-canvas")).toBeNull();
+    expect(parseDiagramMarker(editor.content())?.nodes[0].label).toBe("Changed in diagram");
+  });
+
+  it("finds the original block if text was inserted above it", async () => {
+    const editor = setup();
+    editor.changeContent("New paragraph\n" + editor.marker);
+    await editor.close();
+    const lines = editor.content().split("\n");
+    expect(lines[0]).toBe("New paragraph");
+    expect(parseDiagramMarker(lines[1])?.nodes[0].label).toBe("Changed in diagram");
+  });
+
+  it("keeps the editor open rather than overwriting a replacement block", async () => {
+    const editor = setup();
+    const other = serializeDiagramMarker(createDefaultDiagram("iso"));
+    editor.changeContent(other);
+    await editor.close();
+    expect(editor.host.querySelector(".diagram-canvas")).not.toBeNull();
+    expect(editor.host.querySelector('[role="alert"]')).not.toBeNull();
+    expect(editor.content()).toBe(other);
+  });
+});

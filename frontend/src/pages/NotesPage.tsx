@@ -342,20 +342,24 @@ export function NotesPage({
     deletedHistoryRef.current.redo = [];
   }, []);
 
+  const patchNote = useCallback(
+    (id: string, fields: Partial<Note>) => {
+      const current = notesRef.current.find((note) => note.id === id);
+      if (!current) return;
+      const next = { ...current, ...fields, updatedAt: new Date().toISOString() };
+      if (sameDraft(toDraft(current), toDraft(next))) return;
+      pushUndo(current, next);
+      notesRef.current = notesRef.current.map((note) => note.id === id ? next : note);
+      setNotes(notesRef.current);
+      persist(next);
+    },
+    [persist, pushUndo],
+  );
   const patchActive = useCallback(
     (fields: Partial<Note>) => {
-      if (!activeNote) {
-        return;
-      }
-      const nextNote = { ...activeNote, ...fields, updatedAt: new Date().toISOString() };
-      if (sameDraft(toDraft(activeNote), toDraft(nextNote))) {
-        return;
-      }
-      pushUndo(activeNote, nextNote);
-      setNotes((current) => current.map((note) => (note.id === nextNote.id ? nextNote : note)));
-      persist(nextNote);
+      if (activeNote) patchNote(activeNote.id, fields);
     },
-    [activeNote, persist, pushUndo],
+    [activeNote, patchNote],
   );
 
   const restoreActiveDraft = useCallback(
@@ -1039,6 +1043,7 @@ export function NotesPage({
 
       <div className="editor-workspace">
         <NoteEditor
+          key={activeNote?.id ?? "empty"}
           listHidden={listHidden}
           onToggleList={() => setListHidden(!listHidden)}
           folderControl={
@@ -1079,7 +1084,10 @@ export function NotesPage({
           titleFocusRequest={titleFocusRequest}
           contentFocusRequest={contentFocusRequest}
           onTitleChange={(title) => patchActive({ title })}
-          onContentChange={(content) => patchActive({ content })}
+          onContentChange={(content) => {
+            if (activeNote) patchNote(activeNote.id, { content });
+          }}
+          onSave={() => saveQueue.flush()}
           onUploadImage={async (file) => {
             if (!activeNote) {
               throw new Error("No note selected");

@@ -1,5 +1,4 @@
 import { ActionMenu } from "../components/ActionMenu";
-import { useBackLayer } from "../lib/useBackLayer";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -21,6 +20,7 @@ import { MarkdownEditor } from "../components/MarkdownEditor";
 import { BotAvatar } from "../components/BotAvatar";
 import {
   replaceDiagramMarkerAtLine,
+  serializeDiagramMarker,
   stripDiagramMarkers,
 } from "../lib/diagram";
 import type { AIAction, Note, NoteImage } from "../types/note";
@@ -40,6 +40,7 @@ type NoteEditorProps = {
   contentFocusRequest: { noteId: string; token: number } | null;
   onTitleChange: (title: string) => void;
   onContentChange: (content: string) => void;
+  onSave?: () => Promise<void>;
   onUploadImage: (file: File) => Promise<NoteImage>;
   notes?: Note[];
   onOpenNote?: (noteId: string) => void;
@@ -95,6 +96,7 @@ export function NoteEditor({
   contentFocusRequest,
   onTitleChange,
   onContentChange,
+  onSave,
   onUploadImage,
   notes = [],
   onOpenNote,
@@ -122,7 +124,7 @@ export function NoteEditor({
   const latestContentRef = useRef(note?.content ?? "");
   const [contentFocusTarget, setContentFocusTarget] = useState<ContentFocusTarget | null>(null);
   const [diagramEdit, setDiagramEdit] = useState<DiagramEditTarget | null>(null);
-  useBackLayer(diagramEdit !== null, () => setDiagramEdit(null));
+  const diagramTargetRef = useRef<DiagramEditTarget | null>(null);
   const [diagramDescribeRequest, setDiagramDescribeRequest] = useState<{
     key: string;
     prompt: string;
@@ -195,7 +197,8 @@ export function NoteEditor({
     if (!note) {
       return;
     }
-    setDiagramEdit({ noteId: note.id, line, diagram });
+    diagramTargetRef.current = { noteId: note.id, line, diagram };
+    setDiagramEdit(diagramTargetRef.current);
   };
 
   const closeDiagram = () => {
@@ -207,13 +210,25 @@ export function NoteEditor({
   };
 
   const changeDiagram = (diagram: Diagram) => {
-    if (!diagramEdit) {
-      return;
+    const target = diagramTargetRef.current;
+    if (!target) return;
+    const content = latestContentRef.current;
+    const lines = content.split("\n");
+    const marker = serializeDiagramMarker(target.diagram);
+    let line = target.line;
+    if (lines[line]?.trim() !== marker) {
+      const matches = lines.flatMap((source, index) => source.trim() === marker ? [index] : []);
+      if (matches.length !== 1) {
+        throw new Error("The diagram changed in the note. Your edits are still open; restore its original block before retrying.");
+      }
+      line = matches[0];
     }
-    const nextContent = replaceDiagramMarkerAtLine(latestContentRef.current, diagramEdit.line, diagram);
-    latestContentRef.current = nextContent;
-    setDiagramEdit({ ...diagramEdit, diagram });
+    const nextContent = replaceDiagramMarkerAtLine(content, line, diagram);
     onContentChange(nextContent);
+    latestContentRef.current = nextContent;
+    const next = { ...target, line, diagram };
+    diagramTargetRef.current = next;
+    setDiagramEdit(next);
   };
 
   const assistantBubble = aiEnabled && !assistantOpen && (
@@ -401,6 +416,7 @@ export function NoteEditor({
           diagram={diagramEdit.diagram}
           onChange={changeDiagram}
           onClose={closeDiagram}
+          onSave={onSave}
           title={note.title}
           aiEnabled={aiEnabled}
         />
