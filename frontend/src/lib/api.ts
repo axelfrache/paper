@@ -1,6 +1,14 @@
 import { apiFetch, trackMutation } from "./pwa";
 import type { Folder, FolderDraft, NoteMove } from "../types/note";
-import type { AIAction, AICompletion, AISuggestion, AskAnswer, Note, NoteDraft, NoteImage } from "../types/note";
+import type {
+  AIAction,
+  AICompletion,
+  AISuggestion,
+  AskAnswer,
+  Note,
+  NoteDraft,
+  NoteImage,
+} from "../types/note";
 import type { AuthConfig, AuthUser } from "../types/auth";
 
 export class APIError extends Error {
@@ -76,7 +84,11 @@ export function loginWithPassword(email: string, password: string) {
   });
 }
 
-export function registerWithPassword(email: string, name: string, password: string) {
+export function registerWithPassword(
+  email: string,
+  name: string,
+  password: string,
+) {
   return request<{ redirectTo: string }>("/api/auth/register", {
     method: "POST",
     body: JSON.stringify({ email, name, password }),
@@ -84,18 +96,27 @@ export function registerWithPassword(email: string, name: string, password: stri
 }
 
 export function logout() {
-  return request<{ redirectTo: string }>("/api/auth/logout", { method: "POST" });
+  return request<{ redirectTo: string }>("/api/auth/logout", {
+    method: "POST",
+  });
 }
 
 export function updateDisplayName(displayName: string) {
-  return request<AuthUser>("/api/profile", { method: "PATCH", body: JSON.stringify({ displayName }) });
+  return request<AuthUser>("/api/profile", {
+    method: "PATCH",
+    body: JSON.stringify({ displayName }),
+  });
 }
 
 export async function uploadAvatar(file: File) {
   return trackMutation("POST", async () => {
     const body = new FormData();
     body.append("file", file);
-    const response = await apiFetch("/api/profile/avatar", { method: "POST", body, credentials: "same-origin" });
+    const response = await apiFetch("/api/profile/avatar", {
+      method: "POST",
+      body,
+      credentials: "same-origin",
+    });
     if (!response.ok) {
       await throwForErrorResponse(response);
     }
@@ -169,11 +190,14 @@ export async function uploadNoteImage(noteId: string, file: File) {
   return trackMutation("POST", async () => {
     const body = new FormData();
     body.append("file", file);
-    const response = await apiFetch(`/api/notes/${encodeURIComponent(noteId)}/images`, {
-      method: "POST",
-      body,
-      credentials: "same-origin",
-    });
+    const response = await apiFetch(
+      `/api/notes/${encodeURIComponent(noteId)}/images`,
+      {
+        method: "POST",
+        body,
+        credentials: "same-origin",
+      },
+    );
     if (!response.ok) {
       await throwForErrorResponse(response);
     }
@@ -213,6 +237,17 @@ export function chatWithPaper(
       body: JSON.stringify(payload),
       signal,
     },
+    false,
+  );
+}
+
+export function titleChat(
+  payload: { question: string; answer: string },
+  signal?: AbortSignal,
+) {
+  return request<{ title: string }>(
+    "/api/ai/chat/title",
+    { method: "POST", body: JSON.stringify(payload), signal },
     false,
   );
 }

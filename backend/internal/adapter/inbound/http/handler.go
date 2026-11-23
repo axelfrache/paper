@@ -278,3 +278,17 @@ func (h *Handler) Chat(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	}
 	writeJSON(w, stdhttp.StatusOK, answer)
 }
+
+func (h *Handler) ChatTitle(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	var req domain.ChatTitleRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	title, err := h.service.ChatTitle(r.Context(), req)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, stdhttp.StatusOK, title)
+}

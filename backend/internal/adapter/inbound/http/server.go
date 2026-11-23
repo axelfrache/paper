@@ -55,6 +55,7 @@ func NewRouter(notes port.NoteService, images port.NoteImageService, auth port.A
 	mux.Handle("POST /api/notes/ask", ai(handler.AskNotes))
 	mux.Handle("POST /api/ai/generate", ai(handler.GenerateAI))
 	mux.Handle("POST /api/ai/chat", ai(handler.Chat))
+	mux.Handle("POST /api/ai/chat/title", ai(handler.ChatTitle))
 	mux.Handle("POST /api/search", requireAuth(auth, stdhttp.HandlerFunc(handler.SearchNotes)))
 	mux.Handle("/api", stdhttp.NotFoundHandler())
 	mux.Handle("/api/", stdhttp.NotFoundHandler())

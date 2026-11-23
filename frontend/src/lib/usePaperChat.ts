@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { chatWithPaper } from "./api";
+import { chatWithPaper, titleChat } from "./api";
 import { loadThreads, saveThreads } from "./chatStorage";
 import {
   chatHistory,
@@ -16,6 +16,8 @@ export type Thread = {
   ctxKey: string;
   context: ChatContext;
   turns: ChatTurn[];
+  /** Short name written by the assistant after the first answer. */
+  title?: string;
   action?: AIAction;
   draft: string;
   updatedAt: number;
@@ -54,6 +56,7 @@ export function chatHistoryList(threads: Record<string, Thread>) {
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }
 export function threadTitle(thread: Thread) {
+  if (thread.title) return thread.title;
   const question = thread.turns[0]?.question.trim().replace(/\s+/g, " ");
   if (!question) return "New conversation";
   return question.length > 40
@@ -235,6 +238,16 @@ export function usePaperChat(notes: Note[], userId?: string) {
           ),
         }));
         update((s) => ({ ...s, unread: s.unread || !s.open || s.key !== key }));
+        if (thread.turns.length === 0 && !thread.title) {
+          // Best effort: the question itself stays the title if this fails.
+          void Promise.resolve()
+            .then(() => titleChat({ question, answer: response.text }))
+            .then(({ title }) => {
+              if (!title || !latest.current.threads[key]) return;
+              updateThread(key, (t) => ({ ...t, title }));
+            })
+            .catch(() => {});
+        }
       } catch (error) {
         if (requests.current.get(key) !== controller) return;
         updateThread(key, (t) => ({

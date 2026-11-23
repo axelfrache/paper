@@ -529,20 +529,6 @@ export function AssistantPanel({
                 </button>
               </span>
             ))}
-            {pinnedIds.length < MAX_CHAT_NOTES && (
-              <button
-                type="button"
-                className="assistant-chip assistant-chip-add"
-                onClick={() => {
-                  chat.setDraft(
-                    thread.draft + (/\s$|^$/.test(thread.draft) ? "@" : " @"),
-                  );
-                  composerRef.current?.focus();
-                }}
-              >
-                + @note
-              </button>
-            )}
             {thread.action && (
               <span className="assistant-chip accent">
                 {chatActions.find((item) => item.action === thread.action)

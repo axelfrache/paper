@@ -1,10 +1,10 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { chatWithPaper } from "./api";
-import { usePaperChat, type PaperChat } from "./usePaperChat";
+import { chatWithPaper, titleChat } from "./api";
+import { threadTitle, usePaperChat, type PaperChat } from "./usePaperChat";
 import type { Note } from "../types/note";
-vi.mock("./api", () => ({ chatWithPaper: vi.fn() }));
+vi.mock("./api", () => ({ chatWithPaper: vi.fn(), titleChat: vi.fn() }));
 const note: Note = {
   id: "a",
   title: "Draft",
@@ -30,6 +30,8 @@ function Harness({
 beforeEach(() => {
   localStorage.clear();
   vi.mocked(chatWithPaper).mockReset();
+  vi.mocked(titleChat).mockReset();
+  vi.mocked(titleChat).mockRejectedValue(new Error("no title"));
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -38,6 +40,37 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
+});
+describe("Paper conversation titles", () => {
+  it("names a conversation after its first answer, once", async () => {
+    vi.mocked(chatWithPaper).mockResolvedValue({
+      text: "Answer",
+      sourceIds: [],
+    });
+    vi.mocked(titleChat).mockResolvedValue({ title: "Haute dispo" });
+    await act(async () => {
+      await chat.send("What is missing for HA?");
+    });
+    expect(titleChat).toHaveBeenCalledWith({
+      question: "What is missing for HA?",
+      answer: "Answer",
+    });
+    expect(threadTitle(chat.thread)).toBe("Haute dispo");
+    await act(async () => {
+      await chat.send("And storage?");
+    });
+    expect(titleChat).toHaveBeenCalledTimes(1);
+  });
+  it("falls back to the question when titling fails", async () => {
+    vi.mocked(chatWithPaper).mockResolvedValue({
+      text: "Answer",
+      sourceIds: [],
+    });
+    await act(async () => {
+      await chat.send("What is missing for HA?");
+    });
+    expect(threadTitle(chat.thread)).toBe("What is missing for HA?");
+  });
 });
 describe("Paper conversation persistence", () => {
   it("restores saved conversations for the same user only", async () => {

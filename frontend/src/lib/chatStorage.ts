@@ -110,6 +110,8 @@ export function loadThreads(userId: string): Thread[] {
         ctxKey: contextKey(context),
         context,
         turns,
+        title:
+          typeof item.title === "string" ? item.title.slice(0, 80) : undefined,
         draft: typeof item.draft === "string" ? item.draft : "",
         updatedAt: typeof item.updatedAt === "number" ? item.updatedAt : 0,
       });

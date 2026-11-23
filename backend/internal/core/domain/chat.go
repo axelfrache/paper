@@ -25,3 +25,12 @@ type ChatAnswer struct {
 	Text      string   `json:"text"`
 	SourceIDs []string `json:"sourceIds"`
 }
+
+type ChatTitleRequest struct {
+	Question string `json:"question"`
+	Answer   string `json:"answer"`
+}
+
+type ChatTitle struct {
+	Title string `json:"title"`
+}
