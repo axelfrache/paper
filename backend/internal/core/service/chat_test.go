@@ -185,3 +185,35 @@ func TestChatTitleIsCleanedAndValidated(t *testing.T) {
 		t.Fatalf("title not capped: %d", len([]rune(got)))
 	}
 }
+
+func TestChatAnswersNeverShowDiagramPlaceholders(t *testing.T) {
+	repo := memory.NewNoteRepository()
+	service := NewNote(repo, nil)
+	ctx := domain.ContextWithUser(context.Background(), domain.User{ID: "one"})
+	note, _ := service.CreateNote(ctx, domain.NoteDraft{Title: "Meowsik", Content: "Intro\n\n![diagram:abc]\n\n![diagram:def]\n\nOutro"})
+	echoed := "Voici la note :\n\n```\n" + diagramPlaceholder(0) + "\n" + diagramPlaceholder(1) + "\n```\n\nEn bref, voir " + diagramPlaceholder(0) + " pour le détail."
+	ai := &chatAssistantStub{result: echoed}
+	service = NewNote(repo, ai)
+	messages := []domain.ChatMessage{{Role: "user", Content: "Résume"}}
+	for _, req := range []domain.ChatRequest{
+		{Scope: "note", NoteID: note.ID, Messages: messages},
+		{Scope: "all", Messages: []domain.ChatMessage{{Role: "user", Content: "Meowsik"}}},
+	} {
+		answer, err := service.Chat(ctx, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(answer.Text, "PLACEHOLDER") || strings.Contains(answer.Text, "```") || strings.Contains(answer.Text, "![diagram") {
+			t.Fatalf("placeholder leaked: %q", answer.Text)
+		}
+		if !strings.Contains(answer.Text, "En bref, voir diagram pour le détail.") {
+			t.Fatalf("inline mention not kept readable: %q", answer.Text)
+		}
+	}
+	// rewrites still restore the real markers
+	ai.result = "Intro\n" + diagramPlaceholder(0) + "\n" + diagramPlaceholder(1)
+	answer, err := service.Chat(ctx, domain.ChatRequest{Scope: "note", NoteID: note.ID, Action: domain.AIActionCleanUp, Messages: messages})
+	if err != nil || !strings.Contains(answer.Text, "![diagram:abc]") || !strings.Contains(answer.Text, "![diagram:def]") {
+		t.Fatalf("rewrite lost diagrams: %q %v", answer.Text, err)
+	}
+}
