@@ -1,5 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Check, ChevronDown, Copy, Plus, Square, X } from "lucide-react";
+import {
+  ArrowUp,
+  Check,
+  ChevronDown,
+  Copy,
+  FileText,
+  Minus,
+  Plus,
+  Sparkles,
+  Square,
+  TextSelect,
+  X,
+} from "lucide-react";
 import { BotAvatar } from "./BotAvatar";
 import { MarkdownView } from "./MarkdownView";
 import { useBackLayer } from "../lib/useBackLayer";
@@ -52,7 +64,8 @@ export function AssistantPanel({
     setContextMenuOpen(false);
     if (scope === thread.context.scope) return;
     if (scope === "all") chat.show({ scope: "all" });
-    else if (scope === "note" && note) chat.show({ scope: "note", noteId: note.id });
+    else if (scope === "note" && note)
+      chat.show({ scope: "note", noteId: note.id });
   }
   useBackLayer(chat.open && window.innerWidth <= 900, () => closeRef.current());
   useEffect(() => {
@@ -98,9 +111,35 @@ export function AssistantPanel({
       setCopyStatus("Could not copy. Select the response to copy it manually.");
     }
   }
+  const slashQuery = /^\/(\S*)$/.exec(thread.draft.trim())?.[1]?.toLowerCase();
+  const slashMatches =
+    slashQuery === undefined || missing || thread.context.scope === "all"
+      ? []
+      : chatActions.filter(
+          (item) =>
+            item.slug.startsWith(slashQuery) ||
+            item.label.toLowerCase().startsWith(slashQuery),
+        );
+  const firstQuestion = thread.turns[0]?.question.trim();
+  const threadTitle = firstQuestion
+    ? firstQuestion.length > 28
+      ? firstQuestion.slice(0, 28).trimEnd() + "…"
+      : firstQuestion
+    : "New conversation";
+  useEffect(() => {
+    const field = composerRef.current;
+    if (!field) return;
+    field.style.height = "auto";
+    field.style.height = `${Math.min(field.scrollHeight, 140)}px`;
+  }, [thread.draft, chat.open]);
+  function runSlash(item: (typeof chatActions)[number]) {
+    chat.setDraft("");
+    void chat.send(item.prompt, item.action);
+  }
   function submit() {
-    if (!chat.busy && !missing && thread.draft.trim())
-      void chat.send(thread.draft);
+    if (chat.busy || missing) return;
+    if (slashMatches.length) return runSlash(slashMatches[0]);
+    if (thread.draft.trim()) void chat.send(thread.draft);
   }
   if (!chat.open) return null;
   return (
@@ -121,34 +160,10 @@ export function AssistantPanel({
       }}
     >
       <header className="assistant-header">
-        <div>
-          <strong id="assistant-title">Ask Paper</strong>
-          <span>Your notes, a conversation away</span>
-        </div>
-        <button
-          type="button"
-          className="assistant-icon"
-          aria-label="New conversation"
-          title="New conversation"
-          onClick={chat.reset}
-        >
-          <Plus size={17} />
-        </button>
-        <button
-          type="button"
-          className="assistant-icon"
-          aria-label="Close assistant"
-          onClick={chat.close}
-        >
-          <X size={17} />
-        </button>
-      </header>
-      <div className="assistant-context">
-        <span className="assistant-context-label">Context</span>
         <div className="assistant-context-select" ref={contextMenuRef}>
           <button
             type="button"
-            className="assistant-context-trigger"
+            className="assistant-title-trigger"
             aria-haspopup="listbox"
             aria-expanded={contextMenuOpen}
             onClick={() => setContextMenuOpen((open) => !open)}
@@ -160,9 +175,9 @@ export function AssistantPanel({
               }
             }}
           >
-            {contextOptions.find((item) => item.value === thread.context.scope)
-              ?.label ?? "This note"}
-            <ChevronDown size={13} />
+            <Sparkles size={14} className="assistant-spark" />
+            <strong id="assistant-title">{threadTitle}</strong>
+            <ChevronDown size={12} />
           </button>
           {contextMenuOpen && (
             <ul
@@ -187,27 +202,50 @@ export function AssistantPanel({
             </ul>
           )}
         </div>
-        <span title={contextNote?.title}>
-          {thread.context.scope === "all"
-            ? "Relevant notes from your library"
-            : contextNote?.title || (missing ? "Note unavailable" : "Untitled")}
-        </span>
-        {contextNote && note?.id !== contextNote.id && (
-          <button type="button" onClick={() => onOpenNote(contextNote.id)}>
-            Open context note
-          </button>
-        )}
-        {note &&
+        <button
+          type="button"
+          className="assistant-icon"
+          aria-label="New conversation"
+          title="New conversation"
+          onClick={chat.reset}
+        >
+          <Plus size={17} />
+        </button>
+        <button
+          type="button"
+          className="assistant-icon"
+          aria-label="Minimize assistant"
+          title="Minimize"
+          onClick={chat.close}
+        >
+          <Minus size={17} />
+        </button>
+      </header>
+      {((contextNote && note?.id !== contextNote.id) ||
+        (note &&
           thread.context.scope !== "all" &&
-          note.id !== thread.context.noteId && (
-            <button
-              type="button"
-              onClick={() => chat.show({ scope: "note", noteId: note.id })}
-            >
-              Use current note
+          note.id !== thread.context.noteId)) && (
+        <div className="assistant-context">
+          <span title={contextNote?.title}>
+            {contextNote?.title || (missing ? "Note unavailable" : "Untitled")}
+          </span>
+          {contextNote && note?.id !== contextNote.id && (
+            <button type="button" onClick={() => onOpenNote(contextNote.id)}>
+              Open
             </button>
           )}
-      </div>
+          {note &&
+            thread.context.scope !== "all" &&
+            note.id !== thread.context.noteId && (
+              <button
+                type="button"
+                onClick={() => chat.show({ scope: "note", noteId: note.id })}
+              >
+                Use current note
+              </button>
+            )}
+        </div>
+      )}
       <div
         className="assistant-messages"
         role="log"
@@ -217,33 +255,36 @@ export function AssistantPanel({
       >
         {thread.turns.length === 0 && (
           <div className="assistant-empty">
-            <BotAvatar size={72} theme={theme} />
+            <BotAvatar size={44} theme={theme} />
             <h2>
               {thread.context.scope === "all"
-                ? "What would you like to find?"
-                : "Think it through with Paper"}
+                ? "Across your notes"
+                : contextNote?.title || "This note"}
             </h2>
             <p>
               {thread.context.scope === "selection"
                 ? "Ask about the selected passage or request a rewrite."
                 : thread.context.scope === "all"
-                  ? "Ask a question across your notes. Consulted notes appear with the answer."
-                  : "Ask a question, refine an idea, or turn this note into something clearer."}
+                  ? "Ask a question. Consulted notes appear with the answer."
+                  : "Ask a question, or start from an action."}
             </p>
             {thread.context.scope !== "all" && (
-              <div className="assistant-prompts">
-                {chatActions.slice(0, 3).map((item) => (
-                  <button
-                    type="button"
-                    key={item.action}
-                    disabled={missing}
-                    onClick={() => void chat.send(item.prompt, item.action)}
-                  >
-                    {item.label}
-                  </button>
+              <ul className="assistant-commands">
+                {chatActions.map((item) => (
+                  <li key={item.action}>
+                    <button
+                      type="button"
+                      disabled={missing}
+                      onClick={() => void chat.send(item.prompt, item.action)}
+                    >
+                      <span>{item.label}</span>
+                      <code>/{item.slug}</code>
+                    </button>
+                  </li>
                 ))}
-              </div>
+              </ul>
             )}
+            <small>Nothing changes without your approval.</small>
           </div>
         )}
         {thread.context.selection && (
@@ -305,6 +346,40 @@ export function AssistantPanel({
                       ))}
                     </div>
                   )}
+                {turn.snapshot && (
+                  <div className="assistant-suggestion">
+                    <div className="assistant-suggestion-head">
+                      <span>{applicationLabel(turn)}</span>
+                    </div>
+                    {turn.action === "suggest_title" && (
+                      <div className="assistant-diff">
+                        <del>{turn.snapshot.title || "Untitled"}</del>
+                        <ins>{turn.text.trim().split("\n")[0]}</ins>
+                      </div>
+                    )}
+                    {applicationProblem(turn, note) && !turn.applied ? (
+                      <p className="assistant-stale">
+                        {applicationProblem(turn, note)}
+                      </p>
+                    ) : null}
+                    {turn.applied ? (
+                      <div className="assistant-applied">
+                        <Check size={13} /> Applied to the note
+                      </div>
+                    ) : (
+                      <div className="assistant-suggestion-actions">
+                        <button
+                          type="button"
+                          className="primary"
+                          disabled={!!applicationProblem(turn, note)}
+                          onClick={() => onApply(turn)}
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="assistant-answer-actions">
                   <button
                     type="button"
@@ -314,26 +389,7 @@ export function AssistantPanel({
                   >
                     <Copy size={13} /> Copy
                   </button>
-                  {turn.snapshot && (
-                    <button
-                      type="button"
-                      disabled={!!applicationProblem(turn, note)}
-                      title={
-                        applicationProblem(turn, note) || applicationLabel(turn)
-                      }
-                      onClick={() => onApply(turn)}
-                    >
-                      {turn.applied ? "Applied" : applicationLabel(turn)}
-                    </button>
-                  )}
                 </div>
-                {turn.snapshot &&
-                  applicationProblem(turn, note) &&
-                  !turn.applied && (
-                    <p className="assistant-stale">
-                      {applicationProblem(turn, note)}
-                    </p>
-                  )}
               </div>
             )}
           </div>
@@ -347,63 +403,99 @@ export function AssistantPanel({
           submit();
         }}
       >
-        {thread.action && (
-          <div className="assistant-intent">
-            Refining:{" "}
-            {chatActions.find((item) => item.action === thread.action)?.label ??
-              "Rewrite"}
-            <button
-              type="button"
-              aria-label="Return to questions"
-              onClick={chat.clearAction}
-            >
-              <X size={12} />
-            </button>
-          </div>
+        {slashMatches.length > 0 && (
+          <ul className="assistant-slash" role="listbox" aria-label="Actions">
+            {slashMatches.map((item) => (
+              <li key={item.action}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected="false"
+                  onClick={() => runSlash(item)}
+                >
+                  <span>{item.label}</span>
+                  <code>/{item.slug}</code>
+                </button>
+              </li>
+            ))}
+          </ul>
         )}
-        <textarea
-          ref={composerRef}
-          aria-label="Message Paper"
-          placeholder={
-            missing ? "Choose an available note" : "Ask, explore, or refine…"
-          }
-          rows={3}
-          maxLength={8000}
-          disabled={missing}
-          value={thread.draft}
-          onChange={(event) => chat.setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (
-              event.key === "Enter" &&
-              !event.shiftKey &&
-              !event.nativeEvent.isComposing
-            ) {
-              event.preventDefault();
-              submit();
+        <div className="assistant-field">
+          <div className="assistant-chips">
+            <span className="assistant-chip">
+              <FileText size={12} />
+              {thread.context.scope === "all"
+                ? "My notes"
+                : contextNote?.title ||
+                  (missing ? "Note unavailable" : "Untitled")}
+            </span>
+            {thread.context.selection && (
+              <span className="assistant-chip accent">
+                <TextSelect size={12} /> Selected passage
+              </span>
+            )}
+            {thread.action && (
+              <span className="assistant-chip accent">
+                {chatActions.find((item) => item.action === thread.action)
+                  ?.label ?? "Rewrite"}
+                <button
+                  type="button"
+                  aria-label="Return to questions"
+                  onClick={chat.clearAction}
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            )}
+          </div>
+          <textarea
+            ref={composerRef}
+            aria-label="Message Paper"
+            placeholder={
+              missing ? "Choose an available note" : "Ask, explore, or refine…"
             }
-          }}
-        />
-        <div className="assistant-composer-actions">
-          <span>Changes are applied only when you choose.</span>
-          {chat.busy ? (
-            <button
-              type="button"
-              className="assistant-send"
-              aria-label="Stop response"
-              onClick={() => chat.cancel()}
-            >
-              <Square size={15} />
-            </button>
-          ) : (
-            <button
-              type="submit"
-              className="assistant-send"
-              aria-label="Send message"
-              disabled={missing || !thread.draft.trim()}
-            >
-              <ArrowUp size={17} />
-            </button>
-          )}
+            rows={1}
+            maxLength={8000}
+            disabled={missing}
+            value={thread.draft}
+            onChange={(event) => chat.setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                !event.shiftKey &&
+                !event.nativeEvent.isComposing
+              ) {
+                event.preventDefault();
+                submit();
+              }
+            }}
+          />
+          <div className="assistant-composer-actions">
+            <span>
+              <b>/</b> actions · <b>Shift+Enter</b> new line
+            </span>
+            {chat.busy ? (
+              <button
+                key="stop"
+                type="button"
+                className="assistant-send"
+                aria-label="Stop response"
+                onClick={() => chat.cancel()}
+              >
+                <Square size={14} />
+              </button>
+            ) : (
+              <button
+                key="send"
+                type="submit"
+                className="assistant-send"
+                aria-label="Send message"
+                disabled={missing || !thread.draft.trim()}
+              >
+                <ArrowUp size={16} />
+              </button>
+            )}
+          </div>
         </div>
         <span className="sr-only" role="status">
           {copyStatus}

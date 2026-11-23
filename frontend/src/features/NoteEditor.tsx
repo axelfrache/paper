@@ -231,11 +231,12 @@ export function NoteEditor({
     setDiagramEdit(next);
   };
 
-  const assistantBubble = aiEnabled && !assistantOpen && (
+  const assistantBubble = aiEnabled && (
     <button
       type="button"
-      className="assistant-bubble"
-      aria-label="Ask Paper"
+      className={`assistant-bubble${assistantOpen ? " open" : ""}`}
+      aria-label={assistantOpen ? "Minimize Ask Paper" : "Ask Paper"}
+      aria-expanded={assistantOpen}
       onPointerDown={(event) => event.preventDefault()}
       onClick={onOpenAssistant}
     >

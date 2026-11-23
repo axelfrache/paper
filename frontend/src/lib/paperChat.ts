@@ -32,27 +32,37 @@ export type ChatTurn = {
 };
 export const chatActions: {
   action: AIAction;
+  slug: string;
   label: string;
   prompt: string;
 }[] = [
-  { action: "summarize", label: "Summarize", prompt: "Summarize this text." },
+  {
+    action: "summarize",
+    slug: "summarize",
+    label: "Summarize",
+    prompt: "Summarize this text.",
+  },
   {
     action: "extract_tasks",
+    slug: "tasks",
     label: "Extract tasks",
     prompt: "Extract actionable tasks from this text.",
   },
   {
     action: "clean_up",
+    slug: "rewrite",
     label: "Rewrite",
     prompt: "Make this text clearer and better structured.",
   },
   {
     action: "suggest_title",
+    slug: "title",
     label: "Suggest title",
     prompt: "Suggest a short title for this note.",
   },
   {
     action: "suggest_tags",
+    slug: "tags",
     label: "Suggest tags",
     prompt: "Suggest relevant tags for this note.",
   },

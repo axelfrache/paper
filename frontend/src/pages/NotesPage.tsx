@@ -1080,7 +1080,7 @@ export function NotesPage({
           assistantBusy={chat.busy}
           assistantUnread={chat.unread}
           assistantOpen={chat.open}
-          onOpenAssistant={openAssistant}
+          onOpenAssistant={() => (chat.open ? chat.close() : openAssistant())}
           titleFocusRequest={titleFocusRequest}
           contentFocusRequest={contentFocusRequest}
           onTitleChange={(title) => patchActive({ title })}
