@@ -2,98 +2,62 @@
 
 [![CI](https://github.com/axelfrache/paper/actions/workflows/ci.yml/badge.svg)](https://github.com/axelfrache/paper/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](https://go.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-6.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
-[![Vite](https://img.shields.io/badge/Vite-8.x-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 
-## Description
+Paper is a self-hosted notes app with a WYSIWYG Markdown editor, editable diagrams, and optional AI assistance.
 
-Paper is an AI-assisted notes app. It pairs a from-scratch markdown editor with embedded, editable diagrams and a set of LLM-powered actions that work directly on the note you are writing.
+- **Write and organize** with folders, tags, search, image uploads, and undo.
+- **Draw** flat and isometric diagrams directly in your notes, or generate them from a description with AI.
+- **Ask Paper** about a note, selected text, or your library: summarize, extract tasks, and rewrite while preserving diagrams.
+- **Install as a PWA.** Only the app shell is cached: notes, images, and API responses are not available offline.
 
-The backend is a Go application built on a strict hexagonal (ports & adapters) architecture. It embeds and serves the React 19 + TypeScript SPA in production. Notes live in Postgres, images use either the local filesystem or an S3-compatible store, and the AI features talk to a pluggable, OpenAI-compatible LLM provider.
+## Quick start
 
-### Features
-
-- **WYSIWYG markdown editor**: a hand-rolled editor over `contenteditable` with its own caret model, rendered line by line.
-- **Diagrams**: flat and isometric diagrams as embedded blocks, with an interactive editor (with an isometric placement grid) and text-to-diagram generation.
-- **Folders**: color-coded folders with note counts, scoped search, bulk moves, drag-and-drop, and undo. Deleting a folder keeps its notes in No folder.
-- **Ask Paper**: a contextual chat for the current note, a selected passage, or relevant notes from your library. Quick actions for summaries, tasks, titles, tags, and rewriting remain available through Actions and `/`.
-- **Diagram-safe rewriting**: clean up and improve clarity mask embedded diagram markers before sending content to the LLM, so a diagram is never mangled.
-- **Image uploads**: client-side resize and compression, stored locally or in an S3-compatible bucket.
-- **Pluggable LLM providers**: configured by environment, not code (`ai-gateway`, `ollama`, or any `openai-compatible` endpoint).
-- **Installable PWA**: installable from the browser, with a versioned service worker that caches the app shell only (scripts, styles, fonts, assets); notes, images, and API requests are never cached offline.
-
-## Architecture
-
-The minimal Docker Compose deployment runs two containers:
-
-| Service | Role | Port |
-|---------|------|------|
-| `paper` | Go API and embedded React SPA | 5173 and 8080 |
-| `postgres` | Persistent note store | 5432 (internal) |
-
-The optional `docker-compose.s3.yml` override adds a self-provisioning Garage container on port 3902.
-
-The backend follows the dependency direction *adapters to core, never core to adapter*:
-
-```
-cmd/api/main.go              wiring: config, postgres repo, ai assistant, note service
-internal/core/domain/        domain types and errors
-internal/core/port/          interfaces (NoteService, NoteRepository, NoteAssistant, ImageStorage)
-internal/core/service/       business logic, talks only to ports (the only Go tests live here)
-internal/adapter/inbound/    HTTP server, routes, handlers, DTOs
-internal/adapter/outbound/   postgres, memory, ai, filesystem, and s3 adapters
-internal/config/             env var loading
-```
-
-## Getting Started
-
-### Prerequisites
-
-- Docker & Docker Compose
-- Node.js 20+ (frontend development only)
-- Go 1.26 (backend development only)
-
-## Running
-
-### Fully dockerized (recommended)
-
-Copy the environment file and start the full stack:
+Requires Docker and Docker Compose:
 
 ```bash
 cp .env.example .env
 docker compose up --build
 ```
 
-Then go to:
-- Application: http://localhost:5173
-- Backend API: http://localhost:8080
-- Health check: http://localhost:8080/api/health
+Open [localhost:5173](http://localhost:5173). The same application and API are also exposed on port `8080`, the health endpoint is `/api/health`.
 
-To stop:
+Compose runs Paper and PostgreSQL, with persistent volumes for notes and uploaded images. Stop with `docker compose down`, adding `-v` deletes those volumes.
 
-```bash
-docker compose down
-```
+## Configuration
 
-Use `-v` to also remove the Postgres and local image volumes.
+See [.env.example](.env.example) for all settings. Docker Compose reads `.env`: when running the binary directly, export the required environment variables yourself.
 
-Images are stored in the `paper-uploads` volume by default.
+| Area | Settings |
+| --- | --- |
+| Database | `DATABASE_URL` (provided by Compose) |
+| Authentication | `AUTH_PROVIDER`: `dev`, `local`, or `oidc` |
+| Images | `STORAGE_PROVIDER`: `filesystem` (default) or `s3` |
+| AI | `AI_PROVIDER`: unset (disabled), `ollama`, `openai-compatible`, or `ai-gateway`: configure `AI_BASE_URL`, `AI_MODEL`, and `AI_API_KEY` as needed |
 
-### S3-compatible image storage
+The default `dev` authentication provides a single local user without login. For a public deployment, use `local` or `oidc`, set a strong `AUTH_SESSION_SECRET`, configure `AUTH_PUBLIC_URL`, and enable `AUTH_COOKIE_SECURE` over HTTPS. OIDC also requires the identity-provider settings listed in `.env.example`.
 
-Start Paper with Garage instead of local image storage:
+AI conversations stay in memory until reload and responses do not stream. Applying a response is explicit, supports undo, and checks for conflicting edits to the affected fields.
+
+### S3 image storage
+
+To try the bundled Garage service, which provisions its own bucket and access key:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.s3.yml up --build
 ```
 
-Set `STORAGE_PROVIDER=s3` with `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`, and `S3_REGION` when using another S3-compatible service. Garage self-provisions its layout, bucket, and access key. Switching providers does not migrate existing images.
+For another S3-compatible service, set `STORAGE_PROVIDER=s3` and configure `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`, and `S3_REGION`. Switching providers does not migrate existing images.
 
-### Frontend only (development mode)
+## Development
+
+Requires **Go 1.26**, **Node.js 24–26**, **pnpm 12.3.4**, and a reachable PostgreSQL database. Export `DATABASE_URL` and any other required configuration before starting the backend.
+
+Run in separate terminals:
+
+```bash
+cd backend
+go run ./cmd/api
+```
 
 ```bash
 cd frontend
@@ -101,80 +65,44 @@ pnpm install
 pnpm run dev
 ```
 
-Runs on http://localhost:5173 and proxies `/api` to http://localhost:8080.
+Vite serves the frontend on `http://localhost:5173` and proxies `/api` to the backend on port `8080`. Set `ALLOWED_ORIGINS` to include your frontend origin. Local image storage defaults to `data/uploads` outside Compose.
 
-### Backend only (development mode)
-
-```bash
-cd backend
-go run ./cmd/api
-```
-
-Runs on http://localhost:8080.
-
-The development backend does not contain generated frontend assets; use the Vite server alongside it. The backend reads its configuration from environment variables (see `.env.example`) and expects a reachable Postgres instance. Local image storage defaults to `data/uploads`. `ALLOWED_ORIGINS` must include the frontend origin for CORS.
-
-### Standalone binary
+To build a standalone binary after installing frontend dependencies:
 
 ```bash
 ./scripts/build-standalone.sh
 ./backend/bin/paper
 ```
 
-The build script compiles the frontend and embeds it in the Go binary. Node.js and pnpm are build-time dependencies only.
+The binary embeds the frontend: Node.js and pnpm are needed only at build time. PostgreSQL is still required at runtime.
 
-### AI provider
+### Architecture
 
-The AI features are optional and **off by default**: with `AI_PROVIDER` unset, the AI
-actions are hidden and the app runs without them. Set a provider to enable them:
+React + TypeScript + Vite power the frontend. The Go backend uses ports and adapters: business logic lives in `backend/internal/core`, HTTP and storage integrations in `backend/internal/adapter`, and application wiring in `backend/cmd/api`. Production runs the API and embedded frontend from one binary, backed by PostgreSQL and filesystem or S3 image storage.
 
-- `AI_PROVIDER`: `ollama`, `openai-compatible`, or `ai-gateway`
-- `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`
+### Checks
 
-Ask Paper reuses the configured provider: Ollama's `/api/generate`, the gateway's
-`/v1/generate`, or an OpenAI-compatible `/chat/completions` endpoint. MCP and tool
-calling are not required.
-
-The chat includes unsaved note text and recent conversation turns. Library
-questions retrieve up to five notes using the existing text ranking and show the
-notes consulted. Responses can be stopped, copied, refined, or explicitly applied
-to the original note; applying is blocked if the note changed in the meantime and
-uses the editor's undo history. Conversations stay in memory until the page is
-reloaded. Responses arrive as a whole; streaming and persistent chat storage are
-not enabled.
-
-## Code Quality
-
-- **Backend**: `gofmt` and `go vet`, with unit tests on the service layer.
-- **Frontend**: Prettier, TypeScript type-checking, and Vitest.
-
-### Commands
-
-**Backend (run from `backend/`):**
+From `backend/`:
 
 ```bash
 go build ./...
 go vet ./...
-gofmt -l .       # CI fails if this outputs anything; use `gofmt -w .` to fix
+gofmt -l .
 go test ./...
 ```
 
-The folder storage integration test is skipped unless `PAPER_FOLDER_TEST_DATABASE_URL` points to a **disposable** Postgres database — it recreates the notes, images, and folders tables, so never point it at an application database.
-
-**Frontend (run from `frontend/`):**
+From `frontend/`:
 
 ```bash
-pnpm run build          # tsc -b && vite build
-pnpm run test           # type-check + vitest run
-pnpm run format:check   # check formatting
-pnpm run format         # fix formatting
+pnpm run build
+pnpm run test
+pnpm run format:check
 ```
 
-> **Warning**: CI checks backend `vet` / `gofmt` / `go test` and frontend `build` / `test` on every
-> push, then builds and pushes the `paper` Docker image. Keep `gofmt` clean and `tsc` error-free. Both gate CI.
+CI checks Go formatting, vet, and tests, plus the frontend build and tests. Use `gofmt -w .` or `pnpm run format` in the corresponding directory to format code.
+
+The folder storage integration test requires `PAPER_FOLDER_TEST_DATABASE_URL` pointing to a **disposable PostgreSQL database**: it recreates the notes, images, and folders tables.
 
 ## License
 
-This project is distributed under the [MIT License](LICENSE).
-
-Copyright (c) 2026 Axel Frache.
+[MIT](LICENSE) · Copyright © 2026 Axel Frache.
