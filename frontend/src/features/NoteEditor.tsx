@@ -82,6 +82,9 @@ type DiagramEditTarget = {
   diagram: Diagram;
 };
 
+/** The bubble animates in once per session, not on every note switch. */
+let bubbleSeen = false;
+
 export function NoteEditor({
   folderControl,
   listHidden,
@@ -231,10 +234,14 @@ export function NoteEditor({
     setDiagramEdit(next);
   };
 
+  const [bubbleEnter] = useState(() => !bubbleSeen);
+  useEffect(() => {
+    if (aiEnabled) bubbleSeen = true;
+  }, [aiEnabled]);
   const assistantBubble = aiEnabled && (
     <button
       type="button"
-      className={`assistant-bubble${assistantOpen ? " open" : ""}`}
+      className={`assistant-bubble${assistantOpen ? " open" : ""}${bubbleEnter ? " enter" : ""}`}
       aria-label={assistantOpen ? "Minimize Ask Paper" : "Ask Paper"}
       aria-expanded={assistantOpen}
       onPointerDown={(event) => event.preventDefault()}

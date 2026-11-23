@@ -4633,6 +4633,8 @@ span.account-avatar-lg {
     transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
     box-shadow 0.25s ease,
     border-color 0.25s ease;
+}
+.assistant-bubble.enter {
   animation: assistant-bubble-in 0.18s ease-out;
 }
 .assistant-bubble:hover,
@@ -4667,7 +4669,7 @@ span.account-avatar-lg {
   background: var(--accent);
 }
 @media (prefers-reduced-motion: reduce) {
-  .assistant-bubble {
+  .assistant-bubble.enter {
     animation: none;
   }
 }
