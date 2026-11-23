@@ -1224,6 +1224,22 @@ span.account-avatar-lg {
   font-size: 12.5px;
 }
 
+.notes-filter input:focus-visible,
+.palette-input input:focus-visible,
+.folder-search input:focus-visible {
+  outline: none;
+}
+
+.notes-filter div:has(input:focus-visible),
+.folder-search:has(input:focus-visible) {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--focus);
+}
+
+.palette-input:has(input:focus-visible) {
+  border-bottom-color: var(--accent);
+}
+
 .notes-new-button {
   display: grid;
   flex: none;
