@@ -4832,7 +4832,9 @@ span.account-avatar-lg {
   top: calc(100% + 6px);
   left: 0;
   display: grid;
-  width: 180px;
+  width: 280px;
+  max-height: 60vh;
+  overflow-y: auto;
   gap: 2px;
   margin: 0;
   border: 1px solid var(--line-control);
@@ -5283,4 +5285,55 @@ span.account-avatar-lg {
 }
 .assistant-chip.assistant-chip-add:hover {
   color: var(--text);
+}
+.assistant-context-menu ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.assistant-context-menu > small {
+  padding: 6px 9px 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.assistant-history li {
+  display: flex;
+  align-items: center;
+  border-radius: 5px;
+}
+.assistant-history li:hover {
+  background: var(--surface-sunken);
+}
+.assistant-history li > button:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.assistant-history li > button:first-child span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.assistant-history time {
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+}
+.assistant-history button[aria-current="true"] span {
+  color: var(--accent);
+}
+.assistant-context-menu .assistant-history-delete {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  padding: 7px 0;
+  color: var(--muted);
+  opacity: 0;
+}
+.assistant-history li:hover .assistant-history-delete,
+.assistant-history-delete:focus-visible {
+  opacity: 1;
 }

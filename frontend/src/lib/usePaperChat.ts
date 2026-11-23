@@ -1,18 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { chatWithPaper } from "./api";
+import { loadThreads, saveThreads } from "./chatStorage";
 import {
   chatHistory,
+  contextKey,
   MAX_CHAT_NOTES,
   type ChatContext,
   type ChatTurn,
 } from "./paperChat";
 import type { AIAction, Note } from "../types/note";
 
-type Thread = {
+export type Thread = {
+  id: string;
+  /** Identifies the context (scope, note, selection); several threads can share it. */
+  ctxKey: string;
   context: ChatContext;
   turns: ChatTurn[];
   action?: AIAction;
   draft: string;
+  updatedAt: number;
 };
 type State = {
   open: boolean;
@@ -20,16 +26,59 @@ type State = {
   threads: Record<string, Thread>;
   unread: boolean;
 };
-const initial: State = {
-  open: false,
-  key: "all",
-  threads: { all: { context: { scope: "all" }, turns: [], draft: "" } },
-  unread: false,
-};
+const MAX_THREADS = 50;
+function blank(
+  id: string,
+  context: ChatContext,
+  updatedAt = Date.now(),
+): Thread {
+  return {
+    id,
+    ctxKey: contextKey(context),
+    context,
+    turns: [],
+    draft: "",
+    updatedAt,
+  };
+}
+function newest(threads: Thread[]) {
+  return threads.reduce<Thread | undefined>(
+    (best, item) => (!best || item.updatedAt >= best.updatedAt ? item : best),
+    undefined,
+  );
+}
+/** Conversations worth listing: the ones that have at least one turn, newest first. */
+export function chatHistoryList(threads: Record<string, Thread>) {
+  return Object.values(threads)
+    .filter((item) => item.turns.length > 0)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+export function threadTitle(thread: Thread) {
+  const question = thread.turns[0]?.question.trim().replace(/\s+/g, " ");
+  if (!question) return "New conversation";
+  return question.length > 40
+    ? question.slice(0, 40).trimEnd() + "…"
+    : question;
+}
+function initialState(userId?: string): State {
+  const threads: Record<string, Thread> = {};
+  for (const item of userId ? loadThreads(userId) : []) threads[item.id] = item;
+  // An empty placeholder that never outranks a restored conversation.
+  threads.all ??= blank("all", { scope: "all" }, 0);
+  return { open: false, key: "all", threads, unread: false };
+}
 
-export function usePaperChat(notes: Note[]) {
-  const [state, setState] = useState<State>(initial);
+export function usePaperChat(notes: Note[], userId?: string) {
+  const [state, setState] = useState<State>(() => initialState(userId));
   const latest = useRef(state);
+  useEffect(() => {
+    if (!userId) return;
+    const timer = setTimeout(
+      () => saveThreads(userId, Object.values(state.threads)),
+      400,
+    );
+    return () => clearTimeout(timer);
+  }, [state.threads, userId]);
   const notesRef = useRef(notes);
   notesRef.current = notes;
   const requests = useRef(new Map<string, AbortController>());
@@ -58,10 +107,13 @@ export function usePaperChat(notes: Note[]) {
         update((s) => ({ ...s, open: true, unread: false }));
         return latest.current.key;
       }
-      const key =
-        context.scope === "all"
-          ? "all"
-          : `${context.scope}:${context.noteId}${context.selection ? `:${JSON.stringify(context.selection.range)}:${context.selection.text}` : ""}`;
+      const ctxKey = contextKey(context);
+      const existing = newest(
+        Object.values(latest.current.threads).filter(
+          (item) => item.ctxKey === ctxKey,
+        ),
+      );
+      const key = existing?.id ?? ctxKey;
       update((s) => ({
         ...s,
         open: true,
@@ -69,15 +121,15 @@ export function usePaperChat(notes: Note[]) {
         key,
         threads: {
           ...s.threads,
-          [key]: s.threads[key]
+          [key]: existing
             ? {
-                ...s.threads[key],
+                ...existing,
                 context: {
                   ...context,
-                  noteIds: context.noteIds ?? s.threads[key].context.noteIds,
+                  noteIds: context.noteIds ?? existing.context.noteIds,
                 },
               }
-            : { context, turns: [], draft: "" },
+            : blank(key, context),
         },
       }));
       return key;
@@ -134,6 +186,7 @@ export function usePaperChat(notes: Note[]) {
         draft: "",
         action: chosenAction,
         turns: [...t.turns, turn],
+        updatedAt: Date.now(),
       }));
       const controller = new AbortController();
       requests.current.set(key, controller);
@@ -211,6 +264,7 @@ export function usePaperChat(notes: Note[]) {
   return {
     ...state,
     thread,
+    history: chatHistoryList(state.threads),
     busy: thread.turns.some((t) => t.status === "loading"),
     show,
     send,
@@ -234,15 +288,46 @@ export function usePaperChat(notes: Note[]) {
       updateThread(latest.current.key, (t) => ({ ...t, draft })),
     clearAction: () =>
       updateThread(latest.current.key, (t) => ({ ...t, action: undefined })),
+    /** Starts a fresh conversation in the same context; the previous one stays in history. */
     reset: () => {
-      const key = latest.current.key;
-      cancel(key);
-      updateThread(key, (t) => ({
-        ...t,
-        turns: [],
-        draft: "",
-        action: undefined,
-      }));
+      const current = latest.current.threads[latest.current.key];
+      if (current.turns.length === 0) {
+        updateThread(current.id, (t) => ({
+          ...t,
+          draft: "",
+          action: undefined,
+        }));
+        return;
+      }
+      const context = { ...current.context, noteIds: undefined };
+      const id = `${current.ctxKey}#${crypto.randomUUID()}`;
+      update((s) => {
+        const threads = { ...s.threads, [id]: blank(id, context) };
+        const stale = chatHistoryList(threads)
+          .filter((item) => item.id !== id && item.id !== s.key)
+          .slice(MAX_THREADS);
+        for (const item of stale) delete threads[item.id];
+        return { ...s, key: id, threads };
+      });
+    },
+    select: (id: string) => {
+      if (!latest.current.threads[id]) return;
+      updateThread(id, (t) => ({ ...t, updatedAt: Date.now() }));
+      update((s) => ({ ...s, open: true, unread: false, key: id }));
+    },
+    remove: (id: string) => {
+      if (!latest.current.threads[id]) return;
+      requests.current.get(id)?.abort();
+      requests.current.delete(id);
+      update((s) => {
+        const threads = { ...s.threads };
+        delete threads[id];
+        if (s.key !== id) return { ...s, threads };
+        const next =
+          chatHistoryList(threads)[0] ?? blank("all", { scope: "all" });
+        threads[next.id] = next;
+        return { ...s, key: next.id, threads };
+      });
     },
     markApplied: (id: string) =>
       updateThread(latest.current.key, (t) => ({

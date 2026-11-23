@@ -26,7 +26,7 @@ import {
   stripMention,
   type ChatTurn,
 } from "../lib/paperChat";
-import type { PaperChat } from "../lib/usePaperChat";
+import { threadTitle, type PaperChat } from "../lib/usePaperChat";
 import type { AIAction, Note } from "../types/note";
 
 type Props = {
@@ -39,6 +39,15 @@ type Props = {
   /** Runs an editing action on the open note (used from the "My notes" scope). */
   onAction: (action: AIAction) => void;
 };
+
+function relativeTime(time: number) {
+  const minutes = Math.floor((Date.now() - time) / 60000);
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h`;
+  return `${Math.floor(hours / 24)} d`;
+}
 
 export function AssistantPanel({
   chat,
@@ -145,12 +154,6 @@ export function AssistantPanel({
             item.slug.startsWith(slashQuery) ||
             item.label.toLowerCase().startsWith(slashQuery),
         );
-  const firstQuestion = thread.turns[0]?.question.trim();
-  const threadTitle = firstQuestion
-    ? firstQuestion.length > 28
-      ? firstQuestion.slice(0, 28).trimEnd() + "…"
-      : firstQuestion
-    : "New conversation";
   useEffect(() => {
     const field = composerRef.current;
     if (!field) return;
@@ -203,30 +206,61 @@ export function AssistantPanel({
             }}
           >
             <Sparkles size={14} className="assistant-spark" />
-            <strong id="assistant-title">{threadTitle}</strong>
+            <strong id="assistant-title">{threadTitle(thread)}</strong>
             <ChevronDown size={12} />
           </button>
           {contextMenuOpen && (
-            <ul
-              className="assistant-context-menu"
-              role="listbox"
-              aria-label="Assistant context"
-            >
-              {contextOptions.map((item) => (
-                <li key={item.value}>
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={item.value === thread.context.scope}
-                    disabled={item.disabled}
-                    onClick={() => selectContext(item.value)}
-                  >
-                    {item.label}
-                    {item.value === thread.context.scope && <Check size={13} />}
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <div className="assistant-context-menu">
+              <small>Context</small>
+              <ul role="listbox" aria-label="Assistant context">
+                {contextOptions.map((item) => (
+                  <li key={item.value}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={item.value === thread.context.scope}
+                      disabled={item.disabled}
+                      onClick={() => selectContext(item.value)}
+                    >
+                      {item.label}
+                      {item.value === thread.context.scope && (
+                        <Check size={13} />
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {chat.history.length > 0 && (
+                <>
+                  <small>Conversations</small>
+                  <ul aria-label="Conversations" className="assistant-history">
+                    {chat.history.map((item) => (
+                      <li key={item.id}>
+                        <button
+                          type="button"
+                          aria-current={item.id === thread.id}
+                          onClick={() => {
+                            setContextMenuOpen(false);
+                            chat.select(item.id);
+                          }}
+                        >
+                          <span>{threadTitle(item)}</span>
+                          <time>{relativeTime(item.updatedAt)}</time>
+                        </button>
+                        <button
+                          type="button"
+                          className="assistant-history-delete"
+                          aria-label={`Delete conversation ${threadTitle(item)}`}
+                          onClick={() => chat.remove(item.id)}
+                        >
+                          <X size={12} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
           )}
         </div>
         <button

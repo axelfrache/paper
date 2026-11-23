@@ -14,6 +14,7 @@ import { FolderDialog, folderColors, type FolderDialogState } from "../component
 import { listFolders, saveFolder, deleteFolder, moveNotes } from "../lib/api";
 import type { Folder, NoteMove } from "../types/note";
 import { Folder as FolderIcon, ChevronDown } from "lucide-react";
+import { clearThreads } from "../lib/chatStorage";
 import { AssistantPanel } from "../components/AssistantPanel";
 import { usePaperChat } from "../lib/usePaperChat";
 import {
@@ -116,7 +117,7 @@ export function NotesPage({
   const [notesWidth, setNotesWidth] = useState(() =>
     initialColumnWidth("notes"),
   );
-  const chat = usePaperChat(notes);
+  const chat = usePaperChat(notes, user.id);
   const [titleFocusRequest, setTitleFocusRequest] =
     useState<TitleFocusRequest | null>(null);
   const [contentFocusRequest, setContentFocusRequest] =
@@ -964,7 +965,7 @@ export function NotesPage({
           setSidebarHidden(true);
         }}
         user={user}
-        onLogout={async () => { await prepareNavigation(); await onLogout(); }}
+        onLogout={async () => { await prepareNavigation(); clearThreads(user.id); await onLogout(); }}
         onResizeStart={(event) => startColumnResize("navigation", event)}
         onResizeBy={(delta) =>
           setColumnWidth("navigation", navigationWidth + delta)

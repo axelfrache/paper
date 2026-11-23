@@ -17,11 +17,18 @@ const note: Note = {
 let root: Root;
 let host: HTMLDivElement;
 let chat: PaperChat;
-function Harness({ notes = [note] }: { notes?: Note[] }) {
-  chat = usePaperChat(notes);
+function Harness({
+  notes = [note],
+  userId,
+}: {
+  notes?: Note[];
+  userId?: string;
+}) {
+  chat = usePaperChat(notes, userId);
   return null;
 }
 beforeEach(() => {
+  localStorage.clear();
   vi.mocked(chatWithPaper).mockReset();
   host = document.createElement("div");
   document.body.append(host);
@@ -31,6 +38,84 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
+});
+describe("Paper conversation persistence", () => {
+  it("restores saved conversations for the same user only", async () => {
+    vi.useFakeTimers();
+    vi.mocked(chatWithPaper).mockResolvedValue({ text: "ok", sourceIds: [] });
+    act(() => root.render(<Harness userId="u1" />));
+    await act(async () => {
+      await chat.send("Remember me", undefined, { scope: "note", noteId: "a" });
+    });
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    vi.useRealTimers();
+    act(() => root.unmount());
+    root = createRoot(host);
+    act(() => root.render(<Harness userId="u1" />));
+    expect(chat.history.map((item) => item.turns[0].question)).toEqual([
+      "Remember me",
+    ]);
+    act(() => chat.show({ scope: "note", noteId: "a" }));
+    expect(chat.thread.turns[0].question).toBe("Remember me");
+    act(() => root.unmount());
+    root = createRoot(host);
+    act(() => root.render(<Harness userId="u2" />));
+    expect(chat.history).toHaveLength(0);
+  });
+});
+describe("Paper conversation history", () => {
+  it("keeps previous conversations when starting a new one", async () => {
+    vi.mocked(chatWithPaper).mockResolvedValue({ text: "ok", sourceIds: [] });
+    await act(async () => {
+      await chat.send("First question", undefined, {
+        scope: "note",
+        noteId: "a",
+      });
+    });
+    const first = chat.thread.id;
+    act(() => chat.reset());
+    expect(chat.thread.id).not.toBe(first);
+    expect(chat.thread.turns).toHaveLength(0);
+    expect(chat.thread.context).toMatchObject({ scope: "note", noteId: "a" });
+    expect(chat.history.map((item) => item.id)).toEqual([first]);
+    await act(async () => {
+      await chat.send("Second question");
+    });
+    expect(chat.history).toHaveLength(2);
+    expect(chat.history[0].turns[0].question).toBe("Second question");
+    // reopening the same context resumes the newest conversation
+    act(() => chat.show({ scope: "note", noteId: "a" }));
+    expect(chat.thread.turns[0].question).toBe("Second question");
+    act(() => chat.select(first));
+    expect(chat.thread.turns[0].question).toBe("First question");
+    expect(chat.history[0].id).toBe(first);
+  });
+  it("does not stack empty conversations", () => {
+    act(() => chat.reset());
+    act(() => chat.reset());
+    expect(Object.keys(chat.threads)).toHaveLength(1);
+    expect(chat.history).toHaveLength(0);
+  });
+  it("removes a conversation and falls back to another one", async () => {
+    vi.mocked(chatWithPaper).mockResolvedValue({ text: "ok", sourceIds: [] });
+    await act(async () => {
+      await chat.send("Keep me", undefined, { scope: "note", noteId: "a" });
+    });
+    const keep = chat.thread.id;
+    act(() => chat.reset());
+    await act(async () => {
+      await chat.send("Delete me");
+    });
+    const doomed = chat.thread.id;
+    act(() => chat.remove(doomed));
+    expect(chat.thread.id).toBe(keep);
+    expect(chat.threads[doomed]).toBeUndefined();
+    act(() => chat.remove(keep));
+    expect(chat.history).toHaveLength(0);
+    expect(chat.thread.turns).toHaveLength(0);
+  });
 });
 describe("Paper conversations", () => {
   it("sends pinned notes and keeps them when the scope is shown again", async () => {

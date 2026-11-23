@@ -12,6 +12,11 @@ export type ChatContext = {
   selection?: ChatSelection;
 };
 export const MAX_CHAT_NOTES = 5;
+export function contextKey(context: ChatContext) {
+  return context.scope === "all"
+    ? "all"
+    : `${context.scope}:${context.noteId}${context.selection ? `:${JSON.stringify(context.selection.range)}:${context.selection.text}` : ""}`;
+}
 export type ChatSnapshot = Pick<Note, "id" | "title" | "content" | "tags">;
 export type ChatRequest = {
   scope: ChatScope;
