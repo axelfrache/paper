@@ -33,6 +33,7 @@ func NewRouter(notes port.NoteService, images port.NoteImageService, auth port.A
 	mux.HandleFunc("GET /api/auth/callback", authHandler.Callback)
 	mux.HandleFunc("POST /api/auth/logout", authHandler.Logout)
 	mux.Handle("GET /api/auth/me", requireAuth(auth, stdhttp.HandlerFunc(authHandler.Me)))
+	mux.Handle("DELETE /api/account", requireAuth(auth, stdhttp.HandlerFunc(authHandler.DeleteAccount)))
 	mux.Handle("PATCH /api/profile", requireAuth(auth, stdhttp.HandlerFunc(profileHandler.Update)))
 	mux.Handle("POST /api/profile/avatar", requireAuth(auth, stdhttp.HandlerFunc(profileHandler.UploadAvatar)))
 	mux.Handle("DELETE /api/profile/avatar", requireAuth(auth, stdhttp.HandlerFunc(profileHandler.RemoveAvatar)))

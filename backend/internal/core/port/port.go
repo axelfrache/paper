@@ -108,11 +108,14 @@ type ProfileService interface {
 	SetAvatar(ctx context.Context, upload domain.ImageUpload) (domain.UserProfile, error)
 	RemoveAvatar(ctx context.Context) (domain.UserProfile, error)
 	OpenAvatar(ctx context.Context) (StoredImage, error)
+	DeleteAccount(ctx context.Context) error
 }
 
 type UserProfileRepository interface {
 	Get(ctx context.Context, userID string) (domain.UserProfile, error)
 	Upsert(ctx context.Context, profile domain.UserProfile) error
+	// DeleteAccount removes every row owned by the user and returns the storage keys left to delete.
+	DeleteAccount(ctx context.Context, userID string) ([]string, error)
 }
 
 type SessionRepository interface {

@@ -28,6 +28,15 @@ func (r *profileRepoStub) Upsert(_ context.Context, profile domain.UserProfile) 
 	return nil
 }
 
+func (r *profileRepoStub) DeleteAccount(_ context.Context, userID string) ([]string, error) {
+	profile, ok := r.profiles[userID]
+	delete(r.profiles, userID)
+	if ok && profile.AvatarKey != "" {
+		return []string{profile.AvatarKey}, nil
+	}
+	return nil, nil
+}
+
 func pngBytes() []byte {
 	return []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52}
 }
@@ -84,5 +93,30 @@ func TestProfileRejectsNonRasterAvatar(t *testing.T) {
 	svg := []byte(`<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>`)
 	if _, err := service.SetAvatar(ctx, domain.ImageUpload{Name: "x.svg", ContentType: "image/svg+xml", Data: svg}); err == nil {
 		t.Fatal("expected an SVG avatar to be rejected")
+	}
+}
+
+func TestProfileDeleteAccountRemovesProfileAndFiles(t *testing.T) {
+	ctx := domain.ContextWithUser(context.Background(), domain.User{ID: "user-1"})
+	repo := newProfileRepoStub()
+	storage := &imageStorageStub{}
+	service := NewProfile(repo, storage)
+	profile, err := service.SetAvatar(ctx, domain.ImageUpload{Data: pngBytes()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	storage.key = ""
+
+	if err := service.DeleteAccount(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := repo.profiles["user-1"]; ok {
+		t.Fatal("profile was not deleted")
+	}
+	if storage.key != profile.AvatarKey {
+		t.Fatalf("avatar file was not deleted: %q", storage.key)
+	}
+	if err := service.DeleteAccount(context.Background()); err == nil {
+		t.Fatal("expected anonymous delete to fail")
 	}
 }

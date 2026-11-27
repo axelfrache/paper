@@ -159,6 +159,18 @@ func (h *AuthHandler) Logout(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	writeJSON(w, stdhttp.StatusOK, map[string]string{"redirectTo": redirect})
 }
 
+func (h *AuthHandler) DeleteAccount(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	if err := h.profiles.DeleteAccount(r.Context()); err != nil {
+		writeError(w, err)
+		return
+	}
+	stdhttp.SetCookie(w, &stdhttp.Cookie{
+		Name: sessionCookieName, Value: "", Path: "/", HttpOnly: true,
+		Secure: h.config.CookieSecure, SameSite: stdhttp.SameSiteLaxMode, MaxAge: -1,
+	})
+	w.WriteHeader(stdhttp.StatusNoContent)
+}
+
 func (h *AuthHandler) clearLoginCookie(w stdhttp.ResponseWriter) {
 	stdhttp.SetCookie(w, &stdhttp.Cookie{
 		Name: loginStateCookieName, Value: "", Path: "/api/auth/callback",

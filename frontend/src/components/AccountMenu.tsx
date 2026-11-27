@@ -1,13 +1,15 @@
 import { useBackLayer } from "../lib/useBackLayer";
 import { InstallPaper } from "./InstallPaper";
-import { LogOut, Pencil, ShieldCheck, UserRound, X } from "lucide-react";
+import { LogOut, Pencil, ShieldCheck, Trash2, UserRound, X } from "lucide-react";
 import { useRef, useState } from "react";
 import {
   APIError,
+  deleteAccount,
   removeAvatar,
   updateDisplayName,
   uploadAvatar,
 } from "../lib/api";
+import { clearThreads } from "../lib/chatStorage";
 import type { AuthUser } from "../types/auth";
 
 type AccountMenuProps = {
@@ -24,6 +26,9 @@ export function AccountMenu({ user, onLogout }: AccountMenuProps) {
   const [busy, setBusy] = useState(false);
   useBackLayer(open, () => { if (busy) return false; dialogRef.current?.close(); setOpen(false); });
   const [error, setError] = useState<string>("");
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const deletePhrase = account.email || "DELETE";
   const label = account.name || account.email || "Account";
 
   const run = async (action: () => Promise<AuthUser>) => {
@@ -38,6 +43,21 @@ export function AccountMenu({ user, onLogout }: AccountMenuProps) {
         caught instanceof APIError ? caught.message : "Something went wrong.",
       );
     } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeAccount = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await deleteAccount();
+      clearThreads(account.id);
+      window.location.assign("/");
+    } catch (caught) {
+      setError(
+        caught instanceof APIError ? caught.message : "Could not delete the account.",
+      );
       setBusy(false);
     }
   };
@@ -70,7 +90,12 @@ export function AccountMenu({ user, onLogout }: AccountMenuProps) {
       <dialog
         className="account-dialog"
         ref={dialogRef}
-        onClose={() => { setError(""); setOpen(false); }}
+        onClose={() => {
+          setError("");
+          setConfirmingDelete(false);
+          setDeleteConfirm("");
+          setOpen(false);
+        }}
       >
         <header>
           <div className="account-dialog-icon">
@@ -152,6 +177,59 @@ export function AccountMenu({ user, onLogout }: AccountMenuProps) {
           {error ? <div className="account-error">{error}</div> : null}
         </section>
         <InstallPaper />
+        <section className="account-danger" aria-labelledby="account-danger-title">
+          <strong id="account-danger-title">Danger zone</strong>
+          <span>
+            Deleting your account permanently removes all your notes, folders,
+            images and profile. This cannot be undone.
+          </span>
+          {confirmingDelete ? (
+            <>
+              <label className="account-field">
+                <span>
+                  Type <b>{deletePhrase}</b> to confirm
+                </span>
+                <input
+                  value={deleteConfirm}
+                  disabled={busy}
+                  autoComplete="off"
+                  onChange={(event) => setDeleteConfirm(event.target.value)}
+                />
+              </label>
+              <div className="account-danger-actions">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setConfirmingDelete(false);
+                    setDeleteConfirm("");
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="danger"
+                  disabled={busy || deleteConfirm.trim() !== deletePhrase}
+                  onClick={() => void removeAccount()}
+                >
+                  <Trash2 size={14} /> Delete permanently
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="account-danger-actions">
+              <button
+                type="button"
+                className="danger"
+                disabled={busy}
+                onClick={() => setConfirmingDelete(true)}
+              >
+                <Trash2 size={14} /> Delete account
+              </button>
+            </div>
+          )}
+        </section>
         <footer>
           <button
             type="button"

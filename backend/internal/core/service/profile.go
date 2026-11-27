@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -150,6 +151,25 @@ func (s *Profile) load(ctx context.Context, userID string) (domain.UserProfile, 
 		return domain.UserProfile{}, err
 	}
 	return profile, nil
+}
+
+// DeleteAccount permanently removes the user's notes, folders, images, profile and sessions.
+func (s *Profile) DeleteAccount(ctx context.Context) error {
+	user, err := domain.RequireUser(ctx)
+	if err != nil {
+		return err
+	}
+	keys, err := s.profiles.DeleteAccount(ctx, user.ID)
+	if err != nil {
+		return err
+	}
+	// Rows are already gone, so a storage failure only leaves an orphaned file behind.
+	for _, key := range keys {
+		if err := s.storage.Delete(ctx, key); err != nil {
+			log.Printf("delete account file %q failed: %v", key, err)
+		}
+	}
+	return nil
 }
 
 func avatarKey(userID string) string {
