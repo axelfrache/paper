@@ -124,6 +124,10 @@ export async function uploadAvatar(file: File) {
   });
 }
 
+export function deleteAccount() {
+  return request<void>("/api/account", { method: "DELETE" });
+}
+
 export function removeAvatar() {
   return request<AuthUser>("/api/profile/avatar", { method: "DELETE" });
 }

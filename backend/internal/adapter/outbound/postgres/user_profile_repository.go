@@ -63,6 +63,52 @@ func (r *UserProfileRepository) Upsert(ctx context.Context, profile domain.UserP
 	return err
 }
 
+func (r *UserProfileRepository) DeleteAccount(ctx context.Context, userID string) ([]string, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	rows, err := tx.Query(ctx, `
+		select storage_key from note_images where owner_id = $1
+		union all
+		select avatar_key from user_profiles where user_id = $1 and avatar_key <> ''
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	keys, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
+
+	statements := []string{
+		`delete from note_images where owner_id = $1`,
+		`delete from notes where owner_id = $1`,
+		`delete from folders where owner_id = $1`,
+		`delete from user_profiles where user_id = $1`,
+		`delete from auth_sessions where user_id = $1`,
+	}
+	var hasUsers bool
+	// users only exists with the local auth provider.
+	if err := tx.QueryRow(ctx, `select to_regclass('users') is not null`).Scan(&hasUsers); err != nil {
+		return nil, err
+	}
+	if hasUsers {
+		statements = append(statements, `delete from users where id = $1`)
+	}
+	for _, statement := range statements {
+		if _, err := tx.Exec(ctx, statement, userID); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
+
 func (r *UserProfileRepository) migrate(ctx context.Context) error {
 	_, err := r.pool.Exec(ctx, `
 		create table if not exists user_profiles (
