@@ -217,3 +217,23 @@ func TestChatAnswersNeverShowDiagramPlaceholders(t *testing.T) {
 		t.Fatalf("rewrite lost diagrams: %q %v", answer.Text, err)
 	}
 }
+
+func TestChatDiagramAfterRewriteDoesNotAppendOldMarkersToJSON(t *testing.T) {
+	repo := memory.NewNoteRepository()
+	response := "```paper-diagram\n{\"mode\":\"iso\",\"nodes\":[{\"id\":\"api\",\"kind\":\"server\"}],\"edges\":[]}\n```"
+	ai := &chatAssistantStub{result: response}
+	service := NewNote(repo, ai)
+	ctx := domain.ContextWithUser(context.Background(), domain.User{ID: "one"})
+	note, _ := service.CreateNote(ctx, domain.NoteDraft{Content: "API architecture\n![diagram:abc]"})
+	answer, err := service.Chat(ctx, domain.ChatRequest{Scope: "note", NoteID: note.ID, Action: domain.AIActionCleanUp, Messages: []domain.ChatMessage{{Role: "user", Content: "ajoute un diagramme isométrique à la suite"}}})
+	if err != nil || answer.Text != response {
+		t.Fatalf("invalid diagram response: %q %v", answer.Text, err)
+	}
+	if !strings.Contains(ai.prompt, "Diagram capability") || !strings.Contains(ai.prompt, "API architecture") {
+		t.Fatal("missing diagram instructions or context")
+	}
+	saved, _ := service.GetNote(ctx, note.ID)
+	if saved.Content != note.Content {
+		t.Fatal("changed note before applying")
+	}
+}
