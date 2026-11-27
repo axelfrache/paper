@@ -3,6 +3,9 @@ import { chatWithPaper, titleChat } from "./api";
 import { loadThreads, saveThreads } from "./chatStorage";
 import {
   chatHistory,
+  parseChatProposal,
+  resolveChatSelection,
+  contextAfterApplication,
   contextKey,
   MAX_CHAT_NOTES,
   type ChatContext,
@@ -172,7 +175,12 @@ export function usePaperChat(notes: Note[], userId?: string) {
             tags: [...note.tags],
           }
         : undefined;
-      const selection = thread.context.selection;
+      const originalSelection = thread.context.selection;
+      const selection =
+        originalSelection && note
+          ? (resolveChatSelection(originalSelection, note.content) ??
+            originalSelection)
+          : originalSelection;
       const chosenAction = action ?? thread.action;
       const turn: ChatTurn = {
         id: crypto.randomUUID(),
@@ -188,6 +196,8 @@ export function usePaperChat(notes: Note[], userId?: string) {
         ...t,
         draft: "",
         action: chosenAction,
+        context: selection ? { ...t.context, selection } : t.context,
+        ctxKey: selection ? contextKey({ ...t.context, selection }) : t.ctxKey,
         turns: [...t.turns, turn],
         updatedAt: Date.now(),
       }));
@@ -224,14 +234,17 @@ export function usePaperChat(notes: Note[], userId?: string) {
           controller.signal,
         );
         if (requests.current.get(key) !== controller) return;
+        const proposal = parseChatProposal(response.text);
         updateThread(key, (t) => ({
           ...t,
+          action: proposal.operation ? undefined : t.action,
           turns: t.turns.map((item) =>
             item.id === turn.id
               ? {
                   ...item,
                   status: "ready",
-                  text: response.text,
+                  ...proposal,
+                  action: proposal.operation ? undefined : item.action,
                   sourceIds: response.sourceIds ?? [],
                 }
               : item,
@@ -342,13 +355,40 @@ export function usePaperChat(notes: Note[], userId?: string) {
         return { ...s, key: next.id, threads };
       });
     },
-    markApplied: (id: string) =>
-      updateThread(latest.current.key, (t) => ({
-        ...t,
-        turns: t.turns.map((turn) =>
-          turn.id === id ? { ...turn, applied: true } : turn,
-        ),
-      })),
+    continueOnNote: () =>
+      updateThread(latest.current.key, (t) => {
+        const context: ChatContext = {
+          scope: "note",
+          noteId: t.context.noteId,
+          noteIds: t.context.noteIds,
+        };
+        return {
+          ...t,
+          context,
+          ctxKey: contextKey(context),
+          action: undefined,
+        };
+      }),
+    markApplied: (id: string, before: Note, after: Note) => {
+      // Publish the applied draft immediately; a follow-up need not wait for autosave.
+      notesRef.current = notesRef.current.map((note) =>
+        note.id === after.id ? after : note,
+      );
+      updateThread(latest.current.key, (t) => {
+        const turn = t.turns.find((item) => item.id === id);
+        if (!turn) return t;
+        const context = contextAfterApplication(t.context, turn, before, after);
+        return {
+          ...t,
+          context,
+          ctxKey: contextKey(context),
+          action: turn.operation ? undefined : turn.action,
+          turns: t.turns.map((item) =>
+            item.id === id ? { ...item, applied: true } : item,
+          ),
+        };
+      });
+    },
   };
 }
 export type PaperChat = ReturnType<typeof usePaperChat>;

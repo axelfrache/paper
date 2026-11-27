@@ -747,7 +747,7 @@ export function NotesPage({
 
   const openAssistant = useCallback(() => {
     if (!aiEnabled) return;
-    chat.show(assistantContext("all"));
+    chat.show(assistantContext());
     setMobilePane("editor");
   }, [aiEnabled, chat.show, assistantContext]);
 
@@ -771,7 +771,7 @@ export function NotesPage({
       return;
     }
     patchActive(patch);
-    chat.markApplied(turn.id);
+    chat.markApplied(turn.id, activeNote, { ...activeNote, ...patch });
     flash("Applied — undo is available");
   };
 

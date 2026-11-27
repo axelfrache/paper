@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   applicationProblem,
+  parseChatProposal,
+  resolveChatSelection,
   chatHistory,
   chatPatch,
   mentionMatches,
@@ -145,5 +147,79 @@ describe("@ mentions", () => {
     const other = { ...note, id: "b", title: "Planning" };
     expect(mentionMatches([note, other], "plan", ["a"])).toEqual([other]);
     expect(mentionMatches([note, other], "", [])).toHaveLength(2);
+  });
+});
+
+describe("Native chat diagrams", () => {
+  const response = (mode: string) =>
+    "```paper-diagram\n" +
+    JSON.stringify({
+      mode,
+      nodes: [
+        { id: "a", kind: "server", label: "API" },
+        { id: "b", kind: "database", label: "Data" },
+      ],
+      edges: [{ from: "a", to: "b" }],
+    }) +
+    "\n```";
+  it.each(["iso", "flat"])(
+    "appends a %s diagram without replacing text or a selection",
+    (mode) => {
+      const proposal = parseChatProposal(response(mode));
+      const diagramTurn: ChatTurn = {
+        ...turn,
+        ...proposal,
+        selection: {
+          text: note.content,
+          content: note.content,
+          range: { start: { line: 0, col: 0 }, end: { line: 0, col: 13 } },
+        },
+      };
+      const edited = { ...note, content: "Updated text" };
+      expect(chatPatch(diagramTurn, edited)).toEqual({
+        content: "Updated text\n\n" + proposal.text,
+      });
+      expect(chatPatch({ ...diagramTurn, applied: true }, edited)).toBeNull();
+      expect(chatPatch(diagramTurn, { ...edited, id: "other" })).toBeNull();
+    },
+  );
+  it("rejects malformed diagrams and leaves ordinary answers alone", () => {
+    expect(parseChatProposal("Hello")).toEqual({ text: "Hello" });
+    expect(() => parseChatProposal(response("unknown"))).toThrow();
+    expect(() => parseChatProposal("```paper-diagram\n{}")).toThrow();
+    expect(() =>
+      parseChatProposal(
+        '```paper-diagram\n{"mode":"iso","nodes":[],"edges":[]}\n```',
+      ),
+    ).toThrow();
+  });
+});
+
+describe("Selection tracking", () => {
+  const selection = {
+    content: "Intro\nword word\nEnd",
+    text: "word",
+    range: { start: { line: 1, col: 5 }, end: { line: 1, col: 9 } },
+  };
+  it("tracks insertion before a repeated passage without selecting the first occurrence", () => {
+    const content = "New line\n" + selection.content;
+    expect(resolveChatSelection(selection, content)?.range).toEqual({
+      start: { line: 2, col: 5 },
+      end: { line: 2, col: 9 },
+    });
+    expect(
+      chatPatch(
+        {
+          ...turn,
+          snapshot: { ...note, content: selection.content },
+          selection,
+        },
+        { ...note, content },
+      )?.content,
+    ).toBe("New line\nIntro\nword New text\nEnd");
+  });
+  it("rejects deletion or modification even if the same words remain elsewhere", () => {
+    expect(resolveChatSelection(selection, "Intro\nword xxxx\nEnd")).toBeNull();
+    expect(resolveChatSelection(selection, "Intro\nword \nEnd")).toBeNull();
   });
 });

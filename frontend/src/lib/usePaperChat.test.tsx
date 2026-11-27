@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { chatWithPaper, titleChat } from "./api";
 import { threadTitle, usePaperChat, type PaperChat } from "./usePaperChat";
+import { chatPatch } from "./paperChat";
 import type { Note } from "../types/note";
 vi.mock("./api", () => ({ chatWithPaper: vi.fn(), titleChat: vi.fn() }));
 const note: Note = {
@@ -261,7 +262,7 @@ describe("Paper conversations", () => {
       { role: "user", content: "Question" },
     ]);
   });
-  it("sends only the selected passage and rejects a selection after editing", async () => {
+  it("sends only the selected passage and rejects edits to that passage", async () => {
     vi.mocked(chatWithPaper).mockResolvedValue({
       text: "Answer",
       sourceIds: [],
@@ -283,7 +284,7 @@ describe("Paper conversations", () => {
     );
     act(() =>
       root.render(
-        <Harness notes={[{ ...note, content: "Unsaved draft changed" }]} />,
+        <Harness notes={[{ ...note, content: "Unsaved changed" }]} />,
       ),
     );
     await act(async () => {
@@ -295,7 +296,12 @@ describe("Paper conversations", () => {
       await chat.send("Explain again", undefined, {
         scope: "selection",
         noteId: "a",
-        selection: { ...selection, content: "Unsaved draft changed" },
+        selection: {
+          ...selection,
+          text: "changed",
+          range: { start: { line: 0, col: 8 }, end: { line: 0, col: 15 } },
+          content: "Unsaved changed",
+        },
       });
     });
     expect(chatWithPaper).toHaveBeenCalledTimes(2);
@@ -322,4 +328,155 @@ describe("Paper conversations", () => {
     });
     expect(chat.thread.draft).toBe("Next question");
   });
+});
+
+it("proposes a native diagram after rewrite and continues after applying a selection", async () => {
+  vi.mocked(chatWithPaper)
+    .mockResolvedValueOnce({ text: "Rewritten", sourceIds: ["a"] })
+    .mockResolvedValueOnce({
+      text: '```paper-diagram\n{"mode":"iso","nodes":[{"id":"api","kind":"server","label":"API"}],"edges":[]}\n```',
+      sourceIds: ["a"],
+    })
+    .mockResolvedValue({ text: "Next answer", sourceIds: ["a"] });
+  await act(async () => {
+    await chat.send("Rewrite", "clean_up", {
+      scope: "selection",
+      noteId: "a",
+      selection: {
+        text: note.content,
+        content: note.content,
+        range: {
+          start: { line: 0, col: 0 },
+          end: { line: 0, col: note.content.length },
+        },
+      },
+    });
+  });
+  act(() => {
+    chat.markApplied(chat.thread.turns[0].id, note, {
+      ...note,
+      content: "Rewritten",
+    });
+    root.render(<Harness notes={[{ ...note, content: "Rewritten" }]} />);
+  });
+  await act(async () => {
+    await chat.send("ajoute un diagramme isométrique à la suite");
+  });
+  expect(chat.thread.turns[1].operation).toBe("append_diagram");
+  expect(chat.thread.turns[1].text).toMatch(/^!\[diagram:/);
+  expect(chat.thread.turns[1].action).toBeUndefined();
+  expect(vi.mocked(chatWithPaper).mock.calls[1][0].draft?.content).toBe(
+    "Rewritten",
+  );
+  await act(async () => {
+    await chat.send("Continue");
+  });
+  expect(chat.thread.turns[2].status).toBe("ready");
+});
+
+it("rewrites a multiline selection twice using the applied content, without reload", async () => {
+  const original = { ...note, content: "Intro\nLong selected text\nOutro" };
+  act(() => root.render(<Harness notes={[original]} />));
+  vi.mocked(chatWithPaper)
+    .mockResolvedValueOnce({ text: "Clearer\npassage", sourceIds: ["a"] })
+    .mockResolvedValueOnce({ text: "Short", sourceIds: ["a"] });
+  await act(async () => {
+    await chat.send("Rewrite", "clean_up", {
+      scope: "selection",
+      noteId: "a",
+      selection: {
+        text: "Long selected text",
+        content: original.content,
+        range: { start: { line: 1, col: 0 }, end: { line: 1, col: 18 } },
+      },
+    });
+  });
+  const first = chat.thread.turns[0];
+  const updated = { ...original, ...chatPatch(first, original) };
+  act(() => {
+    chat.markApplied(first.id, original, updated);
+    root.render(<Harness notes={[updated]} />);
+  });
+  expect(chat.thread.context.selection?.text).toBe("Clearer\npassage");
+  expect(chat.thread.context.selection?.range).toEqual({
+    start: { line: 1, col: 0 },
+    end: { line: 2, col: 7 },
+  });
+  await act(async () => {
+    await chat.send("Plus court");
+  });
+  expect(vi.mocked(chatWithPaper).mock.calls[1][0]).toMatchObject({
+    scope: "selection",
+    selection: "Clearer\npassage",
+    action: "clean_up",
+    draft: { content: "Clearer\npassage" },
+  });
+  expect(chatPatch(chat.thread.turns[1], updated)?.content).toBe(
+    "Intro\nShort\nOutro",
+  );
+  expect(chatPatch(first, updated)).toBeNull();
+});
+
+it("recovers from an invalid selection by continuing on the current note", async () => {
+  vi.mocked(chatWithPaper).mockResolvedValue({
+    text: "Answer",
+    sourceIds: ["a"],
+  });
+  await act(async () => {
+    await chat.send("Rewrite", "clean_up", {
+      scope: "selection",
+      noteId: "a",
+      selection: {
+        text: note.content,
+        content: note.content,
+        range: {
+          start: { line: 0, col: 0 },
+          end: { line: 0, col: note.content.length },
+        },
+      },
+    });
+  });
+  const edited = { ...note, content: "Manually replaced" };
+  act(() => root.render(<Harness notes={[edited]} />));
+  await act(async () => {
+    await chat.send("Plus court");
+  });
+  expect(chat.thread.turns.at(-1)?.status).toBe("error");
+  expect(chatWithPaper).toHaveBeenCalledTimes(1);
+  act(() => chat.continueOnNote());
+  await act(async () => {
+    await chat.send("Plus court");
+  });
+  expect(vi.mocked(chatWithPaper).mock.calls[1][0]).toMatchObject({
+    scope: "note",
+    draft: { content: edited.content },
+  });
+  expect(chat.thread.context.selection).toBeUndefined();
+});
+
+it("uses the applied whole-note draft for the next rewrite and blocks stale proposals", async () => {
+  vi.mocked(chatWithPaper)
+    .mockResolvedValueOnce({ text: "Clearer note", sourceIds: ["a"] })
+    .mockResolvedValueOnce({ text: "Short note", sourceIds: ["a"] });
+  await act(async () => {
+    await chat.send("Rewrite", "clean_up", { scope: "note", noteId: "a" });
+  });
+  const first = chat.thread.turns[0];
+  const updated = { ...note, ...chatPatch(first, note) };
+  act(() => {
+    chat.markApplied(first.id, note, updated);
+    root.render(<Harness notes={[updated]} />);
+  });
+  await act(async () => {
+    await chat.send("Plus court");
+  });
+  expect(vi.mocked(chatWithPaper).mock.calls[1][0]).toMatchObject({
+    action: "clean_up",
+    draft: { content: "Clearer note" },
+  });
+  expect(chatPatch(chat.thread.turns[1], updated)?.content).toBe("Short note");
+  expect(chatPatch(first, updated)).toBeNull();
+  expect(
+    chatPatch(chat.thread.turns[1], { ...updated, content: "Manual changes" }),
+  ).toBeNull();
 });

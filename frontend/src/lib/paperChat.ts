@@ -1,6 +1,12 @@
 import type { AIAction, Note } from "../types/note";
-import { isDiagramMarker } from "./diagram";
-import { replaceRange, selectedText, type TextRange } from "./markdown/edit";
+import { parseGeneratedDiagram } from "./diagramAi";
+import { isDiagramMarker, serializeDiagramMarker } from "./diagram";
+import {
+  normalizeRange,
+  replaceRange,
+  selectedText,
+  type TextRange,
+} from "./markdown/edit";
 
 export type ChatScope = "note" | "selection" | "all";
 export type ChatSelection = { range: TextRange; text: string; content: string };
@@ -11,6 +17,99 @@ export type ChatContext = {
   noteIds?: string[];
   selection?: ChatSelection;
 };
+function selectionOffset(content: string, caret: TextRange["start"]) {
+  const lines = content.split("\n");
+  return (
+    lines.slice(0, caret.line).reduce((sum, line) => sum + line.length + 1, 0) +
+    caret.col
+  );
+}
+function selectionCaret(content: string, offset: number) {
+  const lines = content.slice(0, offset).split("\n");
+  return { line: lines.length - 1, col: lines[lines.length - 1].length };
+}
+
+/** Track an unchanged passage only when edits are entirely before or after it.
+ * Never search for matching words elsewhere: repeated passages are ambiguous. */
+export function resolveChatSelection(
+  selection: ChatSelection,
+  content: string,
+): ChatSelection | null {
+  const range = normalizeRange(selection.range);
+  const old = selection.content;
+  if (!selection.text || selectedText(old, range) !== selection.text)
+    return null;
+  let start = selectionOffset(old, range.start);
+  let end = selectionOffset(old, range.end);
+  if (old !== content) {
+    let prefix = 0;
+    while (
+      prefix < old.length &&
+      prefix < content.length &&
+      old[prefix] === content[prefix]
+    )
+      prefix++;
+    let suffix = 0;
+    while (
+      suffix < old.length - prefix &&
+      suffix < content.length - prefix &&
+      old[old.length - 1 - suffix] === content[content.length - 1 - suffix]
+    )
+      suffix++;
+    if (old.length - suffix <= start) {
+      const delta = content.length - old.length;
+      start += delta;
+      end += delta;
+    } else if (prefix < end) return null;
+  }
+  if (content.slice(start, end) !== selection.text) return null;
+  return {
+    content,
+    text: selection.text,
+    range: {
+      start: selectionCaret(content, start),
+      end: selectionCaret(content, end),
+    },
+  };
+}
+
+export function contextAfterApplication(
+  context: ChatContext,
+  turn: ChatTurn,
+  before: Note,
+  after: Note,
+): ChatContext {
+  if (!turn.selection || context.scope !== "selection") return context;
+  const selected = resolveChatSelection(turn.selection, before.content);
+  if (!selected) return context;
+  if (
+    turn.operation === "append_diagram" ||
+    turn.action === "suggest_title" ||
+    turn.action === "suggest_tags"
+  ) {
+    return {
+      ...context,
+      selection: resolveChatSelection(selected, after.content) ?? selected,
+    };
+  }
+  const start = selectionOffset(before.content, selected.range.start);
+  const end = selectionOffset(before.content, selected.range.end);
+  const replacementLength =
+    after.content.length - before.content.length + end - start;
+  const text = after.content.slice(start, start + replacementLength);
+  return {
+    ...context,
+    selection: {
+      content: after.content,
+      text,
+      range: {
+        start: selectionCaret(after.content, start),
+        end: selectionCaret(after.content, start + replacementLength),
+      },
+    },
+  };
+}
+
 export const MAX_CHAT_NOTES = 5;
 export function contextKey(context: ChatContext) {
   return context.scope === "all"
@@ -38,7 +137,34 @@ export type ChatTurn = {
   snapshot?: ChatSnapshot;
   selection?: ChatSelection;
   applied?: boolean;
+  operation?: "append_diagram";
 };
+/** Convert the model's diagram proposal to the native, editable Paper format. */
+export function parseChatProposal(
+  text: string,
+): Pick<ChatTurn, "text" | "operation"> {
+  const match = /^\s*```paper-diagram\s*\n([\s\S]*?)\n```\s*$/i.exec(text);
+  if (!match) {
+    if (text.includes("```paper-diagram"))
+      throw new Error("The diagram response was incomplete. Please try again.");
+    return { text };
+  }
+  const payload = JSON.parse(match[1]);
+  if (!payload || (payload.mode !== "iso" && payload.mode !== "flat"))
+    throw new Error("The diagram must specify iso or flat mode.");
+  if (
+    !Array.isArray(payload.nodes) ||
+    payload.nodes.length > 100 ||
+    !Array.isArray(payload.edges) ||
+    payload.edges.length > 200
+  )
+    throw new Error(
+      "The diagram is invalid or too large. Please try a simpler diagram.",
+    );
+  const diagram = parseGeneratedDiagram(match[1], payload.mode);
+  return { text: serializeDiagramMarker(diagram), operation: "append_diagram" };
+}
+
 export const chatActions: {
   action: AIAction;
   slug: string;
@@ -109,6 +235,7 @@ export function chatTags(text: string) {
   ].slice(0, 8);
 }
 export function applicationLabel(turn: ChatTurn) {
+  if (turn.operation === "append_diagram") return "Add diagram at end of note";
   if (turn.action === "suggest_title") return "Use title";
   if (turn.action === "suggest_tags") return "Add tags";
   if (turn.selection) return "Replace selection";
@@ -121,10 +248,9 @@ export function applicationProblem(turn: ChatTurn, note: Note | null) {
   if (!turn.snapshot || !note || note.id !== turn.snapshot.id)
     return "Open the original note to apply this suggestion.";
   if (turn.applied) return "Already applied.";
+  if (turn.operation === "append_diagram") return "";
   if (turn.selection) {
-    if (
-      selectedText(note.content, turn.selection.range) !== turn.selection.text
-    )
+    if (!resolveChatSelection(turn.selection, note.content))
       return "The selected passage changed. Ask again using its latest text before applying.";
     return "";
   }
@@ -144,6 +270,12 @@ export function chatPatch(turn: ChatTurn, note: Note): Partial<Note> | null {
   if (turn.status !== "ready" || applicationProblem(turn, note)) return null;
   let text = turn.text.trim();
   if (!text) return null;
+  if (turn.operation === "append_diagram") {
+    if (!isDiagramMarker(text)) return null;
+    return {
+      content: [note.content.trimEnd(), text].filter(Boolean).join("\n\n"),
+    };
+  }
   if (turn.action === "suggest_title")
     return { title: text.split("\n")[0].replace(/^#+\s*|^[-*]\s*/, "") };
   if (turn.action === "suggest_tags")
@@ -168,12 +300,13 @@ export function chatPatch(turn: ChatTurn, note: Note): Partial<Note> | null {
       .filter((line) => isDiagramMarker(line) && !text.includes(line));
     if (missing.length) text += "\n\n" + missing.join("\n");
     if (turn.selection) {
-      if (
-        selectedText(note.content, turn.selection.range) !== turn.selection.text
-      )
-        return null;
+      if (!resolveChatSelection(turn.selection, note.content)) return null;
       return {
-        content: replaceRange(note.content, turn.selection.range, text).value,
+        content: replaceRange(
+          note.content,
+          resolveChatSelection(turn.selection, note.content)!.range,
+          text,
+        ).value,
       };
     }
     return { content: text };

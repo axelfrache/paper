@@ -18,6 +18,7 @@ import { useBackLayer } from "../lib/useBackLayer";
 import {
   applicationLabel,
   applicationProblem,
+  resolveChatSelection,
   chatActions,
   chatTags,
   MAX_CHAT_NOTES,
@@ -68,6 +69,11 @@ export function AssistantPanel({
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const thread = chat.thread;
   const contextNote = notes.find((item) => item.id === thread.context.noteId);
+  const staleSelection = !!(
+    thread.context.selection &&
+    contextNote &&
+    !resolveChatSelection(thread.context.selection, contextNote.content)
+  );
   const missing = thread.context.scope !== "all" && !contextNote;
   const contextOptions = [
     { value: "note", label: "This note", disabled: !note },
@@ -166,7 +172,7 @@ export function AssistantPanel({
     else void chat.send(item.prompt, item.action);
   }
   function submit() {
-    if (chat.busy || missing) return;
+    if (chat.busy || missing || staleSelection) return;
     if (slashMatches.length) return runSlash(slashMatches[0]);
     if (mentionOptions.length) return pickMention(mentionOptions[0].id);
     if (thread.draft.trim()) void chat.send(thread.draft);
@@ -461,6 +467,20 @@ export function AssistantPanel({
         ))}
         <div ref={bottomRef} />
       </div>
+      {staleSelection && (
+        <div className="assistant-stale" role="status">
+          <p>
+            The selected passage changed. Select it again in the editor and
+            reopen the assistant, or continue using the whole note.
+          </p>
+          <button type="button" onClick={chat.close}>
+            Select passage again
+          </button>
+          <button type="button" onClick={chat.continueOnNote}>
+            Continue on this note
+          </button>
+        </div>
+      )}
       <form
         className="assistant-composer"
         onSubmit={(event) => {
@@ -585,7 +605,7 @@ export function AssistantPanel({
                 type="submit"
                 className="assistant-send"
                 aria-label="Send message"
-                disabled={missing || !thread.draft.trim()}
+                disabled={missing || staleSelection || !thread.draft.trim()}
               >
                 <ArrowUp size={16} />
               </button>
